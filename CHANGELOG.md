@@ -7,6 +7,16 @@ Changelog, and releases use semantic versioning.
 
 ### Changed
 
+- **Breaking:** the runtime now requires Node.js 24 or newer, raised from 22.13. Bundles
+  target `node24`.
+- **Breaking:** index creation now requires Python 3.12 or newer in the selected
+  interpreter, raised from 3.10. A west virtual environment on 3.10 or 3.11 is refused
+  with an actionable message; point `PYTHON_EXECUTABLE` at a newer interpreter.
+- Upgraded the build toolchain to TypeScript 7.0, esbuild 0.28, `@types/node` 24, and
+  yaml 2.9, and the CI actions to `checkout@v7`, `setup-node@v7`, `setup-python@v7`, and
+  `cache@v6`. CI now builds on Node 24 and Python 3.14.
+- The MCP protocol revision is unchanged at 2025-11-25.
+
 - Replaced raw Kconfig ingestion with the target tree's Kconfiglib and definition-level
   expression, choice, default, range, select, imply, and assignability records.
 - Replaced binding traversal with the target tree's edtlib, recursive child bindings,
@@ -26,10 +36,26 @@ Changelog, and releases use semantic versioning.
 
 - Corpus semantic, integrity, drift, artifact, performance, and copied-marketplace
   clean-room gates.
+- A separate corpus baseline for the released Doxygen-backed index. `quality:baseline`
+  selects it on the recorded `api_ingest_mode`, and `check:extended` now runs it, so the
+  artifact that ships is pinned rather than only the development header-fallback build.
 - Explicit release/rollback instructions and an isolated vendor-pack strategy.
 
 ### Fixed
 
+- Doxygen API ingestion no longer fails the release build on anonymous unions and
+  structs. Zephyr 4.4.2 contains 198 of them; they are ordinary C11 and carry no name to
+  look up, so they are recorded as intentional exclusions rather than errors. This path
+  had never produced output before, so the semantic API index was unbuildable.
+- A failing Doxygen export now reports the exporter's structured error list. It writes
+  that report to stdout and exits non-zero, but only stderr was read, so every content
+  failure surfaced as `Doxygen XML export failed.` with nothing after it.
+- `get_kconfig` bounds how many definition contexts it renders. `CONFIG_NUM_IRQS` has
+  730 board and SoC defconfig alternatives and returned roughly a quarter of a megabyte;
+  it now returns 5 KB, shows prompted contexts first, and states what it omitted.
+- `get_kconfig` suggests near names that full-text search cannot reach. A one-character
+  typo such as `CONFIG_BT_PERIPHERL` returned no suggestion because `PERIPHERL` is not a
+  prefix of `PERIPHERAL`; candidates now also come from a longest-prefix lookup.
 - The edit hook no longer reports a `CONFIG_` symbol or a devicetree compatible as
   absent. Coverage describes the indexed Zephyr tree rather than the project, so
   application-local bindings were rejected as invalid — including those in the plugin's

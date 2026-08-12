@@ -1,4 +1,4 @@
-import type { Index } from '../db.ts';
+import type { Index, Row } from '../db.ts';
 import { type Tool, ToolError, type ToolResult } from '../protocol.ts';
 
 export type ToolFactory = (index: () => Index) => Tool;
@@ -34,6 +34,29 @@ export function optionalString(args: Record<string, unknown>, name: string): str
 /** A "no results" answer that tells the model what to try instead. */
 export function noResults(what: string, query: string, hint: string): ToolResult {
   return result(`No ${what} matched "${query}".\n\n${hint}`, { results: [], query });
+}
+
+/**
+ * Names sharing the longest available prefix with `value`.
+ *
+ * Full-text search cannot reach a single-character typo: `BT_PERIPHERL` is not a
+ * prefix of `BT_PERIPHERAL`, so the AND and prefix variants miss and the OR
+ * variant returns whichever `BT_*` symbols rank highest — in practice the
+ * generated logging family. Backing off one character at a time finds the real
+ * neighbours, which `relevantSuggestions` then filters.
+ */
+export function prefixCandidates(
+  all: (sql: string, ...params: unknown[]) => Row[],
+  sql: string,
+  value: string,
+  column: string,
+  minimum = 3,
+): string[] {
+  for (let length = Math.min(value.length, 24); length >= minimum; length--) {
+    const rows = all(sql, `${value.slice(0, length).replace(/[%_]/g, '\\$&')}%`);
+    if (rows.length > 0) return rows.map((row) => String(row[column]));
+  }
+  return [];
 }
 
 /**

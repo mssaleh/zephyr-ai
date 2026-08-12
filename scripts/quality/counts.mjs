@@ -1,16 +1,20 @@
 #!/usr/bin/env node
-import { createHash } from 'node:crypto';
+/**
+ * Report the corpus a built index actually contains, and optionally pin it.
+ *
+ * Only row counts are pinned. They are the one thing here that no other check
+ * covers: against a fixed Zephyr tree, a parser or query regression shows up as a
+ * count that moved. Index size is budgeted in performance.mjs and bundle identity
+ * is proven by verify-artifacts, so repeating either here would tax every change
+ * without catching anything new.
+ */
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 const ROOT = resolve(import.meta.dirname, '..', '..');
 const indexPath = resolve(process.env.ZEPHYR_AI_INDEX ?? `${ROOT}/index/zephyr.db`);
-const baselinePath = resolve(ROOT, 'scripts', 'quality', 'fixtures', 'baseline-counts.json');
-
-function sha256(path) {
-  return createHash('sha256').update(readFileSync(path)).digest('hex');
-}
+const fixtures = resolve(ROOT, 'scripts', 'quality', 'fixtures');
 
 if (!existsSync(indexPath)) {
   throw new Error(`Required index is missing: ${indexPath}. Run npm run build:index.`);
@@ -38,35 +42,36 @@ const meta = Object.fromEntries(
 );
 db.close();
 
-const report = {
+// Counts are only meaningful against the tree they were measured from, so the
+// tree identity is pinned with them.
+const pinned = {
   schemaVersion: Number(meta.schema_version),
   zephyrVersion: meta.zephyr_version,
   zephyrCommit: meta.zephyr_commit,
-  indexBytes: statSync(indexPath).size,
   counts,
-  bundles: Object.fromEntries(
-    ['plugin/mcp/zephyr-mcp.mjs', 'plugin/mcp/zephyr-ingest.mjs'].map((path) => [
-      path,
-      { bytes: statSync(resolve(ROOT, path)).size, sha256: sha256(resolve(ROOT, path)) },
-    ]),
-  ),
 };
 
-process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+process.stdout.write(
+  `${JSON.stringify({ ...pinned, indexBytes: statSync(indexPath).size, apiIngestMode: meta.api_ingest_mode }, null, 2)}\n`,
+);
 
 if (process.argv.includes('--verify')) {
-  const baseline = JSON.parse(readFileSync(baselinePath, 'utf8'));
-  const measurement = baseline.measurement ?? baseline;
-  if (baseline.measurement && (
-    !Array.isArray(baseline.explanation) ||
-    baseline.explanation.length === 0 ||
-    baseline.explanation.some((entry) => typeof entry !== 'string' || !entry.trim())
-  )) {
-    throw new Error('A wrapped corpus baseline requires a non-empty source-derived explanation.');
+  // The development index and the released Doxygen-backed index are different
+  // artifacts with different corpora, so each owns a baseline. Selecting by the
+  // recorded ingest mode means the artifact that ships is the one that is pinned,
+  // instead of only the header-fallback build being checked.
+  const baselinePath = resolve(
+    fixtures,
+    meta.api_ingest_mode === 'doxygen-xml' ? 'baseline-counts-semantic.json' : 'baseline-counts.json',
+  );
+  if (!existsSync(baselinePath)) {
+    throw new Error(`No corpus baseline exists for api_ingest_mode=${meta.api_ingest_mode}: ${baselinePath}`);
   }
-  if (JSON.stringify(report) !== JSON.stringify(measurement)) {
+  const baseline = JSON.parse(readFileSync(baselinePath, 'utf8'));
+  if (JSON.stringify(pinned) !== JSON.stringify(baseline)) {
     process.stderr.write(
-      `Corpus baseline differs from ${baselinePath}. Regenerate the report, explain the source-derived change, and update the fixture intentionally.\n`,
+      `Corpus counts differ from ${baselinePath}. If the change is intended, regenerate the fixture with ` +
+        'npm run quality:counts and say why in the commit message.\n',
     );
     process.exitCode = 1;
   }

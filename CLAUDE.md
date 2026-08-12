@@ -12,6 +12,14 @@ Three pieces meeting at a SQLite file: `packages/ingest` builds `index/zephyr.db
 from a Zephyr checkout, `packages/mcp-server` serves it over MCP, and `plugin/`
 wraps both with skills, agents, and hooks.
 
+## What we optimise for
+
+Correct Zephyr answers. Gates, fixtures, counts, and process are overhead that
+must earn its place — no vanity numbers, no unjustified gates, no tests written
+to pass, no hash pinning outside a real integrity boundary, no governance
+theatre, plain voice. **[AGENTS.md](AGENTS.md#what-we-optimise-for) has the full
+list and it outranks anything older in the repository.**
+
 ## The gate
 
 ```bash

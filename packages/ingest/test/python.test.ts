@@ -30,7 +30,7 @@ describe('semantic Python preflight', () => {
     } catch (error) {
       message = (error as Error).message;
     }
-    match(message, /Python 3\.10 or newer with PyYAML/);
+    match(message, /Python 3\.12 or newer with PyYAML/);
     match(message, /PYTHON_EXECUTABLE/);
   });
 });

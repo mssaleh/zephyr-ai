@@ -6,3 +6,9 @@ properties:
   "#test-cells":
     type: int
     required: true
+
+# A provider of a specifier space must name its cells. Without this, edtlib
+# rejects the tree with "unexpected 'test-cells:' length ... 0 instead of 1",
+# because #test-cells promises one cell that the binding never describes.
+test-cells:
+  - channel

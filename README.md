@@ -41,8 +41,8 @@ Open a Zephyr project and ask Claude:
 The `zephyr-index` skill finds the west workspace or `ZEPHYR_BASE`, then runs the
 bundled indexer. Index creation requires:
 
-- Node.js 22.13 or newer (`node:sqlite` with FTS5);
-- Python 3.10 or newer;
+- Node.js 24 or newer (`node:sqlite` with FTS5);
+- Python 3.12 or newer (tested on 3.14);
 - the target tree's `scripts/kconfig/kconfiglib.py` and
   `scripts/dts/python-devicetree`;
 - PyYAML in the selected Python environment. The indexer prefers the interpreter
@@ -109,26 +109,15 @@ the user's model selection.
   finding — including when no index is available, which SessionStart reports once per
   session rather than on every edit.
 
-## Audited pinned-corpus measurements
+## What the index covers
 
-`npm run quality:counts` derives these values from the current schema-5 development
-index for Zephyr v4.4.2, commit
-`dccb09599635bdff17633fa7e9dab014b91dce90`:
-
-| Corpus | Indexed rows |
-| --- | ---: |
-| Documentation pages / non-empty sections | 2,115 / 16,664 |
-| Kconfig symbols | 20,973 |
-| Devicetree binding rows / recursively flattened properties | 3,443 / 120,569 |
-| Boards / build targets / SoCs | 1,014 / 2,324 / 1,475 |
-| Samples / stored eligible files | 610 / 5,930 |
-| Public API symbols / groups (header fallback) | 33,814 / 1,006 |
-
-The semantic gates additionally prove zero unexplained sample/snippet Kconfig misses
-after source-backed exclusions, 100% coverage of 3,348 declared compatibles and 3,198
-resolvable compatible uses, matching source/index child-binding depth of three, all 37
-build-manual pages, no empty documentation chunks, no board without targets, and exact
-sample-file parity. Run `npm run quality:semantic` to reproduce those measurements.
+Run `npm run quality:counts` to print the corpus of a built index, and
+`npm run quality:semantic` to check it against the source tree. The semantic gates
+prove the properties that matter rather than a headline number: every compatible a
+binding declares is indexed, every resolvable compatible use resolves, child-binding
+depth matches the source, no documentation chunk is empty, no valid board is missing
+its targets, sample files are captured exactly, and every Kconfig symbol a sample
+assigns is either indexed or carries a source-backed exclusion.
 
 The ordinary local index labels API coverage incomplete because it uses a conservative
 header fallback. Public-release validation uses Doxygen XML through

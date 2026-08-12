@@ -205,8 +205,12 @@ def main():
                 continue
             record = member_record(member, compound, compound_id, compound_kind, group)
             if not record["name"]:
+                # Anonymous unions and structs are ordinary C11 and appear across
+                # the tree (for example the anonymous union in acpi_reg_base).
+                # They carry no name to look up, so they are excluded by rule
+                # rather than reported as a defect in the source.
                 discovered += 1
-                errors.append({"path": source, "code": "unnamed-member", "message": "Doxygen member has no name"})
+                excluded.append({"path": source, "reason": "unnamed-member"})
                 continue
             add_symbol(record)
             if kind == "enum":

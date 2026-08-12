@@ -46,14 +46,24 @@ if (resolve(WORKSPACE, configured) !== ZEPHYR) {
 }
 
 west(['update']);
-const frozen = west(['manifest', '--freeze']);
 const lock = JSON.parse(readFileSync(resolve(ROOT, 'zephyr.lock.json'), 'utf8'));
 const head = spawnSync('git', ['-C', ZEPHYR, 'rev-parse', 'HEAD'], { encoding: 'utf8' });
 if (head.status !== 0 || head.stdout.trim() !== lock.commit) {
   throw new Error('The west manifest repository no longer matches the lockfile-pinned Zephyr revision.');
 }
-const manifestHash = createHash('sha256').update(frozen).digest('hex');
-process.stderr.write(`Zephyr west modules are synchronized under ${WORKSPACE} (manifest ${manifestHash.slice(0, 12)}).\n`);
+// `west manifest --freeze` requires every project in every group to be cloned,
+// including the optional groups `west update` deliberately skips, so it fails on a
+// perfectly good workspace. It only ever fed this log line, so it stays advisory.
+const frozen = spawnSync('west', ['manifest', '--freeze'], {
+  cwd: WORKSPACE,
+  encoding: 'utf8',
+  stdio: ['ignore', 'pipe', 'ignore'],
+});
+const detail =
+  frozen.status === 0 && frozen.stdout.trim()
+    ? `manifest ${createHash('sha256').update(frozen.stdout).digest('hex').slice(0, 12)}`
+    : 'manifest hash unavailable because optional groups are not cloned';
+process.stderr.write(`Zephyr west modules are synchronized under ${WORKSPACE} (${detail}).\n`);
 } catch (error) {
   process.stderr.write(
     `fetch-zephyr-modules: ${error instanceof Error ? error.message : String(error)}\n`,

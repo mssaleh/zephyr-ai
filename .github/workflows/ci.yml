@@ -9,10 +9,10 @@ jobs:
   quick:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22.13.0
+          node-version: "24"
           cache: npm
       - run: npm ci
       - run: npm run check:quick
@@ -20,21 +20,21 @@ jobs:
   full-corpus:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22.13.0
+          node-version: "24"
           cache: npm
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: .cache/zephyr
-          key: zephyr-${{ runner.os }}-node-22.13-schema-5-${{ hashFiles('zephyr.lock.json', 'package-lock.json') }}
+          key: zephyr-${{ runner.os }}-node-24-schema-5-${{ hashFiles('zephyr.lock.json', 'package-lock.json') }}
       - run: npm ci
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - run: npm run fetch:zephyr
       - run: python -m pip install -r .cache/zephyr/scripts/requirements-base.txt
       - run: npm run check
@@ -44,18 +44,18 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22.13.0
+          node-version: "24"
           cache: npm
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
-      - uses: actions/cache@v4
+          python-version: "3.14"
+      - uses: actions/cache@v6
         with:
           path: .cache
-          key: zephyr-west-${{ runner.os }}-node-22.13-schema-5-${{ hashFiles('zephyr.lock.json', 'package-lock.json') }}
+          key: zephyr-west-${{ runner.os }}-node-24-schema-5-${{ hashFiles('zephyr.lock.json', 'package-lock.json') }}
       - name: Install semantic and build prerequisites
         run: |
           sudo apt-get update

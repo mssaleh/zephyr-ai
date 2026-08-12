@@ -6,9 +6,9 @@
   "description": "MCP server (protocol 2025-11-25, stdio) serving the Zephyr knowledge index",
   "license": "Apache-2.0",
   "scripts": {
-    "build": "esbuild src/main.ts --bundle --platform=node --target=node22 --format=esm --minify --legal-comments=none --outfile=../../plugin/mcp/zephyr-mcp.mjs",
-    "build:dev": "esbuild src/main.ts --bundle --platform=node --target=node22 --format=esm --sourcemap --outfile=dist/main.mjs",
-    "pretest": "esbuild test/*.test.ts --bundle --platform=node --target=node22 --format=esm --outdir=dist-test --out-extension:.js=.mjs",
+    "build": "esbuild src/main.ts --bundle --platform=node --target=node24 --format=esm --minify --legal-comments=none --outfile=../../plugin/mcp/zephyr-mcp.mjs",
+    "build:dev": "esbuild src/main.ts --bundle --platform=node --target=node24 --format=esm --sourcemap --outfile=dist/main.mjs",
+    "pretest": "esbuild test/*.test.ts --bundle --platform=node --target=node24 --format=esm --outdir=dist-test --out-extension:.js=.mjs",
     "test": "node --test \"dist-test/*.test.mjs\""
   },
   "dependencies": {}

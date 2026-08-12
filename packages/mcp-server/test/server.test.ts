@@ -354,6 +354,33 @@ describe('MCP server', { skip: !ready && 'run `npm run build` and build the inde
       ok(res.text.includes('CONFIG_SPI_RTIO'));
     });
 
+    it('bounds a symbol defined by hundreds of board defconfigs', async () => {
+      // NUM_IRQS has 730 definition contexts. Rendering them all produced a
+      // quarter-megabyte answer, which is a context and latency problem, not a
+      // correctness one, so the cap must be visible rather than silent.
+      const res = await client.call('get_kconfig', { name: 'NUM_IRQS' });
+      strictEqual(res.structured['found'], true);
+      strictEqual(res.structured['definitionsTruncated'], true);
+      ok(Number(res.structured['definitionCount']) > 500);
+      ok((res.structured['definitions'] as unknown[]).length <= 12);
+      ok(res.text.includes('of 730'), res.text.slice(0, 200));
+      ok(res.text.includes('further definition context'));
+      ok(res.text.length < 20000, `response was ${res.text.length} characters`);
+    });
+
+    it('does not truncate a symbol with a single definition', async () => {
+      const res = await client.call('get_kconfig', { name: 'CONFIG_BT_PERIPHERAL' });
+      strictEqual(res.structured['definitionsTruncated'], false);
+      ok(!res.text.includes('further definition context'));
+    });
+
+    it('suggests the real symbol for a one-character typo', async () => {
+      // Full-text search alone cannot reach this: PERIPHERL is not a prefix of
+      // PERIPHERAL, so the candidate pool used to fill with BT_*_LOG_LEVEL_*.
+      const res = await client.call('get_kconfig', { name: 'CONFIG_BT_PERIPHERL' });
+      strictEqual(res.isError, true);
+      ok(res.text.includes('CONFIG_BT_PERIPHERAL'), res.text);
+    });
   });
 
   describe('devicetree tools', () => {

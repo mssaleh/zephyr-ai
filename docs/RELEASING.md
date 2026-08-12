@@ -6,7 +6,7 @@ the ordinary development database's header-fallback API is not a release substit
 ## Release predicate
 
 1. Worktree and generated artifacts are committed and clean.
-2. Run `npm ci` with Node 22.13 or newer.
+2. Run `npm ci` with Node 24 or newer.
 3. Run `npm run check`. This verifies the pinned source, schema-5 index, exact baseline,
    real-process suites, corpus semantics, performance budgets, both manifests, and
    committed bundle parity.

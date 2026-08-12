@@ -19,6 +19,35 @@ packages/ingest  ──builds──▶  index/zephyr.db  ◀──reads──  p
 `mcp-server` is spawned on every Claude Code session, so it is bundled to a
 single dependency-free `.mjs` and uses Node's built-in `node:sqlite`.
 
+## What we optimise for
+
+The deliverable is correct Zephyr answers. Everything else — gates, fixtures,
+counts, process — is overhead that has to earn its place and gets deleted when it
+stops earning it.
+
+- **No vanity numbers.** A count written into prose is a liability: it goes stale,
+  and keeping it true costs more than it ever returned. Derive a number where it
+  is used, or do not state it.
+- **Gates must be justified.** Every check answers one question: what real
+  breakage does this catch that nothing else catches? A gate that cannot answer
+  it is deleted, not kept for symmetry. Overlapping gates are worse than none —
+  they double the cost of every change and train people to update fixtures
+  without reading them.
+- **No tests written to pass.** A test that cannot fail for a real reason is
+  noise. One test reproducing an actual defect beats ten asserting the obvious.
+  Coverage is not a goal.
+- **Digests and seals only where substitution would be silent and harmful.**
+  Pinning a hash taxes every future change. Spend that only on a genuine
+  integrity boundary, never to look rigorous.
+- **No governance theatre.** No mandatory prose fields, sign-offs, or ceremony
+  around ordinary edits. Explain the change in the commit message and move on.
+- **Plain voice.** Say what the thing does in the fewest words that stay
+  accurate. No enterprise register, no grandeur, no words chosen to sound
+  serious.
+
+When one of these conflicts with something already in the repository, this
+section wins and the older thing goes.
+
 ## Commands
 
 ```bash
@@ -42,7 +71,7 @@ npm run check:release    # Doxygen API, skill compile matrix, copied-artifact cl
   a syntax error, and `--experimental-strip-types` reports `ERR_NO_TYPESCRIPT`.
   Everything goes through esbuild — which is why each package has a `pretest`
   step that bundles tests into `dist-test/` before `node --test` runs them.
-- **`node:sqlite` needs Node ≥ 22.13** and provides FTS5. Do not add a native
+- **`node:sqlite` needs Node ≥ 24** and provides FTS5. Do not add a native
   SQLite driver: `better-sqlite3` needs lifecycle scripts, and Claude Code
   installs plugin dependencies with `--ignore-scripts`.
 - **The `yaml` package needs a CJS interop banner** when bundled to ESM, or it
@@ -50,7 +79,7 @@ npm run check:release    # Doxygen API, skill compile matrix, copied-artifact cl
   esbuild invocation that pulls in `ingest` carries
   `--banner:js="import{createRequire}from'node:module';…"`. Copy it when adding a
   new bundle target.
-- **Ingestion requires Python 3.10+, PyYAML, and the selected tree's Kconfiglib
+- **Ingestion requires Python 3.12+, PyYAML, and the selected tree's Kconfiglib
   and python-devicetree.** The preflight prefers the west interpreter and fails
   before scanning. Do not add a silent handwritten-parser fallback.
 

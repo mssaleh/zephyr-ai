@@ -5,6 +5,7 @@ import {
   joinSections,
   limitSchema,
   noResults,
+  prefixCandidates,
   requireString,
   result,
   section,
@@ -29,6 +30,9 @@ interface DefinitionDetail {
   implies: Conditional[];
   ranges: Array<{ low: string; high: string; cond?: string }>;
 }
+
+/** Upper bound on rendered definition contexts; see the query in `get_kconfig`. */
+const MAX_DEFINITIONS = 12;
 
 /** Kconfig symbols are stored without the `CONFIG_` prefix that appears in .conf files. */
 function normaliseName(name: string): string {
@@ -156,15 +160,28 @@ export const getKconfig: ToolFactory = (index) => ({
         [],
         8,
       );
+      const byPrefix = prefixCandidates(
+        (sql, ...params) => idx.all(sql, ...params),
+        "SELECT name FROM kconfig WHERE name LIKE ? ESCAPE '\\' ORDER BY LENGTH(name) LIMIT 40",
+        name,
+        'name',
+      );
+      const candidates = [...new Set([...near.map((r) => String(r['name'])), ...byPrefix])];
       return catalogueMiss(
         'Kconfig symbol',
         `CONFIG_${name}`,
         idx.meta['zephyr_version'] ?? 'unknown',
-        near.map((r) => `CONFIG_${String(r['name'])}`),
+        candidates.map((value) => `CONFIG_${value}`),
         'Generated, application-local, board/SoC-derived, and external-module symbols may not be covered.',
       );
     }
 
+    // Board and SoC defconfigs make definition counts wildly uneven: NUM_IRQS has
+    // 730 alternatives and SOC 719. Rendering every one produced a quarter-megabyte
+    // answer and ran four queries per definition, so the set is capped here — in
+    // SQL, not after the fact — with prompted (assignable) contexts first, since
+    // those are the ones an application configuration can act on.
+    const definitionTotal = Number(row['n_defs']);
     const definitionRows = idx.all(
       `SELECT d.id, d.file, d.line, d.prompt, d.menu_path, d.is_menuconfig,
               d.is_configdefault, COALESCE(e.display, 'y') AS condition,
@@ -172,9 +189,12 @@ export const getKconfig: ToolFactory = (index) => ({
          FROM kconfig_definition d
          LEFT JOIN kconfig_expr e ON e.id = d.condition_expr_id
          LEFT JOIN kconfig_expr pe ON pe.id = d.prompt_condition_id
-        WHERE d.symbol_id = ? ORDER BY d.id`,
+        WHERE d.symbol_id = ? ORDER BY (d.prompt IS NULL), d.id
+        LIMIT ?`,
       Number(row['id']),
+      MAX_DEFINITIONS,
     );
+    const omitted = Math.max(0, definitionTotal - definitionRows.length);
     const definitions: DefinitionDetail[] = definitionRows.map((definition) => {
       const definitionId = Number(definition['id']);
       const defaults = idx.all(
@@ -243,7 +263,7 @@ export const getKconfig: ToolFactory = (index) => ({
       header,
       row['help'] ? String(row['help']) : undefined,
       definitions.length > 0
-        ? `## Definition contexts (${definitions.length})\n\n` +
+        ? `## Definition contexts (${definitions.length} of ${definitionTotal}${omitted > 0 ? ', prompted contexts first' : ''})\n\n` +
           definitions.map((definition, index) => joinSections([
             `### Alternative ${index + 1}: \`${definition.file}:${definition.line}\`${definition.isConfigDefault ? ' (`configdefault`)' : ''}`,
             `**Depends on in this context:** \`${definition.condition}\``,
@@ -261,7 +281,12 @@ export const getKconfig: ToolFactory = (index) => ({
               ),
             ),
             definition.menuPath.length > 0 ? `**Menu path:** ${definition.menuPath.join(' > ')}` : undefined,
-          ])).join('\n\n')
+          ])).join('\n\n') +
+          (omitted > 0
+            ? `\n\n_${omitted} further definition context(s) are not shown; they are board, SoC, and shield ` +
+              'defconfig alternatives. The effective value comes from the resolved build configuration, ' +
+              'not from any single alternative here._'
+            : '')
         : undefined,
       section(
         'Selected by (enabling any of these forces it on)',
@@ -282,6 +307,8 @@ export const getKconfig: ToolFactory = (index) => ({
       help: row['help'] ?? '',
       hasPrompt: Number(row['has_prompt']) === 1,
       definitions,
+      definitionCount: definitionTotal,
+      definitionsTruncated: omitted > 0,
       selectedBy: selectedBy.map((s) => `CONFIG_${s}`),
       impliedBy: impliedBy.map((s) => `CONFIG_${s}`),
       choice: row['choice'] ?? null,

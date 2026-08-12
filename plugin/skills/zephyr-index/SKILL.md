@@ -2,7 +2,7 @@
 name: zephyr-index
 description: Build or refresh the project-scoped Zephyr reference index that the zephyr MCP server queries. Use when lookup tools report no index, index_status reports a commit or context mismatch, after west update, or when answers must reflect the active workspace and modules.
 license: Apache-2.0
-compatibility: Requires Node.js 22.13+, Python 3.10+ with PyYAML, and a complete Zephyr source tree.
+compatibility: Requires Node.js 24+, Python 3.12+ with PyYAML, and a complete Zephyr source tree.
 allowed-tools: Bash(node:*) Bash(west:*) Bash(ls:*) Bash(test:*) Read
 metadata:
   author: zephyr-ai
@@ -76,19 +76,19 @@ node "${CLAUDE_PLUGIN_ROOT}/mcp/zephyr-ingest.mjs" \
 Expect output like:
 
 ```
-Indexing Zephyr 4.4.2 from /home/user/ws/zephyr
-  docs      2115 pages, 16664 sections
-  kconfig   20973 symbols from 6280 files
-  bindings  3443 compatibles, 120569 properties, 282 fragments
-  boards    1014 boards, 2324 targets, 1475 SoCs
-  samples   610
-  api       33814 symbols, 1006 groups, header-fallback
-Done in 22.6 s -> .../<context-fingerprint>/zephyr.db (111.9 MiB)
+Indexing Zephyr <version> from /home/user/ws/zephyr
+  docs      <n> pages, <n> sections
+  kconfig   <n> symbols from <n> files
+  bindings  <n> compatibles, <n> properties, <n> fragments
+  boards    <n> boards, <n> targets, <n> SoCs
+  samples   <n>
+  api       <n> symbols, <n> groups, header-fallback
+Done in <n> s -> .../<context-fingerprint>/zephyr.db (<n> MiB)
 ```
 
-These are reproducible pinned-tree measurements, not promised duration or size for a
-different workspace. If any major corpus count is zero, stop and inspect the emitted
-source report rather than activating a partial index.
+Counts, duration, and size depend on the selected tree and modules. If any major
+corpus count is zero, stop and inspect the emitted source report rather than
+activating a partial index.
 
 ## 4. Confirm
 

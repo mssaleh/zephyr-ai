@@ -6,7 +6,7 @@
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
-    "node": ">=22.13.0"
+    "node": ">=24.0.0"
   },
   "workspaces": [
     "packages/ingest",
@@ -17,7 +17,7 @@
     "fetch:modules": "node scripts/fetch-zephyr-modules.mjs",
     "build:server": "npm run build --workspace @zephyr-ai/mcp-server",
     "build:ingest": "npm run build --workspace @zephyr-ai/ingest",
-    "build:plugin-ingest": "esbuild packages/ingest/src/cli.ts --bundle --platform=node --target=node22 --format=esm --loader:.py=text --minify --legal-comments=none --outfile=plugin/mcp/zephyr-ingest.mjs --banner:js=\"import{createRequire}from'node:module';const require=createRequire(import.meta.url);\"",
+    "build:plugin-ingest": "esbuild packages/ingest/src/cli.ts --bundle --platform=node --target=node24 --format=esm --loader:.py=text --minify --legal-comments=none --outfile=plugin/mcp/zephyr-ingest.mjs --banner:js=\"import{createRequire}from'node:module';const require=createRequire(import.meta.url);\"",
     "build": "npm run build:server && npm run build:ingest && npm run build:plugin-ingest",
     "build:index": "npm run build:ingest && node --disable-warning=ExperimentalWarning packages/ingest/dist/cli.js --require-pinned",
     "build:api-xml": "node scripts/build-doxygen.mjs",
@@ -40,12 +40,12 @@
     "check:post-build": "npm run typecheck && npm run test:release && npm run quality && npm run quality:semantic && npm run quality:performance && npm run validate:plugin && npm run validate:marketplace && npm run verify:artifacts",
     "check:quick": "npm run typecheck && npm run build && npm run test:quick && npm run validate:plugin && npm run validate:marketplace",
     "check": "npm run fetch:zephyr && npm run build:index && npm run build && npm run quality:baseline && npm run check:post-build",
-    "check:extended": "npm run fetch:zephyr && npm run fetch:modules && npm run build:api-xml && npm run build:index:semantic && npm run build && npm run check:post-build && npm run test:skill-examples && npm run test:clean-room",
+    "check:extended": "npm run fetch:zephyr && npm run fetch:modules && npm run build:api-xml && npm run build:index:semantic && npm run build && npm run quality:baseline && npm run check:post-build && npm run test:skill-examples && npm run test:clean-room",
     "check:release": "npm run check:extended"
   },
   "devDependencies": {
-    "@types/node": "^22.10.0",
-    "esbuild": "^0.25.0",
-    "typescript": "^5.7.0"
+    "@types/node": "^24.13.3",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
   }
 }

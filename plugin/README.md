@@ -8,7 +8,7 @@ workflow guidance.
 Ask Claude to **build the Zephyr index for this project**. The bundled
 `zephyr-index` skill discovers the workspace and creates an immutable,
 project/fingerprint-scoped database in the plugin data directory. Requirements are
-Node.js 22.13+, Python 3.10+, PyYAML, and the semantic Python libraries shipped in the
+Node.js 24+, Python 3.12+, PyYAML, and the semantic Python libraries shipped in the
 selected Zephyr tree. No npm installation occurs at runtime.
 
 The server does not ship or silently select a global default. `ZEPHYR_AI_INDEX` is a
@@ -20,9 +20,11 @@ strict override; otherwise the active index for `CLAUDE_PROJECT_DIR` is used. Ca
 - Thirteen MCP tools search/get Kconfig, bindings, boards, APIs, samples, and docs.
 - Fifteen skills activate by workflow and query the index before generating firmware.
 - Four specialist agents cover architecture, build triage, devicetree, and review.
-- Session and edit hooks validate only what available evidence can prove. Catalogue
-  misses remain uncertainty when generated, application-local, or external-module
-  declarations are not covered.
+- The edit hook reports only what the catalogue can decide alone: malformed Kconfig
+  syntax, a type mismatch, or assigning a promptless symbol. It never reports a
+  `CONFIG_` symbol or a compatible as missing, because coverage describes the indexed
+  Zephyr tree and not your project, and it is silent outside a Zephyr project or when no
+  index is available. SessionStart reports an unusable index once per session.
 
 `--modules` currently extends Kconfig and binding coverage only. Ordinary workspace
 indexes use an explicitly incomplete API header fallback; release indexes are built

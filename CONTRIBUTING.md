@@ -13,8 +13,9 @@ It consumes semantic Doxygen XML, compiles the declared generic/STM32/ESP32 exam
 matrix, and tests a copied marketplace layout from empty plugin data. See
 [docs/RELEASING.md](docs/RELEASING.md).
 
-Parser or schema changes require a schema-version bump, a complete index rebuild, and
-an intentional update to generated corpus baselines with a source-derived explanation.
+Parser or schema changes require a schema-version bump, a complete index rebuild, and an
+intentional update to the corpus baselines, with the reason for the moved counts in the
+commit message.
 MCP runtime code must remain dependency-free. Generated bundles under `plugin/mcp/`
 must be rebuilt and committed with their sources.
 

@@ -67,7 +67,7 @@ every tool call so a mid-session build is adopted.
 
 ## Ingestion toolchain contract
 
-Before scanning any source, ingestion proves that it has Python 3.10+, PyYAML, and the
+Before scanning any source, ingestion proves that it has Python 3.12+, PyYAML, and the
 selected tree's Kconfiglib and python-devicetree libraries. It prefers an explicit
 `PYTHON_EXECUTABLE`, then the interpreter behind `west`, then `python3`/`python`.
 Failure produces one actionable Node-side message, never a Python traceback or a

@@ -40,14 +40,14 @@ function interpreterCandidates(env: NodeJS.ProcessEnv): string[] {
 /** Locate a supported Python for adapters which only use the standard library. */
 export function standardPython(env: NodeJS.ProcessEnv = process.env): string {
   for (const candidate of interpreterCandidates(env)) {
-    const result = spawnSync(candidate, ['-c', 'import sys; assert sys.version_info >= (3, 10)'], {
+    const result = spawnSync(candidate, ['-c', 'import sys; assert sys.version_info >= (3, 12)'], {
       encoding: 'utf8',
       env: { ...env, PYTHONDONTWRITEBYTECODE: '1' },
     });
     if (result.status === 0) return candidate;
   }
   throw new Error(
-    'This index adapter requires Python 3.10 or newer. Set PYTHON_EXECUTABLE to a supported interpreter and retry.',
+    'This index adapter requires Python 3.12 or newer. Set PYTHON_EXECUTABLE to a supported interpreter and retry.',
   );
 }
 
@@ -83,7 +83,7 @@ export function semanticPython(
     'import kconfiglib',
     'import yaml',
     'from devicetree import edtlib',
-    'assert sys.version_info >= (3, 10)',
+    'assert sys.version_info >= (3, 12)',
   ].join('; ');
   for (const candidate of candidates) {
     const result = spawnSync(candidate, ['-c', probe], {
@@ -93,7 +93,7 @@ export function semanticPython(
     if (result.status === 0) return candidate;
   }
   throw new Error(
-    'Semantic index creation requires Python 3.10 or newer with PyYAML, plus the Kconfiglib ' +
+    'Semantic index creation requires Python 3.12 or newer with PyYAML, plus the Kconfiglib ' +
       'and devicetree libraries shipped by the selected Zephyr tree. Activate the project\'s ' +
       'west virtual environment or set PYTHON_EXECUTABLE to its Python interpreter, then retry.',
   );

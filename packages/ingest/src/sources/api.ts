@@ -30,9 +30,23 @@ function collectDoxygenXml(root: string, xmlDirectory: string): CollectedApi {
       env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
     });
     if (exported.status !== 0) {
-      throw new Error(
-        `Doxygen XML export failed.\n${exported.stderr.trim().split('\n').slice(-12).join('\n')}`,
-      );
+      // The exporter reports refusals as a structured report on stdout and exits
+      // non-zero; only an interpreter-level crash reaches stderr. Reading stderr
+      // alone turned every content failure into a blank, unactionable message.
+      let detail = exported.stderr?.trim() ?? '';
+      try {
+        const report = (JSON.parse(exported.stdout) as { report?: SourceReport }).report;
+        if (report?.errors?.length) {
+          const shown = report.errors.slice(0, 8).map((e) => `- ${e.code}: ${e.message}${e.path ? ` (${e.path})` : ''}`);
+          const extra = report.errors.length - shown.length;
+          detail = `${report.errors.length} error(s) in the Doxygen XML:\n${shown.join('\n')}${
+            extra > 0 ? `\n- ... and ${extra} more` : ''
+          }`;
+        }
+      } catch {
+        /* stdout was not a report; fall back to whatever stderr carried */
+      }
+      throw new Error(`Doxygen XML export failed.\n${detail || 'The exporter produced no diagnostic output.'}`);
     }
     const collected = JSON.parse(exported.stdout) as CollectedApi;
     collected.symbols = collected.symbols.map((symbol) => {
