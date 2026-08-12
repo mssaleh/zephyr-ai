@@ -4,7 +4,7 @@ description: Diagnose Zephyr build failures and runtime faults. Use when a build
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.1.0"
+  version: "0.1.1"
 ---
 
 # Debugging Zephyr

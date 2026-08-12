@@ -11,6 +11,10 @@ project/fingerprint-scoped database in the plugin data directory. Requirements a
 Node.js 24+, Python 3.12+, PyYAML, and the semantic Python libraries shipped in the
 selected Zephyr tree. No npm installation occurs at runtime.
 
+If the project has no Zephyr checkout, the skill offers to fetch the revision pinned
+into the plugin and waits for consent before using the network. The checkout is kept in
+the persistent plugin data directory and can be reused across projects.
+
 The server does not ship or silently select a global default. `ZEPHYR_AI_INDEX` is a
 strict override; otherwise the active index for `CLAUDE_PROJECT_DIR` is used. Call
 `index_status` to inspect the exact commit, fingerprint, coverage, and project match.
@@ -27,8 +31,9 @@ strict override; otherwise the active index for `CLAUDE_PROJECT_DIR` is used. Ca
   index is available. SessionStart reports an unusable index once per session.
 
 `--modules` currently extends Kconfig and binding coverage only. Ordinary workspace
-indexes use an explicitly incomplete API header fallback; release indexes are built
-from Doxygen XML.
+indexes auto-detect conventional Doxygen XML output when it exists and otherwise use
+an explicitly incomplete API header fallback; release indexes are built from Doxygen
+XML.
 
 Troubleshooting:
 

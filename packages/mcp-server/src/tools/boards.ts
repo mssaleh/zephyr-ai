@@ -1,4 +1,5 @@
 import { clampLimit, json } from '../db.ts';
+import { ToolError } from '../protocol.ts';
 import {
   type ToolFactory,
   catalogueMiss,
@@ -156,14 +157,26 @@ export const getBoard: ToolFactory = (index) => ({
         type: 'string',
         description: 'Board name (e.g. "nucleo_h743zi"). A qualified target is also accepted.',
       },
+      board: {
+        type: 'string',
+        description: 'Alias for name, accepted because it matches the get_board tool name.',
+      },
     },
-    required: ['name'],
+    anyOf: [{ required: ['name'] }, { required: ['board'] }],
     additionalProperties: false,
   },
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   handler: (args) => {
     // A qualified target (board/soc/cluster) reduces to the board name.
-    const requested = requireString(args, 'name');
+    const requestedName = optionalString(args, 'name');
+    const requestedBoard = optionalString(args, 'board');
+    if (requestedName && requestedBoard && requestedName !== requestedBoard) {
+      throw new ToolError('The "name" and "board" arguments must match when both are supplied.');
+    }
+    const requested = requestedName ?? requestedBoard;
+    if (!requested) {
+      throw new ToolError('The "name" argument (or its "board" alias) is required.');
+    }
     const name = requested.split('/')[0]!.split('@')[0]!.trim();
     const idx = index();
 

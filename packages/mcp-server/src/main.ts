@@ -8,8 +8,9 @@ import { McpServer, ToolError } from './protocol.ts';
 import { createTools } from './tools/index.ts';
 import { fileURLToPath } from 'node:url';
 import { statSync } from 'node:fs';
+import packageMetadata from '../package.json' with { type: 'json' };
 
-const VERSION = '0.1.0';
+const VERSION = packageMetadata.version;
 
 const INSTRUCTIONS = [
   'Grounded reference for Zephyr RTOS, indexed from a specific Zephyr release.',

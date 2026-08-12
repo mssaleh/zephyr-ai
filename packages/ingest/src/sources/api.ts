@@ -1,6 +1,6 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 import API_EXPORTER from '../adapters/api-export.py';
@@ -14,6 +14,23 @@ export interface CollectedApi {
   groups: ApiGroup[];
   mode: 'doxygen-xml' | 'header-fallback';
   report: SourceReport;
+}
+
+/** Find Doxygen XML produced in either conventional Zephyr documentation layout. */
+export function discoverDoxygenXml(root: string): string | undefined {
+  const requested = resolve(root);
+  let canonical = requested;
+  try {
+    canonical = realpathSync(requested);
+  } catch {
+    /* the caller reports an invalid Zephyr root separately */
+  }
+  return [...new Set([requested, canonical])]
+    .flatMap((base) => [
+      resolve(base, '..', 'doxygen', 'xml'),
+      resolve(base, 'doc', '_build', 'doxygen', 'xml'),
+    ])
+    .find((candidate) => existsSync(join(candidate, 'index.xml')));
 }
 
 function collectDoxygenXml(root: string, xmlDirectory: string): CollectedApi {

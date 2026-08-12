@@ -39,7 +39,9 @@ Open a Zephyr project and ask Claude:
 > Build the Zephyr index for this project.
 
 The `zephyr-index` skill finds the west workspace or `ZEPHYR_BASE`, then runs the
-bundled indexer. Index creation requires:
+bundled indexer. If neither exists, it can fetch the revision pinned into the plugin
+after asking for consent; the checkout is stored in persistent plugin data rather than
+the project. Index creation requires:
 
 - Node.js 24 or newer (`node:sqlite` with FTS5);
 - Python 3.12 or newer (tested on 3.14);
@@ -47,6 +49,7 @@ bundled indexer. Index creation requires:
   `scripts/dts/python-devicetree`;
 - PyYAML in the selected Python environment. The indexer prefers the interpreter
   behind `west`; set `PYTHON_EXECUTABLE` when a different environment is required.
+- Git and network access only when accepting the pinned-tree fetch.
 
 No npm packages or native SQLite modules are installed at plugin runtime. The Python
 contract applies only while creating an index. `npm run build:index` prints the
@@ -120,7 +123,9 @@ its targets, sample files are captured exactly, and every Kconfig symbol a sampl
 assigns is either indexed or carries a source-backed exclusion.
 
 The ordinary local index labels API coverage incomplete because it uses a conservative
-header fallback. Public-release validation uses Doxygen XML through
+header fallback. Workspace indexing automatically uses Doxygen XML from an adjacent
+`doxygen/xml` tree or `doc/_build/doxygen/xml` when present; pass `--api-xml` for any
+other location. Public-release validation uses Doxygen XML through
 `npm run check:release`; API responses state when documentation is absent rather than
 inventing a contract.
 

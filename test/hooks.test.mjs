@@ -234,15 +234,22 @@ describe('SessionStart index compatibility', {
     strictEqual(result.stderr, '');
   });
 
-  it('makes a missing project index visible in a west workspace', async () => {
+  it('distinguishes a missing checkout from a missing project index', async () => {
     const project = mkdtempSync(join(TEMPORARY, 'west-project-'));
     const pluginData = mkdtempSync(join(TEMPORARY, 'empty-plugin-data-'));
     mkdirSync(join(project, '.west'), { recursive: true });
     writeFileSync(join(project, '.west', 'config'), '[manifest]\npath = zephyr\n');
-    const result = await runSession({ project, pluginData });
-    strictEqual(result.code, 0);
-    match(result.stdout, /no compatible project index/);
-    strictEqual(result.stderr, '');
+    const withoutTree = await runSession({ project, pluginData });
+    strictEqual(withoutTree.code, 0);
+    match(withoutTree.stdout, /no usable Zephyr checkout/);
+    strictEqual(withoutTree.stderr, '');
+
+    mkdirSync(join(project, 'zephyr'));
+    writeFileSync(join(project, 'zephyr', 'VERSION'), 'VERSION_MAJOR = 4\nVERSION_MINOR = 4\nPATCHLEVEL = 2\n');
+    const withTree = await runSession({ project, pluginData });
+    strictEqual(withTree.code, 0);
+    match(withTree.stdout, /workspace Zephyr tree is available/);
+    strictEqual(withTree.stderr, '');
   });
 
   it('reports corrupt indexes without exposing an exception', async () => {

@@ -4,7 +4,7 @@ description: Create and structure a Zephyr project. Use when starting a new firm
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.1.0"
+  version: "0.1.1"
 ---
 
 # Project setup
@@ -16,22 +16,28 @@ metadata:
 | Topology | Shape | Use when |
 | --- | --- | --- |
 | **T1 — Zephyr as manifest** | App lives inside a Zephyr workspace | Learning, experiments |
-| **T2 — application as manifest** ⭐ | Your repo owns `west.yml` and pulls Zephyr in | Almost every product |
+| **T2 — application as manifest** ⭐ | Your repo is the manifest project inside a workspace | Almost every product |
 | **T3 — forked Zephyr** | You maintain a Zephyr fork | Only with real upstream divergence |
 
-T2 is the right default: your repository is the root, it pins the exact Zephyr
-revision, and it is reproducible for everyone who clones it.
+T2 is the right default: your repository owns the manifest, pins the exact Zephyr
+revision, and is reproducible for everyone who clones it. The repository is not the
+west topdir. West's topdir is a non-repository parent containing `.west/` and all
+manifest projects:
 
 ```
-my-product/
-├── west.yml               # the manifest: pins Zephyr and modules
-├── CMakeLists.txt
-├── prj.conf
-├── src/
-├── boards/                # per-board overlays and confs
-├── dts/bindings/          # bindings for your own hardware
-├── drivers/               # out-of-tree drivers
-└── zephyr/module.yml      # makes this repo a Zephyr module too
+my-workspace/               # west topdir; not a Git repository
+├── .west/
+├── my-product/            # your Git repository and manifest project
+│   ├── west.yml           # pins Zephyr and modules
+│   ├── CMakeLists.txt
+│   ├── prj.conf
+│   ├── src/
+│   ├── boards/
+│   ├── dts/bindings/
+│   ├── drivers/
+│   └── zephyr/module.yml
+├── zephyr/
+└── modules/
 ```
 
 ```yaml
@@ -56,8 +62,14 @@ manifest:
 ```
 
 ```bash
+# Run from my-workspace, the parent of the application repository.
 west init -l my-product && west update && west zephyr-export
 ```
+
+After initialization, `west topdir` from inside `my-product` must print
+`my-workspace`, and `west list -f '{name} {posixpath}'` must include every HAL the
+targets require. A `.west/config` beside the application with no corresponding
+manifest projects is an incomplete workspace, not a shortcut to another topdir.
 
 Pin `revision` to a tag. A branch makes builds irreproducible and turns an
 unrelated `west update` into a source of new failures.
@@ -167,18 +179,18 @@ Ignore:
 
 ```gitignore
 build/
-.west/
-zephyr/          # if the workspace root is this repo's parent
 twister-out/
 ```
 
 ## CI
 
 ```yaml
-- run: pip install west && west init -l . && west update
-- run: west build -b nucleo_h743zi -p always .
-- run: west build -b esp32s3_devkitc/esp32s3/procpu -p always .
-- run: west twister -T tests --integration
+# Check the application out as workspace/my-product first.
+- run: python -m pip install west
+- run: cd workspace && west init -l my-product && west update
+- run: cd workspace/my-product && west build -b nucleo_h743zi -p always .
+- run: cd workspace/my-product && west build -b esp32s3_devkitc/esp32s3/procpu -p always .
+- run: cd workspace/my-product && west twister -T tests --integration
 ```
 
 Build every supported target on every commit. A board that is not built in CI
@@ -189,6 +201,6 @@ stops working quietly.
 1. `search_boards` for the targets you intend to support; record the qualified
    identifiers.
 2. Create the T2 manifest pinned to a Zephyr tag, with a HAL allowlist.
-3. `west init -l && west update && west zephyr-export`.
+3. From the non-repository workspace parent, `west init -l <application-repo> && west update && west zephyr-export`.
 4. Build the empty application for every target before writing features.
 5. Rebuild the reference index for this Zephyr version — see the `zephyr-index` skill.

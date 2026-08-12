@@ -9,7 +9,8 @@
  * largest single source of wrong firmware code.
  *
  * Usage:
- *   zephyr-ai-ingest [--zephyr <path>] [--out <path>] [--modules <path>...] [--quiet]
+ *   zephyr-ai-ingest [--zephyr <path> | --fetch-pinned] [--out <path>]
+ *     [--plugin-data <path>] [--modules <path>...] [--quiet]
  */
 
 import {
@@ -30,7 +31,7 @@ import { dirname, join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 import { BUILD_FTS, DDL, SCHEMA_VERSION } from './schema.ts';
-import { collectApi } from './sources/api.ts';
+import { collectApi, discoverDoxygenXml } from './sources/api.ts';
 import { collectBindings } from './sources/bindings.ts';
 import { collectBoards, collectSocs } from './sources/boards.ts';
 import { collectDocs } from './sources/docs.ts';
@@ -40,6 +41,8 @@ import type { KconfigExpr } from './sources/kconfig.ts';
 import { buildIndexDescriptor } from './identity.ts';
 import { semanticPython } from './python.ts';
 import { canonicalJson, projectId } from '../../shared/index-descriptor.ts';
+import { fetchPinnedZephyr, PINNED_ZEPHYR_LOCK } from './fetch.ts';
+import packageMetadata from '../package.json' with { type: 'json' };
 
 interface Options {
   zephyr: string;
@@ -54,6 +57,8 @@ interface Options {
   apiXml?: string;
   requireDoxygen: boolean;
   requirePinned: boolean;
+  fetchPinned: boolean;
+  autoDetectApiXml: boolean;
 }
 
 function parseArgs(argv: string[]): Options {
@@ -64,8 +69,10 @@ function parseArgs(argv: string[]): Options {
     quiet: false,
     requireDoxygen: false,
     requirePinned: false,
+    fetchPinned: false,
+    autoDetectApiXml: true,
     projectRoot: process.env['CLAUDE_PROJECT_DIR'] ?? process.env['ZEPHYR_AI_PROJECT_ROOT'],
-    pluginData: process.env['CLAUDE_PLUGIN_DATA'] ?? process.env['ZEPHYR_AI_PLUGIN_DATA'],
+    pluginData: process.env['ZEPHYR_AI_PLUGIN_DATA'] ?? process.env['CLAUDE_PLUGIN_DATA'],
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -83,6 +90,9 @@ function parseArgs(argv: string[]): Options {
       case '--plugin-data':
         opts.pluginData = resolve(argv[++i]!);
         break;
+      case '--fetch-pinned':
+        opts.fetchPinned = true;
+        break;
       case '--board':
         opts.boardTarget = argv[++i]!;
         break;
@@ -94,6 +104,9 @@ function parseArgs(argv: string[]): Options {
         break;
       case '--api-xml':
         opts.apiXml = resolve(argv[++i]!);
+        break;
+      case '--no-api-xml-auto-detect':
+        opts.autoDetectApiXml = false;
         break;
       case '--require-doxygen':
         opts.requireDoxygen = true;
@@ -110,9 +123,18 @@ function parseArgs(argv: string[]): Options {
         break;
       case '--help':
       case '-h':
-        console.log(
-          'Usage: zephyr-ai-ingest [--zephyr <path>] [--project-root <path>] [--out <path>] [--modules <path>]... [--board <target>] [--application <path>] [--build-dir <path>] [--api-xml <dir>] [--require-doxygen] [--require-pinned] [--quiet]',
-        );
+        console.log([
+          'Usage: zephyr-ai-ingest [--zephyr <path> | --fetch-pinned] [--project-root <path>]',
+          '  [--plugin-data <path>] [--out <path>] [--modules <path>]... [--api-xml <dir>]',
+          '  [--board <target>] [--application <path>] [--build-dir <path>]',
+          '  [--require-doxygen] [--require-pinned] [--quiet]',
+          '',
+          '--fetch-pinned clones the bundled lockfile revision under --plugin-data, then indexes it.',
+          'Without --api-xml, conventional adjacent and doc/_build Doxygen XML trees are detected.',
+          'Use --no-api-xml-auto-detect only when a reproducible caller requires header fallback.',
+          '--board, --application, and --build-dir record context identity only; resolved .config',
+          'and final devicetree values are not currently ingested.',
+        ].join('\n'));
         process.exit(0);
         break;
       default:
@@ -191,6 +213,13 @@ function main(): void {
     if (!opts.quiet) process.stderr.write(`${msg}\n`);
   };
 
+  if (opts.fetchPinned) {
+    if (!opts.pluginData) {
+      throw new Error('--fetch-pinned requires --plugin-data so the checkout survives plugin updates.');
+    }
+    opts.zephyr = fetchPinnedZephyr(opts.pluginData, log);
+  }
+
   if (!existsSync(join(opts.zephyr, 'VERSION'))) {
     throw new Error(
       `${opts.zephyr} does not look like a Zephyr tree (no VERSION file).\n` +
@@ -202,7 +231,15 @@ function main(): void {
   // half-built index and a late Python traceback are both avoidable failures.
   semanticPython(opts.zephyr);
 
-  const lock = readLock();
+  if (!opts.apiXml && opts.autoDetectApiXml) {
+    const detected = discoverDoxygenXml(opts.zephyr);
+    if (detected) {
+      opts.apiXml = detected;
+      log(`Using auto-detected Doxygen XML from ${detected}`);
+    }
+  }
+
+  const lock = opts.fetchPinned ? PINNED_ZEPHYR_LOCK : readLock();
   if (opts.requireDoxygen && !opts.apiXml) {
     throw new Error(
       'Release API ingestion requires Doxygen XML. Run npm run build:api-xml, then pass --api-xml .cache/doxygen/xml.',
@@ -721,7 +758,7 @@ function main(): void {
     module_fingerprint: descriptor.moduleFingerprint,
     doc_base_url: docBaseUrl,
     built_at: new Date().toISOString(),
-    ingest_version: '0.1.0',
+    ingest_version: packageMetadata.version,
     count_docs: String(docs.length),
     count_doc_chunks: String(chunkCount),
     report_docs: canonicalJson(docsReport),

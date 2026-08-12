@@ -4,7 +4,7 @@ description: Build, flash, and run Zephyr firmware with west. Use when compiling
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.1.0"
+  version: "0.1.1"
 ---
 
 # Building and flashing
@@ -16,6 +16,15 @@ metadata:
 Zephyr applications live in a **west workspace** — Zephyr plus its modules,
 managed together:
 
+First make sure `west` comes from the Python environment intended for this
+workspace. If it is absent, create or activate a virtual environment and install it:
+
+```bash
+python3 -m venv <workspace>/.venv
+source <workspace>/.venv/bin/activate
+python -m pip install west
+```
+
 ```bash
 west init -m https://github.com/zephyrproject-rtos/zephyr --mr v4.4.2 my-ws
 cd my-ws && west update
@@ -25,6 +34,21 @@ west packages pip --install        # Python dependencies
 
 `west update` after any manifest change; module versions are pinned by
 `zephyr/west.yml` and skipping it produces confusing build errors.
+
+Run build commands from the intended workspace. `west topdir` walks upward from the
+current directory to the first `.west/config`; a second, richer workspace elsewhere
+is irrelevant. Confirm the selected manifest and required modules before diagnosing
+CMake:
+
+```bash
+west topdir
+west list zephyr -f '{posixpath}'
+west list -f '{name} {posixpath}'
+```
+
+If `.west/config` exists but a manifest project required by the target is missing,
+run `west update` in that workspace. Do not borrow a `modules/` directory from a
+different topdir; its revisions may not match the selected manifest.
 
 Verify the toolchain before debugging anything else:
 

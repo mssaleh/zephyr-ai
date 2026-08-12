@@ -423,6 +423,12 @@ describe('MCP server', { skip: !ready && 'run `npm run build` and build the inde
       strictEqual(res.structured['found'], true);
     });
 
+    it('accepts board as an alias for the get_board name argument', async () => {
+      const res = await client.call('get_board', { board: 'm5stack_atoms3' });
+      strictEqual(res.structured['found'], true);
+      strictEqual(res.structured['name'], 'm5stack_atoms3');
+    });
+
     it('filters boards by supported feature', async () => {
       const res = await client.call('search_boards', {
         query: 'nucleo',

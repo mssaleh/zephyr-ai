@@ -36,3 +36,19 @@ describe('safe Zephyr fetch', () => {
     }
   });
 });
+
+describe('plugin first-use index path', () => {
+  it('passes persistent plugin data explicitly and offers the bundled pinned fetch', () => {
+    const skill = readFileSync(join(ROOT, 'plugin', 'skills', 'zephyr-index', 'SKILL.md'), 'utf8');
+    match(skill, /--project-root "\$\{CLAUDE_PROJECT_DIR\}"\s+\\\n\s+--plugin-data "\$\{CLAUDE_PLUGIN_DATA\}"/);
+    match(skill, /ask\s+first[\s\S]+--fetch-pinned/);
+
+    const help = spawnSync(
+      process.execPath,
+      [join(ROOT, 'plugin', 'mcp', 'zephyr-ingest.mjs'), '--help'],
+      { encoding: 'utf8' },
+    );
+    strictEqual(help.status, 0);
+    match(help.stdout, /--fetch-pinned/);
+  });
+});

@@ -6,7 +6,7 @@ compatibility: Requires Node.js 24+, Python 3.12+ with PyYAML, and a complete Ze
 allowed-tools: Bash(node:*) Bash(west:*) Bash(ls:*) Bash(test:*) Read
 metadata:
   author: zephyr-ai
-  version: "0.1.0"
+  version: "0.1.1"
 ---
 
 # Build the Zephyr index
@@ -39,8 +39,21 @@ echo "$ZEPHYR_BASE"
 ls -d ./zephyr ../zephyr 2>/dev/null
 ```
 
-If none resolves, ask the user where their Zephyr checkout is. Do not guess, and
-do not clone one without being asked — a Zephyr checkout is over 600 MB.
+If none resolves, offer two choices: point to an existing checkout, or fetch the
+revision pinned into this plugin. The fetch is a large network download, so ask
+first. Only after the user agrees, run:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/mcp/zephyr-ingest.mjs" \
+  --fetch-pinned \
+  --project-root "${CLAUDE_PROJECT_DIR}" \
+  --plugin-data "${CLAUDE_PLUGIN_DATA}"
+```
+
+That command fetches into persistent plugin data and builds the index in one run;
+continue at step 4. If the user declines, ask for a checkout path or use the
+`zephyr-project-setup` skill to create a complete west workspace. Never clone
+without consent.
 
 ## 2. Find the HAL modules worth including
 
@@ -57,6 +70,7 @@ west list -f '{name} {posixpath}' 2>/dev/null
 node "${CLAUDE_PLUGIN_ROOT}/mcp/zephyr-ingest.mjs" \
   --zephyr "<zephyr-base>" \
   --project-root "${CLAUDE_PROJECT_DIR}" \
+  --plugin-data "${CLAUDE_PLUGIN_DATA}" \
   --modules "<workspace>/modules/hal/stm32" \
   --modules "<workspace>/modules/hal/espressif"
 ```
@@ -64,6 +78,20 @@ node "${CLAUDE_PLUGIN_ROOT}/mcp/zephyr-ingest.mjs" \
 `--modules` is optional and repeatable; drop the ones that do not exist. The indexer
 derives a context fingerprint and atomically activates the artifact below
 `${CLAUDE_PLUGIN_DATA}/indexes/projects/`, isolating projects and module sets.
+Passing `--plugin-data` is required here: plugin path tokens in this skill are
+substituted before Bash runs, while the MCP server's environment is not inherited by
+an arbitrary Bash command.
+
+The indexer automatically uses Doxygen XML when either conventional output exists:
+
+```text
+<zephyr-base>/../doxygen/xml
+<zephyr-base>/doc/_build/doxygen/xml
+```
+
+It prints `Using auto-detected Doxygen XML ...` and reports `doxygen-xml` for the API
+corpus. If XML lives elsewhere, add `--api-xml "<xml-directory>"`. Without XML, API
+coverage remains the conservative header fallback.
 
 For a standalone non-Claude client, select an output path explicitly:
 
@@ -107,5 +135,8 @@ inspect the project-root and plugin-data variables it reports before rebuilding.
   after modifying the tree or adding out-of-tree bindings or Kconfig you want searchable.
 - The normal first-run API catalogue is a conservative header fallback and its
   descriptor says incomplete. Doxygen XML is required by the public release gate.
+- `--board`, `--application`, and `--build-dir` currently record context identity
+  only. They do not ingest the generated `.config` or final devicetree, so do not
+  present them as a resolved-index mode.
 - Set `ZEPHYR_AI_INDEX` to point the server at an index anywhere on disk; that
   overrides everything else.

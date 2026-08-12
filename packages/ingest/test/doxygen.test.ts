@@ -11,7 +11,7 @@ import {
   parseDocComment,
   parseHeader,
 } from '../src/parsers/doxygen.ts';
-import { collectApi } from '../src/sources/api.ts';
+import { collectApi, discoverDoxygenXml } from '../src/sources/api.ts';
 
 const ZEPHYR = process.env.ZEPHYR_BASE ?? join(process.cwd(), '..', '..', '.cache', 'zephyr');
 const GPIO_H = join(ZEPHYR, 'include', 'zephyr', 'drivers', 'gpio.h');
@@ -168,6 +168,26 @@ describe('parseHeader', () => {
 });
 
 describe('Doxygen XML adapter', () => {
+  it('discovers conventional generated XML without overriding an explicit path', () => {
+    const temporary = mkdtempSync(join(tmpdir(), 'zephyr-ai-doxygen-discovery-'));
+    try {
+      const zephyr = join(temporary, 'zephyr');
+      const adjacent = join(temporary, 'doxygen', 'xml');
+      mkdirSync(zephyr);
+      mkdirSync(adjacent, { recursive: true });
+      writeFileSync(join(adjacent, 'index.xml'), '<doxygenindex/>');
+      strictEqual(discoverDoxygenXml(zephyr), adjacent);
+
+      rmSync(join(adjacent, 'index.xml'));
+      const inTree = join(zephyr, 'doc', '_build', 'doxygen', 'xml');
+      mkdirSync(inTree, { recursive: true });
+      writeFileSync(join(inTree, 'index.xml'), '<doxygenindex/>');
+      strictEqual(discoverDoxygenXml(zephyr), inTree);
+    } finally {
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  });
+
   it('preserves structured functions, enum values, IDs, and documentation anchors', () => {
     const temporary = mkdtempSync(join(tmpdir(), 'zephyr-ai-doxygen-test-'));
     try {

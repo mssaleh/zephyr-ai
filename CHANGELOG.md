@@ -3,6 +3,25 @@
 All notable user-visible changes are recorded here. The format follows Keep a
 Changelog, and releases use semantic versioning.
 
+## [0.1.1] - 2026-08-12
+
+### Added
+
+- The bundled indexer can fetch the pinned Zephyr tree into persistent plugin data
+  after explicit user consent, so first use no longer requires an existing checkout.
+- Workspace indexing auto-detects conventional Doxygen XML outputs and reports when it
+  uses them.
+
+### Fixed
+
+- The `zephyr-index` skill passes the plugin data directory explicitly, so the indexer
+  and MCP server select the same project index.
+- `get_board` accepts `board` as an alias for `name`.
+- Build and project-setup guidance now checks for west, identifies the active topdir,
+  and keeps the application manifest repository distinct from the workspace root.
+- Context-only index flags are described as identity inputs rather than resolved build
+  ingestion.
+
 ## [0.1.0] - 2026-08-12
 
 First public release. Indexed against Zephyr v4.4.2, commit

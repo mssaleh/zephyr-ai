@@ -88,9 +88,16 @@ async function main() {
   const info = resolveIndexPath();
   if (!info) {
     if (workspace) {
+      const base = westZephyrBase(workspace);
+      emit(base
+        ? 'The Zephyr lookup and edit-validation services have no compatible project index, but the workspace Zephyr tree is available. ' +
+          'Use the zephyr-index skill to build it before relying on generated CONFIG_, binding, board, or API facts.'
+        : 'The Zephyr lookup and edit-validation services have no compatible project index, and this west workspace has no usable Zephyr checkout. ' +
+          'Run west update in the intended workspace, or invoke the zephyr-index skill and approve its pinned-tree fetch.');
+    } else if (process.env.ZEPHYR_BASE && existsSync(join(process.env.ZEPHYR_BASE, 'VERSION'))) {
       emit(
-        'The Zephyr lookup and edit-validation services have no compatible project index. ' +
-          'Use the zephyr-index skill to build one before relying on generated CONFIG_, binding, board, or API facts.',
+        'The Zephyr lookup and edit-validation services have no compatible project index, but ZEPHYR_BASE names a usable tree. ' +
+          'Use the zephyr-index skill to build it before relying on generated CONFIG_, binding, board, or API facts.',
       );
     }
     return;

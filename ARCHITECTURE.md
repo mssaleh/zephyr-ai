@@ -216,9 +216,11 @@ block; SessionStart carries the one visible report of an unusable index.
 
 The marketplace artifact contains bundled runtime and ingest modules, skills, agents,
 hooks, and examples; it does not contain the generated index or upstream source tree.
-First use deterministically builds the user's project index. The clean-room gate copies
-the actual marketplace layout, observes the no-index response, builds through the
-copied ingest bundle, and proves that the still-running copied MCP server adopts it.
+The ingest bundle carries the pinned revision metadata and can fetch that tree only
+after user consent, so a project without a checkout is not a dead end. First use then
+deterministically builds the project index. The clean-room gate copies the actual
+marketplace layout, observes the no-index response, builds through the copied ingest
+bundle, and proves that the still-running copied MCP server adopts it.
 
 The fetcher stages into a generated sibling, verifies tag/commit, adds an ownership
 marker, then swaps atomically. A custom existing directory is replaceable only when
