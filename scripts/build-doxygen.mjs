@@ -49,6 +49,11 @@ HAVE_DOT = NO
 QUIET = YES
 WARN_IF_UNDOCUMENTED = NO
 WARN_AS_ERROR = NO
+# The template leaves NUM_PROC_THREADS at 0, meaning one thread per core, and the
+# resulting XML then varies between runs on the same tree: two runs here produced
+# 84,934 and 84,935 API symbols. A release artifact has to be rebuildable, so
+# parsing is pinned to one thread and the slower run is accepted.
+NUM_PROC_THREADS = 1
 `;
 writeFileSync(config, configured);
 const result = spawnSync('doxygen', [config], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });

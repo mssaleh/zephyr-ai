@@ -63,6 +63,9 @@ jobs:
           npm run fetch:zephyr
           python -m pip install -r .cache/zephyr/scripts/requirements-base.txt
           npm run fetch:modules
+          # Zephyr's Espressif SoC CMakeLists requires esptool on PATH before it
+          # will configure, and requirements-base.txt does not carry it.
+          python -m pip install "esptool>=5.0.2"
       - name: Install and verify pinned Zephyr SDK
         env:
           SDK_VERSION: 1.0.1

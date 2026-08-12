@@ -3,14 +3,14 @@
     {
       "id": "binding-skeleton-types",
       "path": "plugin/examples/binding-skeleton",
-      "target": "native_sim",
+      "target": "native_sim/native/64",
       "command": "cmake configure and build",
       "class": "generic"
     },
     {
       "id": "kernel-smoke-native",
       "path": "plugin/examples/kernel-smoke",
-      "target": "native_sim",
+      "target": "native_sim/native/64",
       "command": "cmake configure and build",
       "class": "generic"
     },

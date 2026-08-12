@@ -3,7 +3,10 @@
 All notable user-visible changes are recorded here. The format follows Keep a
 Changelog, and releases use semantic versioning.
 
-## [Unreleased]
+## [0.1.0] - 2026-08-12
+
+First public release. Indexed against Zephyr v4.4.2, commit
+`dccb09599635bdff17633fa7e9dab014b91dce90`.
 
 ### Changed
 
@@ -16,6 +19,10 @@ Changelog, and releases use semantic versioning.
   yaml 2.9, and the CI actions to `checkout@v7`, `setup-node@v7`, `setup-python@v7`, and
   `cache@v6`. CI now builds on Node 24 and Python 3.14.
 - The MCP protocol revision is unchanged at 2025-11-25.
+- Performance budgets gate what they measure. Bundle byte ceilings were a proxy for
+  session startup cost, which is measured directly and sits at a few percent of its
+  budget, so they are reported rather than gated. The index bound is raised to 256 MiB,
+  where it still catches runaway corpus growth without policing normal growth.
 
 - Replaced raw Kconfig ingestion with the target tree's Kconfiglib and definition-level
   expression, choice, default, range, select, imply, and assignability records.
@@ -43,6 +50,18 @@ Changelog, and releases use semantic versioning.
 
 ### Fixed
 
+- Doxygen XML generation is reproducible. The pinned template leaves
+  `NUM_PROC_THREADS` at one thread per core, and successive runs over the same tree
+  produced 84,934 and then 84,935 API symbols. Parsing is now pinned to one thread.
+- The shipped `binding-skeleton` example did not compile. Its provider binding declared
+  `#test-cells` without the `test-cells:` list naming them, which edtlib rejects.
+- `fetch:modules` failed on any healthy workspace. `west manifest --freeze` requires
+  every project in every group to be cloned, including the optional groups `west update`
+  deliberately skips, and its only consumer was a log line. It is now advisory.
+- The release compile matrix builds the generic class on `native_sim/native/64` instead
+  of 32-bit `native_sim`, which needed host multilib headers for no added coverage, and
+  CI installs `esptool`, which Zephyr's Espressif SoC CMake requires and
+  `requirements-base.txt` does not carry.
 - Doxygen API ingestion no longer fails the release build on anonymous unions and
   structs. Zephyr 4.4.2 contains 198 of them; they are ordinary C11 and carry no name to
   look up, so they are recorded as intentional exclusions rather than errors. This path
