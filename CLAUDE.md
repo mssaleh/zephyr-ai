@@ -78,3 +78,11 @@ non-obvious trade-off — not what the line does. The semantic adapters encode
 real Zephyr quirks (Kconfig definition alternatives, recursive binding includes,
 Doxygen member identity); when you change one, keep the rationale accurate and
 add both a focused fixture and pinned-tree differential evidence.
+<!-- git-workflow-rule -->
+## Git workflow
+
+- **Never create a branch or a pull request without an explicit request.** When asked to commit,
+  commit to the branch that is currently checked out — including `main`. Do not branch first as a
+  precaution, and do not offer branching as a safer default.
+- Commit only when asked. Push only when asked. Each is a separate ask; permission to commit is not
+  permission to push.

@@ -462,27 +462,27 @@ export class McpServer {
       const responseId: ResponseId =
         typeof rawId === 'string' || (typeof rawId === 'number' && Number.isFinite(rawId)) ? rawId : null;
 
-      // Responses to server-originated requests (currently roots/list) have no
-      // method and must never themselves receive a response.
-      if (
-        !('method' in envelope) &&
-        'id' in envelope &&
-        envelope['jsonrpc'] === '2.0' &&
-        (typeof rawId === 'string' || typeof rawId === 'number') &&
-        this.#outbound.has(rawId)
-      ) {
-        const validId = typeof rawId === 'string' || (typeof rawId === 'number' && Number.isFinite(rawId));
-        const hasResult = 'result' in envelope;
-        const hasError = 'error' in envelope;
-        if (!validId || hasResult === hasError) {
-          McpServer.log('ignored a malformed response to a server-originated request');
+      // A frame carrying an id but no method is a response to a server-originated
+      // request (currently roots/list). A response is never answered — not even
+      // when its id is unknown, which is the normal state once the roots/list
+      // timeout has dropped the correlation and the client replies late.
+      // Answering one would put a JSON-RPC error on the wire against an id the
+      // client owns.
+      // A frame with neither result nor error is not a response; it stays an
+      // invalid request and is answered as one.
+      const hasResult = 'result' in envelope;
+      const hasError = 'error' in envelope;
+      if (!('method' in envelope) && 'id' in envelope && (hasResult || hasError)) {
+        const resolver =
+          hasResult !== hasError && (typeof rawId === 'string' || (typeof rawId === 'number' && Number.isFinite(rawId)))
+            ? this.#outbound.get(rawId)
+            : undefined;
+        if (!resolver) {
+          McpServer.log('ignored a malformed or unmatched response to a server-originated request');
           return;
         }
-        const resolver = this.#outbound.get(rawId as Id);
-        if (resolver) {
-          this.#outbound.delete(rawId as Id);
-          resolver(envelope['result'], envelope['error']);
-        }
+        this.#outbound.delete(rawId as Id);
+        resolver(envelope['result'], envelope['error']);
         return;
       }
       if (

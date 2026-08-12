@@ -7,7 +7,8 @@
     "Stored sample files increased from 4,722 to 5,930 because eligible source, configuration, overlay, README, and manifest files are collected recursively with explicit size exclusions.",
     "Header-fallback API symbols increased from 26,148 to 33,814 because the public-header catalogue now retains typed structs, unions, enum values, variables, duplicate declaration contexts, and provenance while reason-coding 1,386 fallback artifacts/policy exclusions; the release gate replaces this fallback with Doxygen XML.",
     "The index grew from 75,157,504 to 117,305,344 bytes due to the normalized semantic and provenance rows and remains below the 150 MiB gate.",
-    "The MCP bundle grew from 44,669 to 62,803 bytes for strict JSON-RPC/MCP lifecycle and schema validation, project/context resolution, descriptor checking, roots support, sanitized failures, and richer semantic responses; it remains dependency-free, below the reviewed 64 KiB ceiling, and is latency-gated. The ingest bundle grew from 160,585 to 210,633 bytes for the embedded semantic exporters and atomic project-index builder, below its 256 KiB ceiling."
+    "The MCP bundle grew from 44,669 to 63,195 bytes for strict JSON-RPC/MCP lifecycle and schema validation, project/context resolution, descriptor checking, roots support, sanitized failures, and richer semantic responses; it remains dependency-free, below the reviewed 64 KiB ceiling, and is latency-gated. The ingest bundle grew from 160,585 to 210,633 bytes for the embedded semantic exporters and atomic project-index builder, below its 256 KiB ceiling.",
+    "The MCP bundle then grew from 62,803 to 63,195 bytes because index_status renders the per-corpus coverage map and its scope in the text answer, and because a response frame whose id matches no pending server request is now ignored instead of answered. Corpus counts and index bytes are unchanged, and the ingest bundle hash is unchanged, because no ingest semantics moved in that change."
   ],
   "measurement": {
     "schemaVersion": 5,
@@ -24,13 +25,13 @@
       "soc": 1475,
       "sample": 610,
       "sample_file": 5930,
-        "api_symbol": 33814,
+      "api_symbol": 33814,
       "api_group": 1006
     },
     "bundles": {
       "plugin/mcp/zephyr-mcp.mjs": {
-        "bytes": 62803,
-        "sha256": "adace8587bf43d09f0c85b2e9a20abde5e04794cd64d88396ce42692a4c887cf"
+        "bytes": 63195,
+        "sha256": "d13d725cae400b20a1cc6893ec134e9f0ab0258cbe6e937ac49484119ed95c69"
       },
       "plugin/mcp/zephyr-ingest.mjs": {
         "bytes": 210633,

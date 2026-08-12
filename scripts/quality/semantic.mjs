@@ -169,15 +169,8 @@ measured.samplesMissingManifest = count(
 );
 if (measured.samplesMissingManifest) failures.push('sample.yaml is not captured for every sample');
 
-const balancedReports = new Set([
-  'report_docs',
-  'report_kconfig',
-  'report_bindings',
-  'report_boards',
-  'report_samples',
-  'report_api',
-]);
-for (const key of ['report_docs', 'report_kconfig', 'report_bindings', 'report_boards', 'report_samples', 'report_api']) {
+const REPORTS = ['report_docs', 'report_kconfig', 'report_bindings', 'report_boards', 'report_samples', 'report_api'];
+for (const key of REPORTS) {
   const raw = db.prepare('SELECT value FROM meta WHERE key = ?').get(key)?.value;
   const report = raw ? JSON.parse(String(raw)) : null;
   const exclusions = report?.intentionallyExcluded?.length ?? 0;
@@ -189,7 +182,7 @@ for (const key of ['report_docs', 'report_kconfig', 'report_bindings', 'report_b
   )) {
     failures.push(`${key} has an exclusion without a path and stable reason code`);
   }
-  if (report && balancedReports.has(key) && report.discovered !== report.indexed + exclusions + errors) {
+  if (report && report.discovered !== report.indexed + exclusions + errors) {
     failures.push(
       `${key} has unaccounted records: discovered=${report.discovered}, indexed=${report.indexed}, ` +
       `excluded=${exclusions}, errors=${errors}`,

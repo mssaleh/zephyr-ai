@@ -76,6 +76,42 @@ if (existsSync(INDEX)) {
   failures.push('release skill validation requires the rebuilt index');
 }
 
+// The zephyr-index skill prints a sample indexer run, which is the last place in
+// the repository where corpus numbers are written by hand. Hold it to the
+// recorded baseline so it cannot drift away from the measurement again.
+const indexSkill = readFileSync(join(SKILLS, 'zephyr-index', 'SKILL.md'), 'utf8');
+const sampleOutput = indexSkill.match(/```\nIndexing Zephyr[\s\S]*?\n```/)?.[0];
+if (!sampleOutput) {
+  failures.push('zephyr-index/SKILL.md no longer contains its sample indexer output block');
+} else {
+  const { counts, indexBytes } = JSON.parse(
+    readFileSync(join(ROOT, 'scripts/quality/fixtures/baseline-counts.json'), 'utf8'),
+  ).measurement;
+  const claimed = (pattern) => {
+    const found = sampleOutput.match(pattern);
+    return found ? Number(found[1]) : null;
+  };
+  const stated = [
+    ['documentation pages', claimed(/docs\s+(\d+) pages/), counts.doc],
+    ['documentation sections', claimed(/pages, (\d+) sections/), counts.doc_chunk],
+    ['Kconfig symbols', claimed(/kconfig\s+(\d+) symbols/), counts.kconfig],
+    ['compatibles', claimed(/bindings\s+(\d+) compatibles/), counts.dt_binding],
+    ['devicetree properties', claimed(/compatibles, (\d+) properties/), counts.dt_property],
+    ['boards', claimed(/boards\s+(\d+) boards/), counts.board],
+    ['SoCs', claimed(/targets, (\d+) SoCs/), counts.soc],
+    ['samples', claimed(/samples\s+(\d+)/), counts.sample],
+    ['API symbols', claimed(/api\s+(\d+) symbols/), counts.api_symbol],
+    ['API groups', claimed(/symbols, (\d+) groups/), counts.api_group],
+    ['index MiB', claimed(/\(([\d.]+) MiB\)/), Number((indexBytes / 1024 / 1024).toFixed(1))],
+  ];
+  for (const [label, value, expected] of stated) {
+    if (value === null) failures.push(`zephyr-index sample output no longer states ${label}`);
+    else if (value !== expected) {
+      failures.push(`zephyr-index sample output claims ${label} ${value}; the baseline measures ${expected}`);
+    }
+  }
+}
+
 const manifest = JSON.parse(readFileSync(join(ROOT, 'plugin/examples/manifest.json'), 'utf8'));
 const classes = new Set(manifest.examples.map((example) => example.class));
 for (const required of ['generic', 'stm32', 'esp32']) {

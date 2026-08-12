@@ -1,11 +1,25 @@
 #!/usr/bin/env node
-/** Conservative PostToolUse validation for Zephyr configuration files. */
+/**
+ * Conservative PostToolUse validation for Zephyr configuration files.
+ *
+ * The validator only reports what the indexed catalogue can decide on its own:
+ * malformed assignment syntax, assigning a promptless symbol from application
+ * configuration, and a value whose type contradicts the declaration. It does not
+ * report that a symbol or compatible is absent. Catalogue completeness describes
+ * the indexed Zephyr tree, not the user's project, which may legitimately declare
+ * its own Kconfig and bindings through DTS_ROOT and out-of-tree module roots.
+ *
+ * When validation cannot run at all — no project index, an unreadable file, a
+ * project that is not Zephyr — it exits 0 in silence. SessionStart already
+ * reports a missing or unusable index once per session.
+ */
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
-import { basename, relative, resolve, sep } from 'node:path';
+import { basename, join, relative, resolve, sep } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 import {
   descriptorFingerprint,
+  findWestWorkspace,
   readHookInput,
   resolveIndexPath,
   validIndexDescriptor,
@@ -15,9 +29,11 @@ const EXPECTED_SCHEMA = 5;
 const EXPECTED_DESCRIPTOR = 2;
 const MAX_REPORTED = 12;
 
+/** The edited path left the project root; a genuine anomaly, not an unavailability. */
+class OutsideProjectError extends Error {}
+
 function fileKind(path) {
   const name = basename(path);
-  if (/\.(overlay|dts|dtsi)$/.test(name)) return 'devicetree';
   if (/\.conf$/.test(name) || /_defconfig$/.test(name)) return 'kconfig';
   return null;
 }
@@ -27,14 +43,42 @@ function inside(root, path) {
   return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`));
 }
 
+function canonical(path) {
+  try {
+    return realpathSync(resolve(path));
+  } catch {
+    return resolve(path);
+  }
+}
+
 function finalFile(projectRoot, requestedPath) {
   const root = realpathSync(resolve(projectRoot));
   const lexical = resolve(root, requestedPath);
-  if (!inside(root, lexical)) throw new Error('the edited path is outside the active project root');
+  if (!inside(root, lexical)) throw new OutsideProjectError('the edited path is outside the active project root');
   if (!existsSync(lexical)) throw new Error('the edited file does not exist after the tool completed');
-  const canonical = realpathSync(lexical);
-  if (!inside(root, canonical)) throw new Error('the edited path resolves outside the active project root');
-  return { path: canonical, text: readFileSync(canonical, 'utf8') };
+  const canonicalPath = realpathSync(lexical);
+  if (!inside(root, canonicalPath)) {
+    throw new OutsideProjectError('the edited path resolves outside the active project root');
+  }
+  return { root, path: canonicalPath, text: readFileSync(canonicalPath, 'utf8') };
+}
+
+/**
+ * Decide whether this project is a Zephyr project at all.
+ *
+ * A `.conf` file is not a Zephyr artifact by extension alone. Without this the
+ * validator would inspect any configuration file in any project that happens to
+ * have an index in scope.
+ */
+function looksLikeZephyrProject(projectRoot, descriptor) {
+  if (findWestWorkspace(projectRoot)) return true;
+  if (process.env.ZEPHYR_BASE) return true;
+  if (descriptor?.projectRoot && canonical(descriptor.projectRoot) === projectRoot) return true;
+  try {
+    return /find_package\s*\(\s*Zephyr\b/.test(readFileSync(join(projectRoot, 'CMakeLists.txt'), 'utf8'));
+  } catch {
+    return false;
+  }
 }
 
 function logicalLines(text) {
@@ -78,26 +122,6 @@ function extractConfigs(text) {
   return { assignments, malformed };
 }
 
-function stripDtsComments(text) {
-  return text
-    .replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\n]/g, ' '))
-    .replace(/\/\/[^\n]*/g, (comment) => ' '.repeat(comment.length));
-}
-
-function extractCompatibles(text) {
-  const source = stripDtsComments(text);
-  const out = [];
-  for (const assignment of source.matchAll(/\bcompatible\s*=\s*([\s\S]*?);/g)) {
-    const body = assignment[1];
-    const base = (assignment.index ?? 0) + assignment[0].indexOf(body);
-    for (const value of body.matchAll(/"([^"\n]+)"/g)) {
-      const offset = base + (value.index ?? 0);
-      out.push({ value: value[1], line: source.slice(0, offset).split('\n').length });
-    }
-  }
-  return out;
-}
-
 function openValidatedIndex(path) {
   const db = new DatabaseSync(path, { readOnly: true });
   try {
@@ -137,15 +161,7 @@ function emit(path, problems) {
     `Zephyr validation found ${problems.length} problem(s) in ${basename(path)}:\n` +
       `${shown.join('\n')}\n` +
       (extra > 0 ? `  ... and ${extra} more.\n` : '') +
-      '\nUse get_kconfig or get_binding to inspect the indexed declaration, then correct the file.\n',
-  );
-  return 2;
-}
-
-function unavailable(reason) {
-  process.stderr.write(
-    `Zephyr validation was unavailable: ${reason}. The edit was not proven invalid. ` +
-      'Run the zephyr-index skill to create or repair the project index, then re-check this file.\n',
+      '\nUse get_kconfig to inspect the indexed declaration, then correct the file.\n',
   );
   return 2;
 }
@@ -154,62 +170,51 @@ async function main() {
   const payload = await readHookInput();
   const input = payload.tool_input ?? {};
   const requestedPath = input.file_path ?? input.path ?? '';
-  if (!requestedPath || !fileKind(requestedPath)) return 0;
+  if (!requestedPath || fileKind(requestedPath) !== 'kconfig') return 0;
   const projectRoot = process.env.ZEPHYR_AI_PROJECT_ROOT ?? process.env.CLAUDE_PROJECT_DIR;
-  if (!projectRoot) return unavailable('the active project root was not provided to the hook');
+  if (!projectRoot) return 0;
 
   let file;
   try {
     file = finalFile(projectRoot, requestedPath);
   } catch (error) {
-    return unavailable(error instanceof Error ? error.message : 'the final file could not be read safely');
+    if (error instanceof OutsideProjectError) {
+      process.stderr.write(`Zephyr validation stopped: ${error.message}.\n`);
+      return 2;
+    }
+    return 0;
   }
 
   const info = resolveIndexPath();
-  if (!info) return unavailable('no compatible project index is available');
+  if (!info) return 0;
   let opened;
   try {
     opened = openValidatedIndex(info.path);
   } catch {
-    return unavailable('the selected index is corrupt or incompatible');
+    return 0;
   }
   const { db, descriptor } = opened;
   const problems = [];
   try {
-    if (fileKind(file.path) === 'kconfig') {
-      const parsed = extractConfigs(file.text);
-      for (const entry of parsed.malformed) {
-        problems.push(`  line ${entry.line}: malformed Kconfig assignment: ${entry.text}`);
+    if (!looksLikeZephyrProject(file.root, descriptor)) return 0;
+    const parsed = extractConfigs(file.text);
+    for (const entry of parsed.malformed) {
+      problems.push(`  line ${entry.line}: malformed Kconfig assignment: ${entry.text}`);
+    }
+    const stmt = db.prepare('SELECT name, type, has_prompt FROM kconfig WHERE name = ?');
+    for (const entry of parsed.assignments) {
+      const row = stmt.get(entry.name);
+      // A miss is not evidence of absence: generated, application-local, and
+      // out-of-tree module symbols are outside this catalogue by construction.
+      if (!row) continue;
+      if (!file.path.endsWith('_defconfig') && Number(row.has_prompt) === 0) {
+        problems.push(
+          `  line ${entry.line}: CONFIG_${entry.name} has no prompt and cannot be assigned from an application configuration. Enable the symbol that selects it instead.`,
+        );
+        continue;
       }
-      const stmt = db.prepare('SELECT name, type, has_prompt FROM kconfig WHERE name = ?');
-      for (const entry of parsed.assignments) {
-        const row = stmt.get(entry.name);
-        if (!row) {
-          if (descriptor.coverage.kconfig?.complete) {
-            problems.push(
-              `  line ${entry.line}: CONFIG_${entry.name} was not found in this complete indexed Kconfig context.`,
-            );
-          }
-          continue;
-        }
-        if (!file.path.endsWith('_defconfig') && Number(row.has_prompt) === 0) {
-          problems.push(
-            `  line ${entry.line}: CONFIG_${entry.name} has no prompt and cannot be assigned from an application configuration. Enable the symbol that selects it instead.`,
-          );
-          continue;
-        }
-        const mismatch = valueProblem(String(row.type ?? ''), entry.value);
-        if (mismatch) problems.push(`  line ${entry.line}: CONFIG_${entry.name} ${mismatch}.`);
-      }
-    } else {
-      const stmt = db.prepare('SELECT 1 FROM dt_binding WHERE compatible = ? LIMIT 1');
-      for (const entry of extractCompatibles(file.text)) {
-        if (!stmt.get(entry.value) && descriptor.coverage.bindings?.complete) {
-          problems.push(
-            `  line ${entry.line}: compatible "${entry.value}" was not found in this complete indexed binding catalogue.`,
-          );
-        }
-      }
+      const mismatch = valueProblem(String(row.type ?? ''), entry.value);
+      if (mismatch) problems.push(`  line ${entry.line}: CONFIG_${entry.name} ${mismatch}.`);
     }
   } finally {
     db.close();
@@ -219,4 +224,11 @@ async function main() {
 
 main()
   .then((code) => process.exit(code))
-  .catch(() => process.exit(unavailable('the validator encountered an unexpected infrastructure failure')));
+  .catch((error) => {
+    // Exit 0 keeps an internal fault from being reported as an invalid edit; the
+    // message still reaches the hook debug log.
+    process.stderr.write(
+      `Zephyr validation skipped after an internal error: ${error instanceof Error ? error.message : String(error)}\n`,
+    );
+    process.exit(0);
+  });

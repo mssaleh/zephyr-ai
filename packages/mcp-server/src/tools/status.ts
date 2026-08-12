@@ -154,9 +154,25 @@ export const indexStatus: ToolFactory = (index) => ({
         `\nFingerprint: \`${idx.descriptor.contextFingerprint}\`` +
         (meta['built_at'] ? `\nBuilt: ${meta['built_at']}` : ''),
       section(
-        'Coverage',
+        'Indexed rows',
         counts.map(([label, value]) => `${label}: ${value}`),
       ),
+      // Completeness is the signal that keeps a catalogue miss from being read as
+      // proof of absence, so it belongs in the text the model reads, not only in
+      // structuredContent.
+      section(
+        'Coverage',
+        Object.entries(idx.descriptor.coverage)
+          .sort(([left], [right]) => left.localeCompare(right))
+          .map(
+            ([corpus, coverage]) =>
+              `${corpus}: ${coverage.complete ? 'complete' : 'incomplete'}` +
+              (coverage.note ? ` — ${coverage.note}` : ''),
+          ),
+      ),
+      'Coverage describes the indexed Zephyr tree and the modules named when it was built. ' +
+        "It never describes this project's own Kconfig or devicetree bindings, which are outside " +
+        'the index, so a symbol or compatible missing here may still be valid in this workspace.',
       workspace
         ? mismatch
           ? `## ⚠️ Source-context mismatch\n\nThis project is a west workspace whose Zephyr is ` +

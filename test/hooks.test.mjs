@@ -22,8 +22,19 @@ const INDEX = process.env.ZEPHYR_AI_INDEX ?? join(ROOT, 'index', 'zephyr.db');
 const TEMPORARY = mkdtempSync(join(tmpdir(), 'zephyr-ai-hooks-'));
 after(() => rmSync(TEMPORARY, { recursive: true, force: true }));
 
-function projectFile(name, text) {
+/**
+ * A fixture project. `zephyrProject` writes the `find_package(Zephyr` marker the
+ * validator uses to recognise a Zephyr project; pass false to model an unrelated
+ * project that merely happens to contain a `.conf` file.
+ */
+function projectFile(name, text, { zephyrProject = true } = {}) {
   const project = mkdtempSync(join(TEMPORARY, 'project-'));
+  if (zephyrProject) {
+    writeFileSync(
+      join(project, 'CMakeLists.txt'),
+      'cmake_minimum_required(VERSION 3.20.0)\nfind_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})\nproject(app)\n',
+    );
+  }
   const path = join(project, name);
   mkdirSync(resolve(path, '..'), { recursive: true });
   writeFileSync(path, text);
@@ -32,14 +43,18 @@ function projectFile(name, text) {
 
 function runHook({ project, path, content = '', index = INDEX, toolName = 'Edit' }) {
   return new Promise((resolvePromise, reject) => {
+    const env = {
+      ...process.env,
+      ZEPHYR_AI_INDEX: index,
+      ZEPHYR_AI_PROJECT_ROOT: project,
+      CLAUDE_PROJECT_DIR: project,
+    };
+    // Otherwise a developer's exported ZEPHYR_BASE would satisfy the project gate
+    // and the non-Zephyr fixture below would pass for the wrong reason.
+    delete env.ZEPHYR_BASE;
     const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', HOOK], {
       cwd: ROOT,
-      env: {
-        ...process.env,
-        ZEPHYR_AI_INDEX: index,
-        ZEPHYR_AI_PROJECT_ROOT: project,
-        CLAUDE_PROJECT_DIR: project,
-      },
+      env,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     let stdout = '';
@@ -83,12 +98,6 @@ function indexCopy(label, mutate) {
   return path;
 }
 
-function completeBindingIndex() {
-  return indexCopy('complete', (descriptor) => {
-    descriptor.coverage.bindings = { complete: true };
-  });
-}
-
 function runSession({ project, index, pluginData }) {
   return new Promise((resolvePromise, reject) => {
     const env = {
@@ -128,15 +137,25 @@ describe('PostToolUse Zephyr validation', {
     match(result.stderr, /line 3: .* is int but is set to "y"/);
   });
 
-  it('does not reject generated symbols while catalogue coverage is incomplete', async () => {
+  it('does not reject generated symbols', async () => {
     const file = projectFile('prj.conf', 'CONFIG_SENSOR_LOG_LEVEL_DBG=y\n');
     const result = await runHook(file);
     strictEqual(result.code, 0);
     strictEqual(result.stderr, '');
   });
 
-  it('does not reject the official MPFS mailbox compatible', async () => {
-    const file = projectFile('app.overlay', 'mailbox { compatible = "microchip,mpfs-mailbox"; };\n');
+  it('never rejects the shipped binding-skeleton example', async () => {
+    // The exact file that the coverage-gated compatible check used to reject, even
+    // though its bindings sit beside it and the release gate compiles it.
+    const overlay = readFileSync(join(ROOT, 'plugin', 'examples', 'binding-skeleton', 'app.overlay'), 'utf8');
+    const file = projectFile('app.overlay', overlay);
+    const result = await runHook(file);
+    strictEqual(result.code, 0);
+    strictEqual(result.stderr, '');
+  });
+
+  it('does not report an application-local compatible as absent', async () => {
+    const file = projectFile('app.overlay', 'sensor { compatible = "vendor,invented-device"; };\n');
     const result = await runHook(file);
     strictEqual(result.code, 0);
     strictEqual(result.stderr, '');
@@ -151,14 +170,18 @@ describe('PostToolUse Zephyr validation', {
     match(result.stderr, /line 1: malformed Kconfig assignment/);
   });
 
-  it('checks every compatible in a multiline array and reports the second line', async () => {
-    const file = projectFile(
-      'multi.overlay',
-      'node { compatible =\n  "st,stm32-spi",\n  "invented,not-a-binding";\n};\n',
-    );
-    const result = await runHook({ ...file, index: completeBindingIndex() });
-    strictEqual(result.code, 2);
-    match(result.stderr, /line 3: compatible "invented,not-a-binding"/);
+  it('does not report an unknown Kconfig symbol as absent', async () => {
+    const file = projectFile('prj.conf', 'CONFIG_ZEPHYR_AI_INVENTED_SYMBOL=y\n');
+    const result = await runHook(file);
+    strictEqual(result.code, 0);
+    strictEqual(result.stderr, '');
+  });
+
+  it('is silent in a non-Zephyr project for content it would otherwise flag', async () => {
+    const file = projectFile('app.conf', 'CONFIG_BT_BUF_ACL_RX_SIZE=y\n', { zephyrProject: false });
+    const result = await runHook(file);
+    strictEqual(result.code, 0);
+    strictEqual(result.stderr, '');
   });
 
   it('reports promptless application assignments as definitive errors', async () => {
@@ -173,12 +196,13 @@ describe('PostToolUse Zephyr validation', {
     match(result.stderr, /has no prompt and cannot be assigned/);
   });
 
-  it('makes unavailable validation visible without calling the edit invalid', async () => {
-    const file = projectFile('prj.conf', 'CONFIG_BT=y\n');
+  it('is silent when no index is available', async () => {
+    // SessionStart carries the one report of an unusable index; repeating it per
+    // edit made every .conf edit in an unindexed project a blocking failure.
+    const file = projectFile('prj.conf', 'CONFIG_BT_BUF_ACL_RX_SIZE=y\n');
     const result = await runHook({ ...file, index: join(TEMPORARY, 'missing.db') });
-    strictEqual(result.code, 2);
-    match(result.stderr, /validation was unavailable: no compatible project index/);
-    match(result.stderr, /edit was not proven invalid/);
+    strictEqual(result.code, 0);
+    strictEqual(result.stderr, '');
   });
 
   it('refuses to read paths outside the active project root', async () => {
@@ -229,6 +253,21 @@ describe('SessionStart index compatibility', {
     strictEqual(result.code, 0);
     match(result.stdout, /corrupt or incompatible/);
     strictEqual(result.stderr, '');
+  });
+
+  it('reports a version mismatch without claiming the tree content differs', async () => {
+    const project = mkdtempSync(join(TEMPORARY, 'version-drift-'));
+    mkdirSync(join(project, '.west'), { recursive: true });
+    writeFileSync(join(project, '.west', 'config'), '[manifest]\npath = zephyr\n');
+    mkdirSync(join(project, 'zephyr'), { recursive: true });
+    writeFileSync(
+      join(project, 'zephyr', 'VERSION'),
+      'VERSION_MAJOR = 3\nVERSION_MINOR = 7\nPATCHLEVEL = 0\nEXTRAVERSION =\n',
+    );
+    const result = await runSession({ project, index: INDEX });
+    strictEqual(result.code, 0);
+    match(result.stdout, /uses Zephyr 3\.7\.0/);
+    strictEqual(/source content also differs/.test(result.stdout), false);
   });
 
   it('rejects an otherwise valid index belonging to another project root', async () => {

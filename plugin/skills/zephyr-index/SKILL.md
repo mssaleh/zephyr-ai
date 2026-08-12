@@ -82,8 +82,8 @@ Indexing Zephyr 4.4.2 from /home/user/ws/zephyr
   bindings  3443 compatibles, 120569 properties, 282 fragments
   boards    1014 boards, 2324 targets, 1475 SoCs
   samples   610
-  api       33821 symbols, 1006 groups, header-fallback
-Done in 22.6 s -> .../<context-fingerprint>/zephyr.db (111.0 MiB)
+  api       33814 symbols, 1006 groups, header-fallback
+Done in 22.6 s -> .../<context-fingerprint>/zephyr.db (111.9 MiB)
 ```
 
 These are reproducible pinned-tree measurements, not promised duration or size for a

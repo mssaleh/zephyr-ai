@@ -83,6 +83,16 @@ class Client {
     this.#child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method, params })}\n`);
   }
 
+  /** Write a frame and expect nothing back. */
+  send(message: unknown): void {
+    this.#child.stdin.write(`${JSON.stringify(message)}\n`);
+  }
+
+  /** Frames the server sent that answered no request of ours. */
+  get stray(): Response[] {
+    return this.#queued;
+  }
+
   exchange(message: unknown, raw = false): Promise<Response> {
     return new Promise((resolvePromise, reject) => {
       const timer = setTimeout(() => reject(new Error('timeout waiting for raw response')), 20000);
@@ -226,6 +236,18 @@ describe('MCP server', { skip: !ready && 'run `npm run build` and build the inde
         const response = await fresh.exchange(envelope);
         strictEqual(response.error?.code, -32600);
       }
+      fresh.close();
+    });
+
+    it('never answers a response frame whose id it does not recognise', async () => {
+      // A roots/list answer arriving after the 5s timeout dropped the correlation.
+      // Replying would put a JSON-RPC error on the wire against a client-owned id.
+      const fresh = new Client();
+      fresh.send({ jsonrpc: '2.0', id: 'zephyr-roots-999', result: { roots: [] } });
+      // Lines are processed in order, so any reply is already queued by the pong.
+      const pong = await fresh.request('ping');
+      strictEqual(pong.error, undefined);
+      strictEqual(fresh.stray.length, 0);
       fresh.close();
     });
 
@@ -445,6 +467,15 @@ describe('MCP server', { skip: !ready && 'run `npm run build` and build the inde
       strictEqual(res.structured['zephyrVersion'], '4.4.2');
       ok(res.text.includes('Kconfig symbols'));
       ok(Number((res.structured['counts'] as Record<string, string>)['Boards']) > 900);
+    });
+
+    it('renders the coverage map and its scope in the text answer', async () => {
+      // The completeness signal must reach the model that reads the Markdown, not
+      // only clients that read structuredContent.
+      const res = await client.call('index_status');
+      ok(res.text.includes('**Coverage**'));
+      ok(/kconfig: incomplete — /.test(res.text));
+      ok(res.text.includes("never describes this project's own Kconfig"));
     });
   });
 });

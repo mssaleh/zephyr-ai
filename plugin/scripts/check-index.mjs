@@ -120,16 +120,22 @@ async function main() {
   const version = base ? treeVersion(base) : null;
   const treeIdentity = base ? gitTreeFingerprint(base) : null;
   const commit = treeIdentity?.commit ?? (base ? treeCommit(base) : null);
+  const treeMismatch = Boolean(
+    treeIdentity && treeIdentity.stateFingerprint !== state.descriptor.zephyrTreeFingerprint,
+  );
   if (
     (version && version !== state.descriptor.zephyrVersion) ||
     (commit && commit !== state.descriptor.zephyrCommit) ||
-    (treeIdentity && treeIdentity.stateFingerprint !== state.descriptor.zephyrTreeFingerprint)
+    treeMismatch
   ) {
     emit(
       `The active west workspace uses Zephyr ${version ?? 'of unknown version'} at commit ` +
         `${commit ?? 'unknown'}, while the project index describes ${state.descriptor.zephyrVersion} at commit ` +
-        `${state.descriptor.zephyrCommit}. Its tracked or untracked source content also differs from the indexed ` +
-        `fingerprint. Rebuild it with the zephyr-index skill before relying on ` +
+        `${state.descriptor.zephyrCommit}. ` +
+        (treeMismatch
+          ? 'Its tracked or untracked source content also differs from the indexed fingerprint. '
+          : '') +
+        'Rebuild it with the zephyr-index skill before relying on ' +
         'version-sensitive Kconfig, devicetree, board, or API answers.',
     );
   }

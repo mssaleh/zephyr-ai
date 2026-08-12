@@ -199,15 +199,18 @@ including Bash. The build-triage and devicetree agents retain the tools required
 their operating mode.
 
 SessionStart checks schema, descriptor fingerprint, project, commit, and dirty tree
-state. PostToolUse reads the final file within the real project root and separates:
+state. PostToolUse reads the final Kconfig file within the real project root, and only
+when the project is recognisably Zephyr — a west workspace, an exported `ZEPHYR_BASE`, a
+project-scoped index, or a `find_package(Zephyr` in the root `CMakeLists.txt`. It reports
+one class of problem: definitive syntax, type, and promptless-assignment errors.
 
-- definitive syntax/type/promptless errors;
-- existence errors only under proven complete coverage;
-- context-dependent uncertainty, which does not block;
-- visible validator infrastructure failures.
-
-Devicetree property names are intentionally not validated without a resolved node and
-binding context.
+Existence is deliberately not among them. Coverage completeness describes the indexed
+Zephyr tree and the modules named at build time; a project legitimately declares its own
+Kconfig and bindings through `DTS_ROOT` and out-of-tree module roots, so a catalogue miss
+is not evidence of absence. Devicetree is not validated at all until the index can be
+built from the project's own binding roots. Anything the validator cannot decide — no
+index, an unreadable file, an unrecognised project — produces no output and does not
+block; SessionStart carries the one visible report of an unusable index.
 
 ## Distribution and safety
 

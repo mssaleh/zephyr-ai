@@ -19,10 +19,13 @@ Zephyr failures often come from structured facts that prose search cannot settle
 | A build uses the wrong board or qualifier | Query targets derived through Zephyr's board tooling, including revisions and CPU clusters |
 | Code targets another Zephyr revision | Build an index from the project's actual Git tree and module state, then compare its fingerprint at runtime |
 
-The hook catches only what the available evidence proves, such as malformed
-configuration, a known type mismatch, or assigning a known promptless symbol. It does
-not turn an incomplete catalogue miss into a claim that valid workspace syntax is
-impossible.
+The hook catches only what the catalogue can decide on its own: malformed configuration,
+a type mismatch against a known declaration, or assigning a known promptless symbol. It
+does **not** report that a `CONFIG_` symbol or a compatible is missing. Coverage
+describes the indexed Zephyr tree, never your project, which legitimately declares its
+own Kconfig and bindings through `DTS_ROOT` and out-of-tree module roots — so a
+catalogue miss is not evidence of absence. Existence questions belong to the tools,
+which answer them with their scope stated.
 
 ## Install and first index
 
@@ -100,9 +103,11 @@ the user's model selection.
 
 - `SessionStart` validates schema, descriptor fingerprint, project identity, and
   Zephyr commit and makes stale or missing validation visible.
-- `PostToolUse` reads the final edited file inside the canonical project root. It
-  handles Kconfig continuations/unset syntax and multiline DTS compatible arrays,
-  reports final-file line numbers, and is silent on success.
+- `PostToolUse` reads the final edited Kconfig file inside the canonical project root,
+  and only for a recognisably Zephyr project. It handles line continuations and
+  `is not set` syntax and reports final-file line numbers. It is silent unless it has a
+  finding — including when no index is available, which SessionStart reports once per
+  session rather than on every edit.
 
 ## Audited pinned-corpus measurements
 
