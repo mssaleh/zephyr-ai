@@ -26,7 +26,9 @@ jobs:
     runs-on: ubuntu-latest
     container: node:24-slim
     steps:
-      - run: apt-get update && apt-get install --yes --no-install-recommends git
+      # git and CA certificates are what the container needs to fetch the repo at
+      # all. Everything past this point must come from scripts/toolchain.json.
+      - run: apt-get update && apt-get install --yes --no-install-recommends git ca-certificates
       - uses: actions/checkout@v7
       - run: npm ci
       - run: npm install -g @anthropic-ai/claude-code
