@@ -1,0 +1,19 @@
+{
+  "name": "@zephyr-ai/ingest",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Builds the Zephyr knowledge index consumed by the zephyr-ai MCP server",
+  "license": "Apache-2.0",
+  "bin": {
+    "zephyr-ai-ingest": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "esbuild src/cli.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/cli.js --banner:js=\"import{createRequire}from'node:module';const require=createRequire(import.meta.url);\"",
+    "pretest": "esbuild test/*.test.ts --bundle --platform=node --target=node22 --format=esm --outdir=dist-test --out-extension:.js=.mjs --banner:js=\"import{createRequire}from'node:module';const require=createRequire(import.meta.url);\"",
+    "test": "node --test \"dist-test/*.test.mjs\""
+  },
+  "dependencies": {
+    "yaml": "^2.7.0"
+  }
+}

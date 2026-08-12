@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "zephyr-ai",
+  "displayName": "Zephyr AI",
+  "version": "0.1.0",
+  "description": "World-class Zephyr RTOS firmware development for STM32 and ESP32: version-exact Kconfig, devicetree, board and API lookup, plus workflow skills, review agents, and edit-time validation.",
+  "author": {
+    "name": "Mohammed Saleh",
+    "email": "mssaleh@live.com"
+  },
+  "repository": "https://github.com/mssaleh/zephyr-ai",
+  "license": "Apache-2.0",
+  "keywords": [
+    "zephyr",
+    "rtos",
+    "firmware",
+    "embedded",
+    "iot",
+    "stm32",
+    "esp32",
+    "devicetree",
+    "kconfig",
+    "west"
+  ]
+}

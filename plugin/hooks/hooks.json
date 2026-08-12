@@ -1,0 +1,37 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "--disable-warning=ExperimentalWarning",
+              "${CLAUDE_PLUGIN_ROOT}/scripts/check-index.mjs"
+            ],
+            "timeout": 15,
+            "statusMessage": "Checking Zephyr index"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "--disable-warning=ExperimentalWarning",
+              "${CLAUDE_PLUGIN_ROOT}/scripts/validate-zephyr-edit.mjs"
+            ],
+            "timeout": 20,
+            "statusMessage": "Validating Zephyr configuration"
+          }
+        ]
+      }
+    ]
+  }
+}

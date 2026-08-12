@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "zephyr": {
+      "command": "node",
+      "args": [
+        "--disable-warning=ExperimentalWarning",
+        "${CLAUDE_PLUGIN_ROOT}/mcp/zephyr-mcp.mjs"
+      ],
+      "env": {
+        "ZEPHYR_AI_PLUGIN_ROOT": "${CLAUDE_PLUGIN_ROOT}",
+        "ZEPHYR_AI_PLUGIN_DATA": "${CLAUDE_PLUGIN_DATA}"
+      }
+    }
+  }
+}

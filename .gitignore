@@ -1,0 +1,24 @@
+# Zephyr source checkout used for ingestion (fetched via scripts/fetch-zephyr.mjs)
+.cache/
+
+# Build output
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Generated indexes
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+index/
+
+# Editor / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Logs
+*.log
+npm-debug.log*

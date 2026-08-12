@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "zephyrVersion": "4.4.2",
+  "zephyrCommit": "dccb09599635bdff17633fa7e9dab014b91dce90",
+  "indexBytes": 75157504,
+  "counts": {
+    "doc": 2080,
+    "doc_chunk": 15842,
+    "kconfig": 19796,
+    "dt_binding": 3442,
+    "dt_property": 119718,
+    "board": 1014,
+    "soc": 1475,
+    "sample": 610,
+    "sample_file": 4722,
+    "api_symbol": 26148,
+    "api_group": 1006
+  },
+  "bundles": {
+    "plugin/mcp/zephyr-mcp.mjs": {
+      "bytes": 44669,
+      "sha256": "9a87be4b6da0a62814ffb6e7b66a29ed43cde458b69b4c2599ba6eb89ba36c11"
+    },
+    "plugin/mcp/zephyr-ingest.mjs": {
+      "bytes": 160585,
+      "sha256": "78fae959be77a8b6ec58256e01e4db0b03a12516b70bcaae498492db8815384f"
+    }
+  }
+}

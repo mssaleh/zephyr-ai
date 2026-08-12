@@ -1,0 +1,10 @@
+{
+  "$comment": "Pinned upstream Zephyr revision used to build the default shipped index. Update with scripts/fetch-zephyr.mjs --update <tag>.",
+  "repository": "https://github.com/zephyrproject-rtos/zephyr.git",
+  "tag": "v4.4.2",
+  "commit": "dccb09599635bdff17633fa7e9dab014b91dce90",
+  "version": "4.4.2",
+  "sdkVersion": "1.0.1",
+  "docBaseUrl": "https://docs.zephyrproject.org/4.4.2/",
+  "apiBaseUrl": "https://docs.zephyrproject.org/4.4.2/doxygen/html/"
+}

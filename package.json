@@ -1,0 +1,41 @@
+{
+  "name": "zephyr-ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Claude Code plugin and MCP server for Zephyr RTOS firmware development on STM32 and ESP32",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "workspaces": [
+    "packages/ingest",
+    "packages/mcp-server"
+  ],
+  "scripts": {
+    "fetch:zephyr": "node scripts/fetch-zephyr.mjs",
+    "build:server": "npm run build --workspace @zephyr-ai/mcp-server",
+    "build:ingest": "npm run build --workspace @zephyr-ai/ingest",
+    "build:plugin-ingest": "esbuild packages/ingest/src/cli.ts --bundle --platform=node --target=node22 --format=esm --minify --legal-comments=none --outfile=plugin/mcp/zephyr-ingest.mjs --banner:js=\"import{createRequire}from'node:module';const require=createRequire(import.meta.url);\"",
+    "build": "npm run build:server && npm run build:ingest && npm run build:plugin-ingest",
+    "build:index": "npm run build:ingest && node --disable-warning=ExperimentalWarning packages/ingest/dist/cli.js",
+    "test": "npm run test --workspace @zephyr-ai/ingest && npm run test --workspace @zephyr-ai/mcp-server && node --test test/*.test.mjs",
+    "test:quick": "ZEPHYR_AI_QUICK=1 npm test",
+    "test:release": "ZEPHYR_AI_RELEASE_TEST=1 npm test",
+    "typecheck": "tsc -p packages/ingest/tsconfig.json && tsc -p packages/mcp-server/tsconfig.json",
+    "validate:plugin": "claude plugin validate ./plugin --strict",
+    "validate:marketplace": "claude plugin validate . --strict",
+    "quality": "node --disable-warning=ExperimentalWarning scripts/quality/integrity.mjs",
+    "quality:counts": "node --disable-warning=ExperimentalWarning scripts/quality/counts.mjs",
+    "quality:baseline": "node --disable-warning=ExperimentalWarning scripts/quality/counts.mjs --verify",
+    "verify:artifacts": "node scripts/quality/verify-artifacts.mjs",
+    "check:quick": "npm run typecheck && npm run build && npm run test:quick && npm run validate:plugin && npm run validate:marketplace",
+    "check": "npm run fetch:zephyr && npm run build:index && npm run typecheck && npm run build && npm run test:release && npm run quality && npm run validate:plugin && npm run validate:marketplace && npm run verify:artifacts",
+    "check:extended": "npm run check"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.7.0"
+  }
+}

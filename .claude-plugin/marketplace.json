@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-marketplace.json",
+  "name": "zephyr-ai",
+  "owner": {
+    "name": "Mohammed Saleh",
+    "email": "mssaleh@live.com"
+  },
+  "metadata": {
+    "description": "Zephyr RTOS firmware development for Claude Code",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "zephyr-ai",
+      "source": "./plugin",
+      "description": "World-class Zephyr RTOS firmware development for STM32 and ESP32: version-exact Kconfig, devicetree, board and API lookup over MCP, plus workflow skills, review agents, and edit-time validation.",
+      "version": "0.1.0",
+      "category": "development",
+      "keywords": [
+        "zephyr",
+        "rtos",
+        "firmware",
+        "embedded",
+        "iot",
+        "stm32",
+        "esp32",
+        "devicetree",
+        "kconfig",
+        "west"
+      ]
+    }
+  ]
+}
