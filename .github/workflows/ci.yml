@@ -18,6 +18,20 @@ jobs:
       - run: npm install -g @anthropic-ai/claude-code
       - run: npm run check:quick
 
+  contract:
+    # Proves scripts/toolchain.json is complete. A hosted runner image and a
+    # developer machine both carry far more than the contract declares, so a check
+    # that reaches for an undeclared binary passes in both. This job has only what
+    # the contract names, which makes it the one place that catches that.
+    runs-on: ubuntu-latest
+    container: node:24-slim
+    steps:
+      - run: apt-get update && apt-get install --yes --no-install-recommends git
+      - uses: actions/checkout@v7
+      - run: npm ci
+      - run: npm install -g @anthropic-ai/claude-code
+      - run: npm run check:quick
+
   full-corpus:
     runs-on: ubuntu-latest
     steps:
