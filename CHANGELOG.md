@@ -57,7 +57,7 @@ First public release. Indexed against Zephyr v4.4.2, commit
   any gate runs, and `test/toolchain.test.mjs` fails when a declared tool is not
   provisioned by the CI job that runs its tier — so the divergence breaks the
   contributor's build first. A `contract` job runs the quick gate in a bare
-  `node:24-slim` container carrying only what the contract declares, which is the one
+  `node:24-trixie-slim` container carrying only what the contract declares, which is the one
   place a dependency nobody declared can be caught.
 - Doxygen XML generation is reproducible. The pinned template leaves
   `NUM_PROC_THREADS` at one thread per core, and successive runs over the same tree

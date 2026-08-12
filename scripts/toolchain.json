@@ -1,15 +1,26 @@
 {
   "$comment": "The one declaration of every external binary the gates need. preflight.mjs verifies it before any check runs; toolchain.test.mjs fails when a tool here is not provisioned by the CI job that runs its tier. Adding a gate dependency without teaching CI about it breaks the gate locally first.",
   "tiers": {
-    "quick": { "job": "quick", "description": "source and fixture feedback" },
-    "check": { "job": "full-corpus", "description": "pinned tree, rebuilt index, corpus gates" },
-    "release": { "job": "extended-toolchain", "description": "Doxygen API, compile matrix, clean room" }
+    "quick": {
+      "job": "quick",
+      "description": "source and fixture feedback"
+    },
+    "check": {
+      "job": "full-corpus",
+      "description": "pinned tree, rebuilt index, corpus gates"
+    },
+    "release": {
+      "job": "extended-toolchain",
+      "description": "Doxygen API, compile matrix, clean room"
+    }
   },
   "tools": [
     {
       "command": "node",
       "tier": "quick",
-      "versionArgs": ["--version"],
+      "versionArgs": [
+        "--version"
+      ],
       "minimum": "24.0.0",
       "provisionedBy": "actions/setup-node",
       "install": "Install Node.js 24 or newer."
@@ -17,71 +28,92 @@
     {
       "command": "claude",
       "tier": "quick",
-      "versionArgs": ["--version"],
+      "versionArgs": [
+        "--version"
+      ],
       "provisionedBy": "@anthropic-ai/claude-code",
       "install": "npm install -g @anthropic-ai/claude-code"
     },
     {
       "command": "git",
       "tier": "quick",
-      "versionArgs": ["--version"],
+      "versionArgs": [
+        "--version"
+      ],
       "provisionedBy": "actions/checkout",
       "install": "Install git."
     },
     {
       "command": "python3",
-      "tier": "check",
-      "versionArgs": ["--version"],
+      "tier": "quick",
+      "versionArgs": [
+        "--version"
+      ],
       "minimum": "3.12.0",
       "provisionedBy": "actions/setup-python",
-      "install": "Install Python 3.12 or newer, or set PYTHON_EXECUTABLE."
+      "install": "Install Python 3.12 or newer, or set PYTHON_EXECUTABLE.",
+      "$comment": "check:quick runs python.test.mjs, which probes for a real interpreter. Declared quick, not check."
     },
     {
       "command": "doxygen",
       "tier": "release",
-      "versionArgs": ["--version"],
+      "versionArgs": [
+        "--version"
+      ],
       "provisionedBy": "apt-get",
       "install": "sudo apt-get install --yes doxygen"
     },
     {
       "command": "cmake",
       "tier": "release",
-      "versionArgs": ["--version"],
+      "versionArgs": [
+        "--version"
+      ],
       "provisionedBy": "apt-get",
       "install": "sudo apt-get install --yes cmake"
     },
     {
       "command": "ninja",
       "tier": "release",
-      "versionArgs": ["--version"],
+      "versionArgs": [
+        "--version"
+      ],
       "provisionedBy": "apt-get",
       "install": "sudo apt-get install --yes ninja-build"
     },
     {
       "command": "dtc",
       "tier": "release",
-      "versionArgs": ["--version"],
+      "versionArgs": [
+        "--version"
+      ],
       "provisionedBy": "apt-get",
       "install": "sudo apt-get install --yes device-tree-compiler"
     },
     {
       "command": "gperf",
       "tier": "release",
-      "versionArgs": ["--version"],
+      "versionArgs": [
+        "--version"
+      ],
       "provisionedBy": "apt-get",
       "install": "sudo apt-get install --yes gperf"
     },
     {
       "command": "west",
       "tier": "release",
-      "versionArgs": ["--version"],
+      "versionArgs": [
+        "--version"
+      ],
       "provisionedBy": "pip",
       "install": "python -m pip install -r .cache/zephyr/scripts/requirements-base.txt"
     },
     {
       "command": "esptool",
       "tier": "release",
-      "versionArgs": ["version"],
+      "versionArgs": [
+        "version"
+      ],
       "provisionedBy": "pip",
       "install": "python -m pip install \"esptool>=5.0.2\""
     }

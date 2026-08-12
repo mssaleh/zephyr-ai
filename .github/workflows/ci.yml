@@ -14,6 +14,9 @@ jobs:
         with:
           node-version: "24"
           cache: npm
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
       - run: npm ci
       - run: npm install -g @anthropic-ai/claude-code
       - run: npm run check:quick
@@ -24,11 +27,11 @@ jobs:
     # that reaches for an undeclared binary passes in both. This job has only what
     # the contract names, which makes it the one place that catches that.
     runs-on: ubuntu-latest
-    container: node:24-slim
+    container: node:24-trixie-slim
     steps:
       # git and CA certificates are what the container needs to fetch the repo at
       # all. Everything past this point must come from scripts/toolchain.json.
-      - run: apt-get update && apt-get install --yes --no-install-recommends git ca-certificates
+      - run: apt-get update && apt-get install --yes --no-install-recommends git ca-certificates python3
       - uses: actions/checkout@v7
       - run: npm ci
       - run: npm install -g @anthropic-ai/claude-code
