@@ -223,8 +223,14 @@ before writing code; that is what converts the index into correct output.
   devicetree parse to know which node — and therefore which binding — a property
   belongs to. Matching names globally produces false positives on `aliases`,
   `chosen`, and label assignments, and a validator that cries wolf gets ignored.
-  Compatible and `CONFIG_` existence is a hard error only when descriptor coverage
-  proves the relevant context complete; properties are left to `get_binding`.
+  Properties are left to `get_binding`.
+- **Do not report a `CONFIG_` symbol or a `compatible` as absent.** Coverage
+  describes the indexed tree, not the user's project, which may declare its own
+  through `DTS_ROOT` and out-of-tree module roots. This was tried and reverted
+  once: it rejected the repository's own `binding-skeleton` example, whose
+  bindings sit beside the overlay the release gate compiles. The hook reports a
+  *misspelling* instead — same vendor prefix, within two edits of an indexed
+  compatible — which is a claim the catalogue can support on its own.
 - **Do not re-pin Zephyr casually.** `scripts/fetch-zephyr.mjs` verifies the
   checked-out commit against `zephyr.lock.json` and refuses a mismatch. Re-pin
   deliberately with `--update <tag>`, then rebuild the index and re-run the

@@ -256,6 +256,27 @@ export const getKconfig: ToolFactory = (index) => ({
       .all('SELECT DISTINCT from_sym FROM kconfig_edge WHERE to_sym = ? AND kind = ? ORDER BY from_sym LIMIT 20', name, 'imply')
       .map((r) => String(r['from_sym']));
 
+    // Naming the choice without its members answers "this is exclusive" but not
+    // "exclusive with what", which is the question that sends an agent to grep
+    // the subsystem's Kconfig. The join goes through this symbol's own
+    // membership rather than matching on the choice name, which is nullable for
+    // an anonymous choice and not unique.
+    const choiceMembers = idx
+      .all(
+        `SELECT k2.name AS name, k2.prompt AS prompt, k2.type AS type
+           FROM kconfig_choice_member m1
+           JOIN kconfig_choice_member m2 ON m2.choice_id = m1.choice_id
+           JOIN kconfig k1 ON k1.id = m1.symbol_id
+           JOIN kconfig k2 ON k2.id = m2.symbol_id
+          WHERE k1.name = ? AND k2.name <> k1.name
+          ORDER BY k2.name`,
+        name,
+      )
+      .map((r) => ({
+        name: `CONFIG_${String(r['name'])}`,
+        prompt: (r['prompt'] as string) ?? null,
+      }));
+
     const type = (row['type'] as string) ?? 'unknown';
     const header = `# CONFIG_${name}\n\n\`${type}\`${row['prompt'] ? ` — ${String(row['prompt'])}` : ''}`;
 
@@ -294,6 +315,10 @@ export const getKconfig: ToolFactory = (index) => ({
       ),
       section('Implied by', impliedBy.map((s) => `CONFIG_${s}`)),
       row['choice'] ? `**Part of choice** \`${String(row['choice'])}\` — options are mutually exclusive.` : undefined,
+      section(
+        'Alternatives in this choice (selecting one deselects the rest)',
+        choiceMembers.map((m) => `\`${m.name}\`${m.prompt ? ` — ${m.prompt}` : ''}`),
+      ),
       Number(row['has_prompt']) === 0
         ? '**Assignability:** promptless; do not assign this symbol from `prj.conf`.'
         : '**Assignability:** at least one definition has a user-visible prompt. Visibility still depends on the selected build context.',
@@ -312,6 +337,7 @@ export const getKconfig: ToolFactory = (index) => ({
       selectedBy: selectedBy.map((s) => `CONFIG_${s}`),
       impliedBy: impliedBy.map((s) => `CONFIG_${s}`),
       choice: row['choice'] ?? null,
+      choiceMembers,
       knowledgeLevel: 'catalogue',
     });
   },

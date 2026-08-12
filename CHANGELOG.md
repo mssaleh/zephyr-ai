@@ -3,6 +3,51 @@
 All notable user-visible changes are recorded here. The format follows Keep a
 Changelog, and releases use semantic versioning.
 
+## [0.2.0] - 2026-08-12
+
+Indexes built by earlier versions are not readable by this one: the index schema
+is now 6. Rebuild with the `zephyr-index` skill after upgrading.
+
+### Added
+
+- `get_source` returns a file from the indexed Zephyr tree at the exact commit the
+  index was built from, with an optional line range. Where the tree is not present
+  it returns a pinned `owner/repo@commit:path#Lstart-Lend` reference instead, so a
+  file fetched elsewhere is still anchored to the right revision.
+- `get_api` lists the members of an enum, with each member's value and
+  documentation.
+- `get_kconfig` lists the other options in a symbol's choice, so "mutually
+  exclusive with what" no longer requires reading the subsystem's Kconfig.
+- A failed `west build` now produces a signal: the plugin names the `build-triage`
+  agent and the lookup that fits the failure — `get_binding` for a devicetree
+  error, `get_kconfig` for a Kconfig one, `search_kconfig` for an undefined
+  reference.
+- `.dts`, `.dtsi`, and `.overlay` edits are checked for a `compatible` that
+  misspells an indexed one. A compatible that is merely absent is not reported:
+  applications legitimately declare their own through `dts/bindings`, `DTS_ROOT`,
+  or an out-of-tree module.
+- The `zephyr-development` skill states what to do after writing, not only before:
+  which agent handles a failed build, a new driver or ISR, and a devicetree edit.
+- SessionStart now speaks in an empty directory, naming the prerequisites and the
+  `zephyr-index` skill, and the skill leads with the pinned fetch for that case.
+
+### Fixed
+
+- The API catalogue built without Doxygen XML no longer misfiles symbols. A record
+  declared with an attribute macro was indexed under the attribute, leaving
+  `enum __packed bt_conn_type` reachable only as `__packed` while `bt_conn_type`
+  resolved to a struct field that merely used the type — wrong location, wrong
+  signature, no documentation. Uses of a type were also indexed as definitions of
+  it, and function-pointer struct members were indexed under their return type,
+  putting hundreds of symbols named `void` and `int` into search results.
+- Enum members are indexed without Doxygen XML, where previously they were dropped
+  entirely.
+- With Doxygen XML, enum members recorded no header of their own, which hid most of
+  them from `get_api`.
+- The edit validator no longer reports a path outside the project root as a
+  blocking error. It cannot inspect such a file, which is a reason to stay quiet
+  rather than a finding about the edit.
+
 ## [0.1.1] - 2026-08-12
 
 ### Added

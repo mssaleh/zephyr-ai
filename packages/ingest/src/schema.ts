@@ -335,9 +335,14 @@ CREATE TABLE api_symbol (
   line       INTEGER NOT NULL DEFAULT 0,
   doxygen_id TEXT,
   compound_id TEXT,
-  doc_anchor TEXT
+  doc_anchor TEXT,
+  -- The owning symbol's name: for an enumvalue, its enum. compound_id cannot
+  -- serve this. In Doxygen XML it names the containing group or file, which
+  -- every sibling symbol in that compound shares.
+  parent_symbol TEXT
 );
 CREATE INDEX api_symbol_name_idx ON api_symbol(name);
+CREATE INDEX api_symbol_parent_idx ON api_symbol(parent_symbol, header);
 CREATE INDEX api_symbol_doxygen_idx ON api_symbol(doxygen_id);
 CREATE INDEX api_symbol_group_idx ON api_symbol(api_group);
 CREATE INDEX api_symbol_header_idx ON api_symbol(header);

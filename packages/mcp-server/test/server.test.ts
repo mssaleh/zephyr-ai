@@ -7,6 +7,7 @@ import { ok, strictEqual } from 'node:assert/strict';
 import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { after, before, describe, it } from 'node:test';
 
 import { LATEST_PROTOCOL_VERSION } from '../src/protocol.ts';
@@ -15,6 +16,19 @@ const REPO = resolve(process.cwd(), '..', '..');
 const SERVER = join(REPO, 'plugin', 'mcp', 'zephyr-mcp.mjs');
 const INDEX = process.env['ZEPHYR_AI_INDEX'] ?? join(REPO, 'index', 'zephyr.db');
 const ready = existsSync(SERVER) && existsSync(INDEX);
+
+/** The tree the index under test was built from, as it recorded it. */
+function indexedTree(): string {
+  const db = new DatabaseSync(INDEX, { readOnly: true });
+  try {
+    const row = db.prepare('SELECT value FROM meta WHERE key = ?').get('source_path') as
+      | { value: string }
+      | undefined;
+    return row?.value ?? '';
+  } finally {
+    db.close();
+  }
+}
 if (process.env.ZEPHYR_AI_RELEASE_TEST === '1' && !ready) {
   throw new Error('Release tests require the built MCP bundle and rebuilt Zephyr index.');
 }
@@ -271,13 +285,13 @@ describe('MCP server', { skip: !ready && 'run `npm run build` and build the inde
     it('lists tools with schemas', async () => {
       const res = await client.request('tools/list');
       const tools = res.result?.['tools'] as { name: string; description: string; inputSchema: unknown }[];
-      strictEqual(tools.length, 13);
+      strictEqual(tools.length, 14);
       for (const tool of tools) {
         ok(tool.description.length > 60, `${tool.name} needs a substantial description`);
         ok(tool.inputSchema, `${tool.name} needs an inputSchema`);
       }
       const names = tools.map((t) => t.name);
-      for (const expected of ['search_kconfig', 'get_binding', 'search_boards', 'index_status']) {
+      for (const expected of ['search_kconfig', 'get_binding', 'search_boards', 'get_source', 'index_status']) {
         ok(names.includes(expected), `expected tool ${expected}`);
       }
     });
@@ -368,6 +382,19 @@ describe('MCP server', { skip: !ready && 'run `npm run build` and build the inde
       ok(res.text.length < 20000, `response was ${res.text.length} characters`);
     });
 
+    it('lists the alternatives in a choice', async () => {
+      // Naming SETTINGS_BACKEND without its members is what sent an agent to
+      // grep subsys/settings/Kconfig for the backends it could pick from.
+      const res = await client.call('get_kconfig', { name: 'SETTINGS_NVS' });
+      strictEqual(res.structured['choice'], 'SETTINGS_BACKEND');
+      const members = res.structured['choiceMembers'] as { name: string }[];
+      ok(members.some((m) => m.name === 'CONFIG_SETTINGS_FCB'));
+      ok(members.some((m) => m.name === 'CONFIG_SETTINGS_FILE'));
+      ok(!members.some((m) => m.name === 'CONFIG_SETTINGS_NVS'), 'the symbol is not its own sibling');
+      ok(res.text.includes('Alternatives in this choice'));
+      ok(res.text.includes('CONFIG_SETTINGS_FCB'), res.text.slice(0, 400));
+    });
+
     it('does not truncate a symbol with a single definition', async () => {
       const res = await client.call('get_kconfig', { name: 'CONFIG_BT_PERIPHERAL' });
       strictEqual(res.structured['definitionsTruncated'], false);
@@ -455,6 +482,87 @@ describe('MCP server', { skip: !ready && 'run `npm run build` and build the inde
       strictEqual(res.structured['found'], true);
       ok(res.text.includes('No return description is present'));
       ok(res.text.includes('does not prove the call cannot fail'));
+    });
+
+    it('lists the members of an enum', async () => {
+      // Returning the enum as an opaque type is what sent an agent to grep
+      // display.h for the values it is allowed to pass.
+      const res = await client.call('get_api', { name: 'display_pixel_format' });
+      strictEqual(res.structured['found'], true);
+      strictEqual(res.structured['kind'], 'enum');
+      const members = res.structured['members'] as { name: string; brief: string }[];
+      ok(members.length >= 10, `expected the full member list, got ${members.length}`);
+      ok(members.some((m) => m.name === 'PIXEL_FORMAT_RGB_565'));
+      ok(res.text.includes('Members'));
+      ok(res.text.includes('PIXEL_FORMAT_RGB_565'), res.text.slice(0, 400));
+    });
+
+    it('resolves an attribute-decorated enum to its definition', async () => {
+      // `enum __packed bt_conn_type` resolved to the struct field that uses the
+      // type: wrong line, a field's signature, and no members.
+      const res = await client.call('get_api', { name: 'bt_conn_type' });
+      strictEqual(res.structured['kind'], 'enum');
+      strictEqual(res.structured['line'], 523);
+      ok(
+        (res.structured['members'] as { name: string }[]).some((m) => m.name === 'BT_CONN_TYPE_LE'),
+      );
+    });
+  });
+
+  describe('source tool', () => {
+    it('returns a line range read from the indexed commit', async () => {
+      const res = await client.call('get_source', {
+        path: 'include/zephyr/drivers/display.h',
+        start: 49,
+        end: 49,
+      });
+      strictEqual(res.structured['found'], true);
+      // Read from the object database, so a checkout that has moved on since
+      // the index was built still yields the indexed revision.
+      strictEqual(res.structured['verifiedAtCommit'], true);
+      strictEqual(res.structured['start'], 49);
+      strictEqual(res.structured['end'], 49);
+      ok(String(res.structured['content']).includes('enum display_pixel_format'));
+      ok(
+        String(res.structured['reference']).startsWith('zephyrproject-rtos/zephyr@'),
+        `reference was ${String(res.structured['reference'])}`,
+      );
+      ok(res.text.includes('#L49-L49'));
+    });
+
+    it('accepts an absolute path inside the indexed tree', async () => {
+      // A model pasting a path it read from its own shell supplies an absolute
+      // one; refusing it would be a pointless round trip.
+      const res = await client.call('get_source', { path: join(indexedTree(), 'VERSION') });
+      strictEqual(res.structured['path'], 'VERSION');
+      ok(String(res.structured['content']).includes('VERSION_MAJOR'));
+    });
+
+    it('refuses to leave the indexed tree', async () => {
+      for (const path of ['../../etc/passwd', '/etc/passwd', 'include/../../../etc/passwd']) {
+        const res = await client.call('get_source', { path });
+        strictEqual(res.isError, true, `${path} should be refused`);
+      }
+    });
+
+    it('reports a missing path and a directory as correctable errors', async () => {
+      const missing = await client.call('get_source', { path: 'include/zephyr/drivers/nope.h' });
+      strictEqual(missing.isError, true);
+      ok(missing.text.includes('does not exist'));
+
+      const directory = await client.call('get_source', { path: 'include/zephyr/drivers' });
+      strictEqual(directory.isError, true);
+      ok(directory.text.includes('is a directory'));
+    });
+
+    it('truncates a large file and says where to resume', async () => {
+      const res = await client.call('get_source', {
+        path: 'include/zephyr/drivers/display.h',
+        max_chars: 400,
+      });
+      strictEqual(res.structured['truncated'], true);
+      ok(Number(res.structured['end']) < Number(res.structured['totalLines']));
+      ok(res.text.includes(`start: ${Number(res.structured['end']) + 1}`));
     });
   });
 

@@ -3,10 +3,10 @@
 A Claude Code plugin for grounded Zephyr RTOS firmware development, with focused
 guidance for STM32 and ESP32 targets.
 
-The plugin combines a project-scoped SQLite knowledge index, thirteen MCP tools,
-fifteen workflow skills, four specialist agents, and conservative edit hooks. Exact
-answers identify the Zephyr source context that supports them; catalogue misses are
-reported as uncertainty unless coverage proves otherwise.
+The plugin combines a project-scoped SQLite knowledge index, fourteen MCP tools,
+fifteen workflow skills, four specialist agents, and conservative edit and build
+hooks. Exact answers identify the Zephyr source context that supports them;
+catalogue misses are reported as uncertainty unless coverage proves otherwise.
 
 ## Why it exists
 
@@ -80,6 +80,7 @@ ZEPHYR_AI_INDEX="$PWD/index/zephyr.db" claude --plugin-dir "$PWD/plugin"
 | `search_api` / `get_api` | Public C declarations, parameters, return contracts, groups, and Doxygen anchors when semantic XML is used |
 | `search_samples` / `get_sample` | Twister metadata, platform evidence, README, configuration, overlays, and source files |
 | `search_docs` / `get_doc` | Section-level documentation with resolved includes, source origins, and official URLs |
+| `get_source` | Any file in the indexed tree, read at the commit the index was built from, with a line range and a citable reference |
 | `index_status` | Schema, builder, commit, source-tree/module fingerprint, coverage, project/manifest match, and stored-index usage |
 
 ### Skills and agents
@@ -105,12 +106,22 @@ the user's model selection.
 ### Hooks
 
 - `SessionStart` validates schema, descriptor fingerprint, project identity, and
-  Zephyr commit and makes stale or missing validation visible.
-- `PostToolUse` reads the final edited Kconfig file inside the canonical project root,
-  and only for a recognisably Zephyr project. It handles line continuations and
-  `is not set` syntax and reports final-file line numbers. It is silent unless it has a
-  finding — including when no index is available, which SessionStart reports once per
-  session rather than on every edit.
+  Zephyr commit and makes stale or missing validation visible. In an empty directory
+  it names the prerequisites for building an index, which is the state a first-time
+  user starts in.
+- `PostToolUse` on an edit reads the final file inside the canonical project root, and
+  only for a recognisably Zephyr project. For Kconfig it handles line continuations and
+  `is not set` syntax and reports final-file line numbers. For `.dts`, `.dtsi`, and
+  `.overlay` it reports a `compatible` that misspells an indexed one; a compatible that
+  is merely absent is not reported, because applications legitimately declare their own.
+  Property names are left to `get_binding`, which is the only thing that can know which
+  binding owns a property.
+- `PostToolUse` on Bash recognises a failed Zephyr build and names the `build-triage`
+  agent together with the lookup that fits the failure class. It requires both a build
+  command and a failing result, so an unrelated command that fails is silent.
+
+Every hook is silent unless it has a finding — including when no index is available,
+which SessionStart reports once per session rather than on every edit.
 
 ## What the index covers
 

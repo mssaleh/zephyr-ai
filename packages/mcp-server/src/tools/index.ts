@@ -8,6 +8,7 @@ import { getBinding, searchBindings } from './devicetree.ts';
 import { getDoc, searchDocs } from './docs.ts';
 import { getKconfig, searchKconfig } from './kconfig.ts';
 import { getSample, searchSamples } from './samples.ts';
+import { getSource } from './source.ts';
 import { indexStatus } from './status.ts';
 
 /**
@@ -27,6 +28,7 @@ const FACTORIES: ToolFactory[] = [
   getSample,
   searchDocs,
   getDoc,
+  getSource,
   indexStatus,
 ];
 

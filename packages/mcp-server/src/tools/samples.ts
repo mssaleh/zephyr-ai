@@ -3,6 +3,7 @@ import { ToolError } from '../protocol.ts';
 import {
   type ToolFactory,
   catalogueMiss,
+  fenceLang,
   joinSections,
   limitSchema,
   noResults,
@@ -11,17 +12,6 @@ import {
   result,
   section,
 } from './common.ts';
-
-/** Language hint for fencing a sample file. */
-function fenceLang(path: string): string {
-  if (path.endsWith('.c') || path.endsWith('.h')) return 'c';
-  if (path.endsWith('.cpp') || path.endsWith('.hpp')) return 'cpp';
-  if (path.endsWith('.overlay') || path.endsWith('.dts') || path.endsWith('.dtsi')) return 'dts';
-  if (path.endsWith('.conf')) return 'kconfig';
-  if (path.endsWith('CMakeLists.txt')) return 'cmake';
-  if (path.endsWith('.yaml') || path.endsWith('.yml')) return 'yaml';
-  return '';
-}
 
 export const searchSamples: ToolFactory = (index) => ({
   name: 'search_samples',

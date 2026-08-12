@@ -103,6 +103,7 @@ def member_record(member, compound, compound_id, compound_kind, group=None):
         "doxygenId": member_id,
         "compoundId": compound_id,
         "docAnchor": "%s.html#%s" % (compound_id, member_id) if member_id else "%s.html" % compound_id,
+        "parentSymbol": None,
     }
     for item in member.findall(".//parameterlist[@kind='retval']/parameteritem"):
         desc = text(item.find("parameterdescription"))
@@ -217,7 +218,21 @@ def main():
                 for enum_value in member.findall("enumvalue"):
                     enum_record = member_record(enum_value, compound, compound_id, compound_kind, group)
                     enum_record["kind"] = "enumvalue"
-                    enum_record["signature"] = enum_record["name"]
+                    # `compoundId` is the containing group or file, shared with
+                    # every sibling, so the owning enum is recorded by name.
+                    enum_record["parentSymbol"] = record["name"]
+                    # An <enumvalue> carries no <location>, so it would inherit
+                    # the compound's — empty for a group. The member is declared
+                    # inside its enum, making the enum's file the true answer
+                    # and its line the closest available one.
+                    enum_record["header"] = record["header"]
+                    enum_record["line"] = record["line"]
+                    initializer = text(enum_value.find("initializer"))
+                    enum_record["signature"] = (
+                        "%s %s" % (enum_record["name"], initializer)
+                        if initializer
+                        else enum_record["name"]
+                    )
                     add_symbol(enum_record)
 
     for group in groups:

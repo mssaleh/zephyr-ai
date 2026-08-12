@@ -21,14 +21,18 @@ strict override; otherwise the active index for `CLAUDE_PROJECT_DIR` is used. Ca
 
 ## How it behaves
 
-- Thirteen MCP tools search/get Kconfig, bindings, boards, APIs, samples, and docs.
+- Fourteen MCP tools search/get Kconfig, bindings, boards, APIs, samples, and docs, and
+  read any file in the indexed tree at the commit the index was built from.
 - Fifteen skills activate by workflow and query the index before generating firmware.
 - Four specialist agents cover architecture, build triage, devicetree, and review.
 - The edit hook reports only what the catalogue can decide alone: malformed Kconfig
-  syntax, a type mismatch, or assigning a promptless symbol. It never reports a
-  `CONFIG_` symbol or a compatible as missing, because coverage describes the indexed
-  Zephyr tree and not your project, and it is silent outside a Zephyr project or when no
-  index is available. SessionStart reports an unusable index once per session.
+  syntax, a type mismatch, assigning a promptless symbol, or a devicetree `compatible`
+  that misspells an indexed one. It never reports a `CONFIG_` symbol or a compatible as
+  missing, because coverage describes the indexed Zephyr tree and not your project, and
+  it is silent outside a Zephyr project or when no index is available. SessionStart
+  reports an unusable index once per session.
+- The build hook recognises a failed Zephyr build and names the agent and lookup that
+  fit the failure. An unrelated failing command produces nothing.
 
 `--modules` currently extends Kconfig and binding coverage only. Ordinary workspace
 indexes auto-detect conventional Doxygen XML output when it exists and otherwise use

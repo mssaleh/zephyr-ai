@@ -31,6 +31,21 @@
             "statusMessage": "Validating Zephyr configuration"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "--disable-warning=ExperimentalWarning",
+              "${CLAUDE_PLUGIN_ROOT}/scripts/check-build-failure.mjs"
+            ],
+            "timeout": 10,
+            "statusMessage": "Checking Zephyr build result"
+          }
+        ]
       }
     ]
   }

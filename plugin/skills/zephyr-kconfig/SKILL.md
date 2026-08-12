@@ -4,7 +4,7 @@ description: Configure a Zephyr application with Kconfig. Use when editing prj.c
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.1.1"
+  version: "0.2.0"
 ---
 
 # Kconfig in Zephyr

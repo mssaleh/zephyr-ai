@@ -22,6 +22,11 @@ const INSTRUCTIONS = [
   '  inherit almost everything through include: chains, so the binding file is not the answer.',
   '- Wrong board target -> search_boards. Targets are qualified, e.g. esp32s3_devkitc/esp32s3/procpu.',
   '',
+  'When you need the source itself rather than a symbol — a board .dts, an SoC Kconfig, a driver',
+  'implementation, a runner script — use get_source. It reads the file at the commit this index was',
+  'built from. Fetching it from a web search or a repository default branch describes a different',
+  'Zephyr, which is the drift these tools exist to prevent.',
+  '',
   'Call index_status if answers seem wrong for the project: it reports the indexed Zephyr version',
   'and detects a west workspace pinned to a different one.',
 ].join('\n');

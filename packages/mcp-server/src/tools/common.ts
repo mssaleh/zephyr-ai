@@ -118,6 +118,21 @@ export function catalogueMiss(
   );
 }
 
+/** Language hint for fencing a file from the Zephyr tree. */
+export function fenceLang(path: string): string {
+  if (path.endsWith('.c') || path.endsWith('.h')) return 'c';
+  if (path.endsWith('.cpp') || path.endsWith('.hpp')) return 'cpp';
+  if (path.endsWith('.overlay') || path.endsWith('.dts') || path.endsWith('.dtsi')) return 'dts';
+  if (path.endsWith('.conf') || path.endsWith('_defconfig')) return 'kconfig';
+  if (path.endsWith('CMakeLists.txt') || path.endsWith('.cmake')) return 'cmake';
+  if (path.endsWith('.yaml') || path.endsWith('.yml')) return 'yaml';
+  if (path.endsWith('.py')) return 'python';
+  if (path.endsWith('.sh')) return 'bash';
+  if (path.endsWith('.rst')) return 'rst';
+  if (path.endsWith('.ld') || path.endsWith('.S') || path.endsWith('.s')) return '';
+  return '';
+}
+
 export const STRING = { type: 'string' } as const;
 
 export function limitSchema(fallback: number, max = 50): Record<string, unknown> {

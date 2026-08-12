@@ -184,11 +184,39 @@ export const getApi: ToolFactory = (index) => ({
     const returns = json<string[]>(row['returns'], []);
     const retvals = json<{ value: string; description: string }[]>(row['retvals'], []);
 
+    // An enum without its members answers only that the type exists. The
+    // members are what a caller has to pass, and reading them out of the header
+    // is the second of the two lookups this server previously sent to grep.
+    // `ORDER BY id` is declaration order, which carries meaning for flag and
+    // sequence enums.
+    const members =
+      String(row['kind']) === 'enum'
+        ? idx
+          .all(
+            `SELECT name, signature, brief FROM api_symbol
+                WHERE kind = 'enumvalue' AND parent_symbol = ? AND header = ? ORDER BY id`,
+            String(row['name']),
+            String(row['header']),
+          )
+          .map((r) => ({
+            name: String(r['name']),
+            signature: String(r['signature'] ?? ''),
+            brief: String(r['brief'] ?? ''),
+          }))
+        : [];
+
     const text = joinSections([
       `# ${String(row['name'])}${Number(row['deprecated']) === 1 ? '  ⚠️ DEPRECATED' : ''}`,
       `\`\`\`c\n${String(row['signature'])}\n\`\`\``,
       row['brief'] ? String(row['brief']) : '_No brief description is present in the indexed API source._',
       row['detail'] ? String(row['detail']) : '_No detailed documentation is present; this does not imply the API has no constraints or failure modes._',
+      section(
+        'Members',
+        members.map((m) => `\`${m.signature || m.name}\`${m.brief ? ` — ${m.brief}` : ''}`),
+      ),
+      String(row['kind']) === 'enum' && members.length === 0
+        ? '_No members are recorded for this enum in the indexed API source._'
+        : undefined,
       section(
         'Parameters',
         params.map(
@@ -227,6 +255,7 @@ export const getApi: ToolFactory = (index) => ({
       params,
       returns,
       retvals,
+      members,
       group: row['api_group'] ?? null,
       header: row['header'],
       line: row['line'],

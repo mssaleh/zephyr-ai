@@ -4,7 +4,7 @@ description: Core workflow for writing, building, and debugging Zephyr RTOS firm
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.1.1"
+  version: "0.2.0"
 ---
 
 # Zephyr development
@@ -34,9 +34,27 @@ from a specific Zephyr tree. Treat exact results as version-exact only when
 | A `west build -b` target | `search_boards` | Targets are qualified: `esp32s3_devkitc/esp32s3/procpu`, not `esp32s3_devkitc` |
 | A Zephyr API call | `get_api` | Shows the indexed return contract and documented errno values; missing prose is uncertainty |
 | Anything unfamiliar | `search_samples` | A sample with explicit Twister platform evidence is a better starting point than assembled prose |
+| The source itself — a board `.dts`, an SoC Kconfig, a driver, a runner script | `get_source` | Returns the file at the indexed commit; a copy fetched from the web is a different Zephyr |
 
 Run `index_status` when answers look wrong for the project — it reports the
 indexed version and detects a west workspace pinned to a different one.
+
+## The other half: after you write
+
+Looking things up first prevents the errors that are cheap to prevent. The rest
+surface after the code exists, and each has an agent that is better at it than a
+straight-line continuation of your own reasoning.
+
+| What just happened | Do this |
+| --- | --- |
+| A `west build` failed | Run the `build-triage` agent. It reads the build output *and* the generated artefacts — `build/zephyr/.config`, `build/zephyr/zephyr.dts` — which is where the real cause usually is |
+| You wrote a driver, an ISR, or anything shared between contexts | Run `firmware-reviewer` before calling it done. Interrupt-context violations and init-order races pass testing and fail in the field |
+| You edited a `.dts`, `.dtsi`, `.overlay`, or a binding | Run `devicetree-specialist`, or at minimum confirm the result in the compiled tree at `build/zephyr/zephyr.dts` — the source overlay is not the answer |
+| You are choosing hardware or structuring a new product | Run `zephyr-architect` before writing code, not after |
+
+Do not treat a failed build as a prompt to guess and rebuild. The second and
+third attempts cost more than one triage pass, and a fix that happens to compile
+can leave the wrong symbol set in place.
 
 ## Application layout
 
@@ -120,6 +138,9 @@ the source documents them; an empty list does not prove the call cannot fail.
    the lookup tools and the build.
 4. **Build before claiming it works.** `west build -b <target> <app>`. Firmware
    that has not been compiled has not been written.
+5. **Triage failures, review what compiled.** A failed build goes to
+   `build-triage`; a driver or ISR that now compiles goes to `firmware-reviewer`
+   before it is called done.
 
 ## Related skills
 

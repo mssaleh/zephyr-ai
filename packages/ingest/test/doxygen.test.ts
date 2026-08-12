@@ -127,6 +127,137 @@ describe('parseDeclaration', () => {
     strictEqual(d.name, 'gpio_callback_handler_t');
   });
 
+  it('recognises a function-type typedef declared without the pointer', () => {
+    // `typedef void (fn_t)(args)` is valid C and appears in Zephyr; reading it
+    // as a function named it after its return type.
+    const d = parseDeclaration('typedef bool (npf_local_in_fn_t)(struct net_pkt *pkt, void *data);')!;
+    strictEqual(d.kind, 'typedef');
+    strictEqual(d.name, 'npf_local_in_fn_t');
+  });
+
+  it('skips attribute macros between a record keyword and its tag', () => {
+    // `enum __packed bt_conn_type` filed the type under `__packed`, so the real
+    // enum and its documentation were unreachable by name.
+    const d = parseDeclaration('enum __packed bt_conn_type {')!;
+    strictEqual(d.kind, 'enum');
+    strictEqual(d.name, 'bt_conn_type');
+    strictEqual(parseDeclaration('enum __deprecated bt_hci_bus {')!.name, 'bt_hci_bus');
+    strictEqual(parseDeclaration('struct __aligned(4) demo_buf {')!.name, 'demo_buf');
+  });
+
+  it('rejects a use of a record type as a definition of it', () => {
+    // A struct field whose type is an enum otherwise overwrites the enum's own
+    // location and brief with the field's.
+    strictEqual(parseDeclaration('enum bt_conn_type type;'), null);
+    strictEqual(parseDeclaration('enum display_pixel_format current_pixel_format;'), null);
+    strictEqual(parseDeclaration('struct k_mutex lock;'), null);
+  });
+
+  it('rejects a function-pointer member but keeps a callback parameter', () => {
+    // These name the member after its return type: `void`, `int`, and so on.
+    strictEqual(parseDeclaration('void (*const destroy)(struct net_buf *buf);'), null);
+    strictEqual(parseDeclaration('int (*read)(const struct device *dev, uint8_t *buf);'), null);
+    strictEqual(parseDeclaration('int demo_register(void (*cb)(void), int n);')!.name, 'demo_register');
+  });
+
+  it('keeps functions that return a record type', () => {
+    // The record branch runs first, so these must fall through to it intact.
+    strictEqual(parseDeclaration('struct net_buf *net_buf_alloc(struct net_buf_pool *pool);')!.name, 'net_buf_alloc');
+    strictEqual(parseDeclaration('enum bt_conn_type bt_conn_get_type(const struct bt_conn *conn);')!.name, 'bt_conn_get_type');
+    strictEqual(parseDeclaration('const struct device *device_get_binding(const char *name);')!.name, 'device_get_binding');
+  });
+
+  it('keeps a forward declaration', () => {
+    strictEqual(parseDeclaration('struct device;')!.name, 'device');
+  });
+});
+
+describe('enum members', () => {
+  const HEADER = [
+    '/** @brief Pixel formats */',
+    'enum display_pixel_format {',
+    '\t/**',
+    '\t * @brief 24-bit RGB format with 8 bits per component.',
+    '\t */',
+    '\tPIXEL_FORMAT_RGB_888 = BIT(0), /**< 24-bit RGB */',
+    '\tPIXEL_FORMAT_MONO01 = BIT(1), /**< Monochrome (0=Black 1=White) */',
+    '#if defined(CONFIG_DEMO)',
+    '\tPIXEL_FORMAT_GATED = BIT(2),',
+    '#endif',
+    '\t/** This and higher values are display specific. */',
+    '\tPIXEL_FORMAT_PRIV_START = (PIXEL_FORMAT_BGRA_8888 << 1)',
+    '};',
+  ].join('\n');
+
+  it('indexes each member against its parent enum', () => {
+    const { symbols } = parseHeader(HEADER, 'include/zephyr/drivers/display.h');
+    const members = symbols.filter((s) => s.kind === 'enumvalue');
+    deepStrictEqual(
+      members.map((m) => m.name),
+      [
+        'PIXEL_FORMAT_RGB_888',
+        'PIXEL_FORMAT_MONO01',
+        'PIXEL_FORMAT_GATED',
+        'PIXEL_FORMAT_PRIV_START',
+      ],
+    );
+    ok(members.every((m) => m.parentSymbol === 'display_pixel_format'));
+    // The enum itself is indexed once, not once per member.
+    strictEqual(symbols.filter((s) => s.name === 'display_pixel_format').length, 1);
+  });
+
+  it('keeps a value expression whose commas are parenthesised', () => {
+    const members = parseHeader(HEADER, 'h').symbols.filter((s) => s.kind === 'enumvalue');
+    strictEqual(members[0]!.signature, 'PIXEL_FORMAT_RGB_888 = BIT(0)');
+    strictEqual(
+      members[3]!.signature,
+      'PIXEL_FORMAT_PRIV_START = (PIXEL_FORMAT_BGRA_8888 << 1)',
+    );
+  });
+
+  it('reads both documentation forms and prefers the richer one', () => {
+    const members = parseHeader(HEADER, 'h').symbols.filter((s) => s.kind === 'enumvalue');
+    // A block `@brief` outranks the trailing one-liner where both are present.
+    strictEqual(members[0]!.brief, '24-bit RGB format with 8 bits per component.');
+    // A trailing `/**< */` documents the member before it, across the comma.
+    strictEqual(members[1]!.brief, 'Monochrome (0=Black 1=White)');
+    // An untagged block is the member's brief, not its detail.
+    strictEqual(members[3]!.brief, 'This and higher values are display specific.');
+  });
+
+  it('ends the body at the real brace, not a Doxygen group marker', () => {
+    // usb_audio.h opens an `@{` group inside the enum and never closes it
+    // before the enum ends. Counting braces in comments runs the body past its
+    // terminator and into whatever declaration follows.
+    const header = [
+      '/** @brief Terminal types */',
+      'enum usb_audio_terminal_types {',
+      '\t/**',
+      '\t * @name USB Terminal Types',
+      '\t * @{',
+      '\t */',
+      '\tUSB_AUDIO_USB_UNDEFINED = 0x0100,',
+      '};',
+      '',
+      '/** @brief Direction */',
+      'enum usb_audio_direction {',
+      '\tUSB_AUDIO_IN = 0x00,',
+      '};',
+    ].join('\n');
+    const { symbols } = parseHeader(header, 'include/zephyr/usb/class/usb_audio.h');
+    deepStrictEqual(
+      symbols.filter((s) => s.kind === 'enumvalue').map((s) => s.name),
+      ['USB_AUDIO_USB_UNDEFINED', 'USB_AUDIO_IN'],
+    );
+    // The declaration after the unterminated group is still reached.
+    ok(symbols.some((s) => s.name === 'usb_audio_direction' && s.kind === 'enum'));
+  });
+
+  it('does not emit artefacts from member initialisers', () => {
+    const { symbols } = parseHeader(HEADER, 'h');
+    ok(!symbols.some((s) => s.name === 'BIT'));
+    ok(!symbols.some((s) => s.kind === 'function'));
+  });
 });
 
 describe('parseHeader', () => {
@@ -230,7 +361,13 @@ describe('Doxygen XML adapter', () => {
       });
       strictEqual(fn.doxygenId, 'group__gpio_1a_fn');
       strictEqual(fn.docAnchor, 'group__gpio.html#group__gpio_1a_fn');
-      ok(api.symbols.some((symbol) => symbol.name === 'GPIO_DEMO' && symbol.kind === 'enumvalue'));
+      const value = api.symbols.find((symbol) => symbol.name === 'GPIO_DEMO')!;
+      strictEqual(value.kind, 'enumvalue');
+      // The owning enum, which `compoundId` cannot identify: it names the
+      // containing group, which every sibling symbol here also carries.
+      strictEqual(value.parentSymbol, 'gpio_mode');
+      strictEqual(value.compoundId, 'group__gpio');
+      strictEqual(value.signature, 'GPIO_DEMO = 1');
       strictEqual(
         api.report.discovered,
         api.report.indexed + api.report.intentionallyExcluded.length + api.report.errors.length,
@@ -285,5 +422,45 @@ describe('against the real Zephyr tree', {
     strictEqual(fn!.brief, 'Put the current thread to sleep.');
     ok(!fn!.brief!.includes('@a'), 'inline markup should be stripped');
     strictEqual(fn!.group, 'thread_apis');
+  });
+
+  it('resolves an attribute-decorated enum to its definition, not a field using it', () => {
+    // `enum __packed bt_conn_type` at conn.h:523 was indexed as `__packed`,
+    // leaving `bt_conn_type` to resolve to the `struct bt_conn_info` field that
+    // merely has that type — wrong line, wrong signature, no documentation.
+    const conn = join(ZEPHYR, 'include', 'zephyr', 'bluetooth', 'conn.h');
+    const { symbols } = parseHeader(readFileSync(conn, 'utf8'), 'include/zephyr/bluetooth/conn.h');
+    const found = symbols.filter((s) => s.name === 'bt_conn_type');
+    strictEqual(found.length, 1);
+    strictEqual(found[0]!.kind, 'enum');
+    strictEqual(found[0]!.line, 523);
+    ok(!symbols.some((s) => s.name === '__packed'));
+
+    const members = symbols.filter((s) => s.parentSymbol === 'bt_conn_type');
+    ok(
+      members.some((m) => m.name === 'BT_CONN_TYPE_LE' && m.brief === 'LE Connection Type'),
+      'enum members carry their trailing documentation',
+    );
+  });
+
+  it('indexes display_pixel_format once, with its members', () => {
+    const display = join(ZEPHYR, 'include', 'zephyr', 'drivers', 'display.h');
+    const { symbols } = parseHeader(readFileSync(display, 'utf8'), 'include/zephyr/drivers/display.h');
+    strictEqual(symbols.filter((s) => s.name === 'display_pixel_format').length, 1);
+    const members = symbols.filter((s) => s.parentSymbol === 'display_pixel_format');
+    ok(members.some((m) => m.name === 'PIXEL_FORMAT_RGB_565'), 'RGB_565 is a member');
+    ok(members.every((m) => m.brief), 'every member is documented');
+  });
+
+  it('names no symbol after a C type keyword across the public headers', () => {
+    // Function-pointer struct members were indexed under their return type,
+    // putting 595 symbols named `void` into the catalogue and the FTS index.
+    const api = collectApi(ZEPHYR);
+    const bogus = api.symbols.filter((s) =>
+      ['void', 'int', 'char', 'bool', 'unsigned', 'size_t', '__packed', '__deprecated'].includes(
+        s.name,
+      ),
+    );
+    deepStrictEqual(bogus.map((s) => `${s.name} ${s.header}:${s.line}`), []);
   });
 });

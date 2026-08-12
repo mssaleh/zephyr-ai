@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /** SessionStart index compatibility and project-identity check. */
-import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
@@ -14,7 +14,7 @@ import {
   validIndexDescriptor,
 } from './index-paths.mjs';
 
-const EXPECTED_SCHEMA = 5;
+const EXPECTED_SCHEMA = 6;
 const EXPECTED_DESCRIPTOR = 2;
 
 function treeVersion(root) {
@@ -47,6 +47,22 @@ function westZephyrBase(workspace) {
   }
   const fallback = join(workspace, 'zephyr');
   return existsSync(join(fallback, 'VERSION')) ? fallback : null;
+}
+
+/**
+ * Whether the project root holds nothing but dot-entries.
+ *
+ * Dot-entries are ignored because `.git`, `.claude`, and editor state say
+ * nothing about what the directory is for. Anything else means the user has a
+ * project of some kind already, and guessing that it wants Zephyr would be
+ * nagging.
+ */
+function isEmptyDirectory(root) {
+  try {
+    return readdirSync(root).every((entry) => entry.startsWith('.'));
+  } catch {
+    return false;
+  }
 }
 
 function emit(context) {
@@ -98,6 +114,16 @@ async function main() {
       emit(
         'The Zephyr lookup and edit-validation services have no compatible project index, but ZEPHYR_BASE names a usable tree. ' +
           'Use the zephyr-index skill to build it before relying on generated CONFIG_, binding, board, or API facts.',
+      );
+    } else if (isEmptyDirectory(projectRoot)) {
+      // An empty directory is the fresh-user state and the one that most needs
+      // this. Staying silent here is only correct in a directory that is
+      // demonstrably some other kind of project, which an empty one is not.
+      emit(
+        'This project has no Zephyr index, no west workspace, and no ZEPHYR_BASE, so Zephyr lookups and edit ' +
+          'validation are unavailable. If this is going to be Zephyr firmware, use the zephyr-index skill first: ' +
+          'in an empty directory it can fetch the pinned Zephyr tree and build the index without an existing ' +
+          'workspace. Building it needs Node 24+ and Python 3.12+ with PyYAML.',
       );
     }
     return;

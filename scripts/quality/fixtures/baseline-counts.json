@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 5,
+  "schemaVersion": 6,
   "zephyrVersion": "4.4.2",
   "zephyrCommit": "dccb09599635bdff17633fa7e9dab014b91dce90",
   "counts": {
@@ -12,7 +12,7 @@
     "soc": 1475,
     "sample": 610,
     "sample_file": 5930,
-    "api_symbol": 33814,
+    "api_symbol": 37464,
     "api_group": 1006
   }
 }

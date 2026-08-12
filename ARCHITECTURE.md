@@ -199,18 +199,32 @@ including Bash. The build-triage and devicetree agents retain the tools required
 their operating mode.
 
 SessionStart checks schema, descriptor fingerprint, project, commit, and dirty tree
-state. PostToolUse reads the final Kconfig file within the real project root, and only
-when the project is recognisably Zephyr — a west workspace, an exported `ZEPHYR_BASE`, a
-project-scoped index, or a `find_package(Zephyr` in the root `CMakeLists.txt`. It reports
-one class of problem: definitive syntax, type, and promptless-assignment errors.
+state, and in an empty directory names what building an index needs. PostToolUse reads
+the final edited file within the real project root, and only when the project is
+recognisably Zephyr — a west workspace, an exported `ZEPHYR_BASE`, a project-scoped
+index, or a `find_package(Zephyr` in the root `CMakeLists.txt`. For Kconfig it reports
+definitive syntax, type, and promptless-assignment errors.
 
 Existence is deliberately not among them. Coverage completeness describes the indexed
 Zephyr tree and the modules named at build time; a project legitimately declares its own
 Kconfig and bindings through `DTS_ROOT` and out-of-tree module roots, so a catalogue miss
-is not evidence of absence. Devicetree is not validated at all until the index can be
-built from the project's own binding roots. Anything the validator cannot decide — no
-index, an unreadable file, an unrecognised project — produces no output and does not
-block; SessionStart carries the one visible report of an unusable index.
+is not evidence of absence.
+
+Devicetree is validated on the one question a catalogue can settle without a parse:
+whether a `compatible` is a misspelling. An unindexed compatible sits nine or more edits
+from anything in the catalogue, a slip such as `sitronix,st7789` for `sitronix,st7789v`
+sits at one, and requiring the vendor prefix to match separates them further. Absence
+alone is never reported. Property names need a real devicetree parse to know which node —
+and so which binding — owns them; matching names globally produces false positives on
+`aliases`, `chosen`, and label assignments, so they stay with `get_binding`.
+
+A third hook watches Bash for a failed Zephyr build, which is otherwise invisible to the
+plugin: it requires both a build command and a failing result before naming
+`build-triage` and the lookup matching the failure class.
+
+Anything a hook cannot decide — no index, an unreadable file, a path outside the project,
+an unrecognised project — produces no output and does not block; SessionStart carries the
+one visible report of an unusable index.
 
 ## Distribution and safety
 

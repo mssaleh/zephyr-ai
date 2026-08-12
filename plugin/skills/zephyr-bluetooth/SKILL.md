@@ -4,7 +4,7 @@ description: Build Bluetooth Low Energy firmware on Zephyr. Use when implementin
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.1.1"
+  version: "0.2.0"
 ---
 
 # Bluetooth LE

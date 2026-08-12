@@ -1,12 +1,12 @@
 ---
 name: zephyr-index
-description: Build or refresh the project-scoped Zephyr reference index that the zephyr MCP server queries. Use when lookup tools report no index, index_status reports a commit or context mismatch, after west update, or when answers must reflect the active workspace and modules.
+description: Build or refresh the project-scoped Zephyr reference index that the zephyr MCP server queries. Use when starting Zephyr firmware in an empty directory, when lookup tools report no index, when index_status reports a commit or context mismatch, after west update, or when answers must reflect the active workspace and modules.
 license: Apache-2.0
 compatibility: Requires Node.js 24+, Python 3.12+ with PyYAML, and a complete Zephyr source tree.
 allowed-tools: Bash(node:*) Bash(west:*) Bash(ls:*) Bash(test:*) Read
 metadata:
   author: zephyr-ai
-  version: "0.1.1"
+  version: "0.2.0"
 ---
 
 # Build the Zephyr index
@@ -25,8 +25,23 @@ unchanged.
 
 ## 1. Find the Zephyr tree
 
-Try these in order and stop at the first that resolves to a directory containing
-a `VERSION` file:
+**Starting from an empty directory, there is nothing to discover — fetch the
+pinned revision.** This is the common first-run case, and the discovery commands
+below cannot succeed in it. The fetch is a large network download, so ask first.
+Only after the user agrees:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/mcp/zephyr-ingest.mjs" \
+  --fetch-pinned \
+  --project-root "${CLAUDE_PROJECT_DIR}" \
+  --plugin-data "${CLAUDE_PLUGIN_DATA}"
+```
+
+That fetches into persistent plugin data and builds the index in one run; continue
+at step 4. Never clone without consent.
+
+Otherwise the project may already have a tree. Try these in order and stop at the
+first that resolves to a directory containing a `VERSION` file:
 
 ```bash
 # A west workspace in or above the project
@@ -39,21 +54,9 @@ echo "$ZEPHYR_BASE"
 ls -d ./zephyr ../zephyr 2>/dev/null
 ```
 
-If none resolves, offer two choices: point to an existing checkout, or fetch the
-revision pinned into this plugin. The fetch is a large network download, so ask
-first. Only after the user agrees, run:
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/mcp/zephyr-ingest.mjs" \
-  --fetch-pinned \
-  --project-root "${CLAUDE_PROJECT_DIR}" \
-  --plugin-data "${CLAUDE_PLUGIN_DATA}"
-```
-
-That command fetches into persistent plugin data and builds the index in one run;
-continue at step 4. If the user declines, ask for a checkout path or use the
-`zephyr-project-setup` skill to create a complete west workspace. Never clone
-without consent.
+If none resolves, offer the pinned fetch above, ask for a path to an existing
+checkout, or use the `zephyr-project-setup` skill to create a complete west
+workspace.
 
 ## 2. Find the HAL modules worth including
 

@@ -1,12 +1,28 @@
 #!/usr/bin/env node
 /** Install the copied marketplace artifact, build its first index, and query it over stdio. */
 import { spawn, spawnSync } from 'node:child_process';
-import { cpSync, existsSync, mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 
 const ROOT = resolve(import.meta.dirname, '..', '..');
+
+/**
+ * The schema this build produces, read from its one declaration.
+ *
+ * Node here has no TypeScript support, so the constant cannot be imported. It
+ * is still read rather than copied: a hardcoded number silently stops testing
+ * the current artifact the moment the schema is bumped.
+ */
+const EXPECTED_SCHEMA = Number(
+  readFileSync(join(ROOT, 'packages', 'shared', 'index-descriptor.ts'), 'utf8').match(
+    /INDEX_SCHEMA_VERSION\s*=\s*(\d+)/,
+  )?.[1],
+);
+if (!Number.isInteger(EXPECTED_SCHEMA)) {
+  throw new Error('Could not read INDEX_SCHEMA_VERSION from packages/shared/index-descriptor.ts.');
+}
 const ZEPHYR = resolve(process.env.ZEPHYR_BASE ?? join(ROOT, '.cache', 'zephyr'));
 if (!existsSync(join(ZEPHYR, 'VERSION'))) throw new Error('Clean-room release testing requires the pinned Zephyr tree.');
 
@@ -108,8 +124,12 @@ try {
   const after = await client.request('tools/call', { name: 'index_status', arguments: {} });
   if (after.result?.isError === true) throw new Error('The live server did not adopt the newly created project index.');
   const descriptor = after.result?.structuredContent?.descriptor;
-  if (descriptor?.zephyrVersion !== '4.4.2' || descriptor?.schemaVersion !== 5) {
-    throw new Error('The copied artifact returned an unexpected index descriptor.');
+  if (descriptor?.zephyrVersion !== '4.4.2' || descriptor?.schemaVersion !== EXPECTED_SCHEMA) {
+    throw new Error(
+      `The copied artifact returned an unexpected index descriptor: ` +
+        `Zephyr ${descriptor?.zephyrVersion}, schema ${descriptor?.schemaVersion} ` +
+        `(expected 4.4.2 and schema ${EXPECTED_SCHEMA}).`,
+    );
   }
   process.stdout.write('clean-room marketplace copy: no index -> built project index -> live MCP query verified\n');
 } finally {

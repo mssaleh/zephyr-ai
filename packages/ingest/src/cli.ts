@@ -713,8 +713,8 @@ function main(): void {
   const insApi = db.prepare(
     `INSERT INTO api_symbol
        (name, kind, signature, brief, detail, params, returns, retvals, api_group,
-        since, deprecated, header, line, doxygen_id, compound_id, doc_anchor)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        since, deprecated, header, line, doxygen_id, compound_id, doc_anchor, parent_symbol)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   for (const sym of api.symbols) {
     insApi.run(
@@ -734,6 +734,7 @@ function main(): void {
       sym.doxygenId ?? null,
       sym.compoundId ?? null,
       sym.docAnchor ?? null,
+      sym.parentSymbol ?? null,
     );
   }
 

@@ -18,6 +18,7 @@ import { after, describe, it } from 'node:test';
 const ROOT = resolve(import.meta.dirname, '..');
 const HOOK = join(ROOT, 'plugin', 'scripts', 'validate-zephyr-edit.mjs');
 const SESSION_HOOK = join(ROOT, 'plugin', 'scripts', 'check-index.mjs');
+const BUILD_HOOK = join(ROOT, 'plugin', 'scripts', 'check-build-failure.mjs');
 const INDEX = process.env.ZEPHYR_AI_INDEX ?? join(ROOT, 'index', 'zephyr.db');
 const TEMPORARY = mkdtempSync(join(tmpdir(), 'zephyr-ai-hooks-'));
 after(() => rmSync(TEMPORARY, { recursive: true, force: true }));
@@ -108,6 +109,10 @@ function runSession({ project, index, pluginData }) {
     delete env.ZEPHYR_AI_INDEX;
     delete env.ZEPHYR_AI_PLUGIN_DATA;
     delete env.CLAUDE_PLUGIN_DATA;
+    // A developer's exported ZEPHYR_BASE would otherwise take the branch ahead
+    // of the empty-directory one and pass the cold-start test for the wrong
+    // reason on their machine only.
+    delete env.ZEPHYR_BASE;
     if (index) env.ZEPHYR_AI_INDEX = index;
     if (pluginData) env.ZEPHYR_AI_PLUGIN_DATA = pluginData;
     const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', SESSION_HOOK], {
@@ -126,6 +131,82 @@ function runSession({ project, index, pluginData }) {
     child.stdin.end('{}');
   });
 }
+
+function runBuild(command, response) {
+  return new Promise((resolvePromise, reject) => {
+    const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', BUILD_HOOK], {
+      cwd: ROOT,
+      env: process.env,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (value) => (stdout += value));
+    child.stderr.on('data', (value) => (stderr += value));
+    child.once('error', reject);
+    child.once('close', (code) => resolvePromise({ code, stdout, stderr }));
+    child.stdin.end(JSON.stringify({ tool_input: { command }, tool_response: response }));
+  });
+}
+
+// Needs no index: the subject is the build result, not the catalogue.
+describe('PostToolUse build failure', () => {
+  it('stays silent for anything that is not a failing Zephyr build', async () => {
+    const quiet = [
+      ['ls -la', { stderr: 'No such file', exit_code: 2 }],
+      ['npm test', { stdout: '1 failing\nerror: nope', exit_code: 1 }],
+      // A build that worked.
+      ['west build -b nucleo_f401re app', { stdout: 'Memory region  Used Size', exit_code: 0 }],
+      // A build the user stopped is not a build that failed.
+      ['west build -b nucleo_f401re app', { stdout: '', interrupted: true }],
+      // Reading a log that quotes an error is not an error.
+      ['grep -r "CMake Error" build/', { stdout: 'CMake Error at x', exit_code: 0 }],
+      // The build has to start a command, not merely appear inside one.
+      ['grep "west build" notes.txt', { stdout: 'CMake Error at x', exit_code: 1 }],
+    ];
+    for (const [command, response] of quiet) {
+      const result = await runBuild(command, response);
+      strictEqual(result.code, 0, `${command} should be silent`);
+      strictEqual(result.stderr, '', `${command} should be silent`);
+    }
+  });
+
+  it('names build-triage and the lookup that fits the failure class', async () => {
+    // PostToolUse must exit 2 with stderr to reach the model at all.
+    const cases = [
+      ['devicetree error: \'pixel-format\' is not a valid property', /get_binding/],
+      ['error: Aborting due to Kconfig warnings', /get_kconfig/],
+      ["undefined reference to `bt_enable'", /search_kconfig/],
+      ['Invalid BOARD; board esp32s3 not found', /search_boards/],
+    ];
+    for (const [output, expected] of cases) {
+      const result = await runBuild('west build -b x app', { stderr: output, exit_code: 1 });
+      strictEqual(result.code, 2, `${output} should block`);
+      match(result.stderr, /build-triage/);
+      match(result.stderr, expected);
+    }
+  });
+
+  it('speaks on a non-zero build even when no signature is recognised', async () => {
+    const result = await runBuild('west build', { stderr: 'something unfamiliar', exit_code: 1 });
+    strictEqual(result.code, 2);
+    match(result.stderr, /build-triage/);
+  });
+
+  it('recognises the build through leading whitespace, chaining, and env prefixes', async () => {
+    for (const command of [
+      '  west build -b nucleo_f401re app',
+      'cd app && west build',
+      'ZEPHYR_BASE=/opt/zephyr west build -b x .',
+      'cmake --build build',
+    ]) {
+      const result = await runBuild(command, { stderr: 'CMake Error at x', exit_code: 1 });
+      strictEqual(result.code, 2, `${command} should be recognised as a build`);
+    }
+  });
+});
 
 describe('PostToolUse Zephyr validation', {
   skip: !existsSync(INDEX) && 'release hook tests require the rebuilt index',
@@ -205,13 +286,15 @@ describe('PostToolUse Zephyr validation', {
     strictEqual(result.stderr, '');
   });
 
-  it('refuses to read paths outside the active project root', async () => {
+  it('is silent for paths outside the active project root', async () => {
+    // The file is never read, but not reading it is a reason to skip rather
+    // than a finding: exit 2 is reserved for a real problem in the edit.
     const project = mkdtempSync(join(TEMPORARY, 'project-'));
     const outside = join(TEMPORARY, 'outside.conf');
     writeFileSync(outside, 'CONFIG_BT=y\n');
     const result = await runHook({ project, path: outside });
-    strictEqual(result.code, 2);
-    match(result.stderr, /outside the active project root/);
+    strictEqual(result.code, 0);
+    strictEqual(result.stderr, '');
   });
 
   it('is completely silent for a valid file', async () => {
@@ -220,6 +303,113 @@ describe('PostToolUse Zephyr validation', {
     strictEqual(result.code, 0);
     strictEqual(result.stdout, '');
     strictEqual(result.stderr, '');
+  });
+
+  describe('devicetree compatibles', () => {
+    const OVERLAY = [
+      '/ {',
+      '\tchosen { zephyr,display = &screen; };',
+      '\taliases { led0 = &green; };',
+      '};',
+      '&spi1 {',
+      '\tscreen: st7789v@0 {',
+      '\t\tcompatible = "sitronix,st7789v";',
+      '\t\treg = <0>;',
+      '\t\tpixel-format = <1>;',
+      '\t};',
+      '\tfallback@2 {',
+      '\t\tcompatible = "vendor,unknown-part", "sitronix,st7789v";',
+      '\t\treg = <2>;',
+      '\t};',
+      '\t/* compatible = "commented,out"; */',
+      '};',
+    ].join('\n');
+
+    it('accepts real compatibles, fallback lists, and comments', async () => {
+      // A node needs only one of its compatibles to resolve, so a legitimate
+      // `"vendor,part", "generic-part"` fallback must not be reported.
+      const file = projectFile('app.overlay', OVERLAY);
+      const result = await runHook(file);
+      strictEqual(result.code, 0);
+      strictEqual(result.stderr, '');
+    });
+
+    it('reports a misspelling of a real compatible, at its line', async () => {
+      // One character from `sitronix,st7789v`, same vendor: a slip, not an
+      // out-of-tree device.
+      const file = projectFile('app.overlay', `${OVERLAY}\n&i2c0 {\n\tx: dev@1 {\n\t\tcompatible = "sitronix,st7789";\n\t};\n};\n`);
+      const result = await runHook(file);
+      strictEqual(result.code, 2);
+      match(result.stderr, /line 19: "sitronix,st7789" is not a known compatible/);
+      match(result.stderr, /"sitronix,st7789v" is and differs by 1 character/);
+      match(result.stderr, /get_binding/);
+    });
+
+    it('stays silent for an out-of-tree compatible with no near neighbour', async () => {
+      // Absence is not evidence: an application may declare bindings through
+      // dts/bindings, DTS_ROOT, or a module the catalogue cannot see.
+      const file = projectFile('app.overlay', '&i2c0 {\n\tdev@1 {\n\t\tcompatible = "acme,invented-widget";\n\t};\n};\n');
+      const result = await runHook(file);
+      strictEqual(result.code, 0);
+      strictEqual(result.stderr, '');
+    });
+
+    it('does not check property names', async () => {
+      // Deciding a property is invalid needs to know which node owns it, and so
+      // which binding applies. `get_binding` owns that question.
+      const file = projectFile(
+        'bad.overlay',
+        '&spi1 {\n\tscreen: st7789v@0 {\n\t\tcompatible = "sitronix,st7789v";\n\t\tnot-a-real-property = <1>;\n\t};\n};\n',
+      );
+      const result = await runHook(file);
+      strictEqual(result.code, 0);
+      strictEqual(result.stderr, '');
+    });
+
+    it('accepts a compatible the project declares in its own bindings', async () => {
+      const file = projectFile('app.overlay', '&i2c0 {\n\tdev@1 {\n\t\tcompatible = "acme,invented";\n\t};\n};\n');
+      mkdirSync(join(file.project, 'dts', 'bindings'), { recursive: true });
+      writeFileSync(
+        join(file.project, 'dts', 'bindings', 'acme.yaml'),
+        'description: Out-of-tree device.\ncompatible: "acme,invented"\n',
+      );
+      const result = await runHook(file);
+      strictEqual(result.code, 0);
+      strictEqual(result.stderr, '');
+    });
+  });
+});
+
+// Deliberately not gated on a built index: the subject is what happens when
+// there is no index, which is the state a first-time user starts in.
+describe('SessionStart cold start', () => {
+  it('names the prerequisites in an empty project', async () => {
+    const pluginData = mkdtempSync(join(TEMPORARY, 'no-index-'));
+    const project = mkdtempSync(join(TEMPORARY, 'empty-project-'));
+    const result = await runSession({ project, pluginData });
+    strictEqual(result.code, 0);
+    match(result.stdout, /zephyr-index skill/);
+    strictEqual(result.stderr, '');
+  });
+
+  it('stays silent in a directory that is some other kind of project', async () => {
+    const pluginData = mkdtempSync(join(TEMPORARY, 'no-index-'));
+    const project = mkdtempSync(join(TEMPORARY, 'other-project-'));
+    writeFileSync(join(project, 'main.py'), 'print("hi")\n');
+    const result = await runSession({ project, pluginData });
+    strictEqual(result.code, 0);
+    strictEqual(result.stdout, '');
+    strictEqual(result.stderr, '');
+  });
+
+  it('ignores dot-entries when deciding a project is empty', async () => {
+    // `.git` and editor state say nothing about what a directory is for.
+    const pluginData = mkdtempSync(join(TEMPORARY, 'no-index-'));
+    const project = mkdtempSync(join(TEMPORARY, 'dotted-project-'));
+    mkdirSync(join(project, '.git'), { recursive: true });
+    const result = await runSession({ project, pluginData });
+    strictEqual(result.code, 0);
+    match(result.stdout, /zephyr-index skill/);
   });
 });
 
