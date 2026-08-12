@@ -9,6 +9,8 @@ metadata:
 
 # Bluetooth LE
 
+> Example status: fenced snippets are illustrative unless an immediately preceding `zephyr-ai-example` metadata comment names a verified target and build command.
+
 ## Host and controller
 
 Zephyr's BLE host is portable; the controller is not. On nRF and some others the
@@ -85,7 +87,11 @@ int main(void)
         }
 
         if (IS_ENABLED(CONFIG_BT_SETTINGS)) {
-                settings_load();          /* must follow bt_enable() */
+                rc = settings_load();     /* must follow bt_enable() */
+                if (rc) {
+                        LOG_ERR("settings_load: %d", rc);
+                        return rc;
+                }
         }
 
         rc = bt_le_adv_start(BT_LE_ADV_CONN_FAST_1, ad, ARRAY_SIZE(ad), NULL, 0);
@@ -137,7 +143,10 @@ it — that is where the client subscribes. Notify only when subscribed:
 
 ```c
 if (notify_enabled) {
-        bt_gatt_notify(NULL, &my_svc.attrs[1], value, sizeof(value));
+        int rc = bt_gatt_notify(NULL, &my_svc.attrs[1], value, sizeof(value));
+        if (rc && rc != -ENOTCONN) {
+                LOG_WRN("notification failed: %d", rc);
+        }
 }
 ```
 
@@ -155,7 +164,10 @@ static const struct bt_le_conn_param param = {
         .latency = 4,          /* may skip 4 intervals with nothing to send */
         .timeout = 400,        /* units of 10 ms */
 };
-bt_conn_le_param_update(conn, &param);
+int rc = bt_conn_le_param_update(conn, &param);
+if (rc) {
+        LOG_WRN("connection parameter request failed: %d", rc);
+}
 ```
 
 Slave latency is the cheapest power win available: the peripheral stays connected
@@ -186,7 +198,10 @@ CONFIG_BT_SMP_SC_ONLY=y              # LE Secure Connections only
 ```
 
 ```c
-bt_conn_set_security(conn, BT_SECURITY_L2);
+int rc = bt_conn_set_security(conn, BT_SECURITY_L2);
+if (rc) {
+        LOG_ERR("security request failed: %d", rc);
+}
 ```
 
 Guard sensitive characteristics with `BT_GATT_PERM_READ_ENCRYPT` or

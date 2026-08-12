@@ -15,7 +15,19 @@ interface Param {
   name: string;
   description: string;
   direction?: string;
+  type?: string;
 }
+
+const API_KINDS = [
+  'function',
+  'macro',
+  'struct',
+  'enum',
+  'enumvalue',
+  'typedef',
+  'union',
+  'variable',
+] as const;
 
 export const searchApi: ToolFactory = (index) => ({
   name: 'search_api',
@@ -32,7 +44,7 @@ export const searchApi: ToolFactory = (index) => ({
       query: { type: 'string', description: 'Symbol name fragment or description of the task.' },
       kind: {
         type: 'string',
-        enum: ['function', 'macro', 'struct', 'enum', 'typedef', 'union'],
+        enum: API_KINDS,
         description: 'Restrict to one kind of symbol.',
       },
       group: {
@@ -119,17 +131,17 @@ export const getApi: ToolFactory = (index) => ({
   name: 'get_api',
   title: 'Get a Zephyr API symbol',
   description:
-    'Get the full contract of one Zephyr C symbol: signature, what each parameter means, what it ' +
-    'returns, and every documented error code it can return. Use before calling an unfamiliar ' +
-    'function. Zephyr returns negative errno values rather than raising, and the exact set ' +
-    'differs per function, so the retval list is what tells you which failures to handle.',
+    'Get the indexed contract of one Zephyr C symbol: signature, parameter documentation, return ' +
+    'description, and documented error codes. Use before calling an unfamiliar function. Zephyr ' +
+    'commonly returns negative errno values, and the documented set differs per function. Empty ' +
+    'documentation is reported as unknown and never treated as proof that failure is impossible.',
   inputSchema: {
     type: 'object',
     properties: {
       name: { type: 'string', description: 'Exact symbol name, e.g. "gpio_pin_configure_dt".' },
       kind: {
         type: 'string',
-        enum: ['function', 'macro', 'struct', 'enum', 'typedef', 'union'],
+        enum: API_KINDS,
         description: 'Disambiguate when a name exists as more than one kind.',
       },
     },
@@ -144,7 +156,7 @@ export const getApi: ToolFactory = (index) => ({
 
     const rows = idx.all(
       `SELECT name, kind, signature, brief, detail, params, returns, retvals,
-              api_group, since, deprecated, header, line
+              api_group, since, deprecated, header, line, doxygen_id, doc_anchor
          FROM api_symbol WHERE name = ? ${kind ? 'AND kind = ?' : ''}
          ORDER BY CASE kind WHEN 'function' THEN 0 WHEN 'macro' THEN 1 ELSE 2 END`,
       ...(kind ? [name, kind] : [name]),
@@ -175,20 +187,29 @@ export const getApi: ToolFactory = (index) => ({
     const text = joinSections([
       `# ${String(row['name'])}${Number(row['deprecated']) === 1 ? '  ⚠️ DEPRECATED' : ''}`,
       `\`\`\`c\n${String(row['signature'])}\n\`\`\``,
-      row['brief'] ? String(row['brief']) : undefined,
-      row['detail'] ? String(row['detail']) : undefined,
+      row['brief'] ? String(row['brief']) : '_No brief description is present in the indexed API source._',
+      row['detail'] ? String(row['detail']) : '_No detailed documentation is present; this does not imply the API has no constraints or failure modes._',
       section(
         'Parameters',
         params.map(
-          (p) => `\`${p.name}\`${p.direction ? ` *[${p.direction}]*` : ''} — ${p.description}`,
+          (p) =>
+            `\`${p.name}\`${p.type ? ` (${p.type})` : ''}${p.direction ? ` *[${p.direction}]*` : ''} — ` +
+            (p.description || '_undocumented_'),
         ),
       ),
-      section('Returns', returns),
-      section(
-        'Return values',
-        retvals.map((r) => `\`${r.value}\` — ${r.description}`),
-      ),
+      returns.length > 0
+        ? section('Returns', returns)
+        : '_No return description is present in the indexed API source._',
+      retvals.length > 0
+        ? section(
+          'Return values',
+          retvals.map((r) => `\`${r.value}\` — ${r.description}`),
+        )
+        : '_No individual return values are documented here; this does not prove the call cannot fail._',
       row['since'] ? `_Available since Zephyr ${String(row['since'])}._` : undefined,
+      row['doc_anchor']
+        ? `[Official API documentation](${idx.meta['doc_base_url'] ?? ''}doxygen/html/${String(row['doc_anchor'])})`
+        : '_No stable Doxygen documentation anchor is available because this index used the header fallback._',
       `_${String(row['kind'])} · \`${String(row['header'])}:${Number(row['line'])}\`` +
         `${row['api_group'] ? ` · group \`${String(row['api_group'])}\`` : ''}_`,
       rows.length > 1
@@ -211,6 +232,10 @@ export const getApi: ToolFactory = (index) => ({
       line: row['line'],
       deprecated: Number(row['deprecated']) === 1,
       since: row['since'] ?? null,
+      doxygenId: row['doxygen_id'] ?? null,
+      documentationUrl: row['doc_anchor']
+        ? `${idx.meta['doc_base_url'] ?? ''}doxygen/html/${String(row['doc_anchor'])}`
+        : null,
     });
   },
 });

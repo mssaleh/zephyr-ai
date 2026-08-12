@@ -9,6 +9,8 @@ metadata:
 
 # Debugging Zephyr
 
+> Example status: fenced snippets are illustrative unless an immediately preceding `zephyr-ai-example` metadata comment names a verified target and build command.
+
 ## First move for any inconsistent behaviour
 
 ```bash
@@ -36,9 +38,10 @@ there, the overlay never applied — check its filename against the build target
 
 ### Kconfig
 
-An undefined symbol is silently dropped, so the symptom is usually a *missing
-feature*, not an error. Check `build/zephyr/.config`: if a symbol you set is
-absent, its `depends on` was unmet. `get_kconfig` shows the chain.
+An undefined assignment produces a Kconfig warning and the standard Zephyr
+application flow aborts on Kconfig warnings. A known symbol can still resolve
+off when its dependencies are unmet; check `build/zephyr/.config` and use
+`get_kconfig` to inspect each alternative definition and dependency.
 
 `error: Aborting due to Kconfig warnings` with "assigned but has no prompt"
 means the symbol is selected by others and cannot be set directly.

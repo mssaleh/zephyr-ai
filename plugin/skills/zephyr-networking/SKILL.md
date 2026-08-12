@@ -9,6 +9,8 @@ metadata:
 
 # Networking
 
+> Example status: fenced snippets are illustrative unless an immediately preceding `zephyr-ai-example` metadata comment names a verified target and build command.
+
 ## Minimum configuration
 
 The network stack needs its layers turned on explicitly, and it will not work

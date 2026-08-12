@@ -1,0 +1,33 @@
+description: Required property types used by the zephyr-ai skeleton release gate
+
+compatible: "zephyr-ai,skeleton-consumer"
+
+properties:
+  required-bool:
+    type: boolean
+    required: true
+  required-string:
+    type: string
+    required: true
+  required-strings:
+    type: string-array
+    required: true
+  required-int:
+    type: int
+    required: true
+  required-array:
+    type: array
+    required: true
+  required-bytes:
+    type: uint8-array
+    required: true
+  required-phandle:
+    type: phandle
+    required: true
+  required-phandles:
+    type: phandles
+    required: true
+  required-specifiers:
+    type: phandle-array
+    specifier-space: test
+    required: true

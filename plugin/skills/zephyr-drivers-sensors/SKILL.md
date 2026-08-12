@@ -9,6 +9,8 @@ metadata:
 
 # Drivers and sensors
 
+> Example status: fenced snippets are illustrative unless an immediately preceding `zephyr-ai-example` metadata comment names a verified target and build command.
+
 ## The device model
 
 A `struct device` is created at build time for every enabled devicetree node with

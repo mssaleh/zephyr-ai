@@ -3,7 +3,7 @@
   "name": "zephyr-ai",
   "displayName": "Zephyr AI",
   "version": "0.1.0",
-  "description": "World-class Zephyr RTOS firmware development for STM32 and ESP32: version-exact Kconfig, devicetree, board and API lookup, plus workflow skills, review agents, and edit-time validation.",
+  "description": "Project-scoped Zephyr RTOS reference tools and firmware workflows for STM32 and ESP32, with semantic Kconfig/binding ingestion and conservative validation.",
   "author": {
     "name": "Mohammed Saleh",
     "email": "mssaleh@live.com"

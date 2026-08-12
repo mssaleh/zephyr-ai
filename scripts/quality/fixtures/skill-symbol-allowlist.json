@@ -1,0 +1,6 @@
+{
+  "CONFIG_FOO": "Explicit placeholder used to explain Kconfig behavior.",
+  "CONFIG_MY_FEATURE": "Explicit application-local placeholder in a project-layout example.",
+  "CONFIG_MY_SENSOR": "Explicit application-local placeholder in an out-of-tree driver example.",
+  "CONFIG_ESP_SPIRAM_SIZE": "Real ESP32 target-scoped symbol declared at soc/espressif/common/Kconfig.spiram:64; absent only because the canonical board-neutral Kconfig evaluation does not source that SoC branch."
+}

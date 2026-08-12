@@ -1,29 +1,41 @@
 {
-  "schemaVersion": 1,
-  "zephyrVersion": "4.4.2",
-  "zephyrCommit": "dccb09599635bdff17633fa7e9dab014b91dce90",
-  "indexBytes": 75157504,
-  "counts": {
-    "doc": 2080,
-    "doc_chunk": 15842,
-    "kconfig": 19796,
-    "dt_binding": 3442,
-    "dt_property": 119718,
-    "board": 1014,
-    "soc": 1475,
-    "sample": 610,
-    "sample_file": 4722,
-    "api_symbol": 26148,
-    "api_group": 1006
-  },
-  "bundles": {
-    "plugin/mcp/zephyr-mcp.mjs": {
-      "bytes": 44669,
-      "sha256": "9a87be4b6da0a62814ffb6e7b66a29ed43cde458b69b4c2599ba6eb89ba36c11"
+  "explanation": [
+    "Schema 1 became schema 5 to store context identity, normalized Kconfig expression/definition/choice semantics, recursive binding provenance and constraints, documentation origins, relational board/sample evidence, and typed API metadata.",
+    "Documentation increased from 2,080 pages and 15,842 chunks to 2,115 pages and 16,664 non-empty sections because nested includes, HTML-only content, build-manual pages, board documentation, and navigation summaries are now resolved instead of dropped.",
+    "Kconfig increased from 19,796 to 20,973 symbols because the canonical Kconfiglib graph includes generated symbols such as subsystem logging levels while excluding sample-local declarations; 935 choices are stored separately.",
+    "Bindings increased from 3,442 to 3,443 and flattened properties from 119,718 to 120,569 because edtlib resolves the supported compatible const form, inheritance, constraints, and child bindings through depth three.",
+    "Stored sample files increased from 4,722 to 5,930 because eligible source, configuration, overlay, README, and manifest files are collected recursively with explicit size exclusions.",
+    "Header-fallback API symbols increased from 26,148 to 33,814 because the public-header catalogue now retains typed structs, unions, enum values, variables, duplicate declaration contexts, and provenance while reason-coding 1,386 fallback artifacts/policy exclusions; the release gate replaces this fallback with Doxygen XML.",
+    "The index grew from 75,157,504 to 117,305,344 bytes due to the normalized semantic and provenance rows and remains below the 150 MiB gate.",
+    "The MCP bundle grew from 44,669 to 62,803 bytes for strict JSON-RPC/MCP lifecycle and schema validation, project/context resolution, descriptor checking, roots support, sanitized failures, and richer semantic responses; it remains dependency-free, below the reviewed 64 KiB ceiling, and is latency-gated. The ingest bundle grew from 160,585 to 210,633 bytes for the embedded semantic exporters and atomic project-index builder, below its 256 KiB ceiling."
+  ],
+  "measurement": {
+    "schemaVersion": 5,
+    "zephyrVersion": "4.4.2",
+    "zephyrCommit": "dccb09599635bdff17633fa7e9dab014b91dce90",
+    "indexBytes": 117305344,
+    "counts": {
+      "doc": 2115,
+      "doc_chunk": 16664,
+      "kconfig": 20973,
+      "dt_binding": 3443,
+      "dt_property": 120569,
+      "board": 1014,
+      "soc": 1475,
+      "sample": 610,
+      "sample_file": 5930,
+        "api_symbol": 33814,
+      "api_group": 1006
     },
-    "plugin/mcp/zephyr-ingest.mjs": {
-      "bytes": 160585,
-      "sha256": "78fae959be77a8b6ec58256e01e4db0b03a12516b70bcaae498492db8815384f"
+    "bundles": {
+      "plugin/mcp/zephyr-mcp.mjs": {
+        "bytes": 62803,
+        "sha256": "adace8587bf43d09f0c85b2e9a20abde5e04794cd64d88396ce42692a4c887cf"
+      },
+      "plugin/mcp/zephyr-ingest.mjs": {
+        "bytes": 210633,
+        "sha256": "6a141096bcb3142a0f5b731772dd52b42da392c36964ab187a6c0456eb8c798f"
+      }
     }
   }
 }

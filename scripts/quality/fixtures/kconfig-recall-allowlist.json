@@ -1,0 +1,1899 @@
+{
+  "ACTIVITY_DETECTION": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/sensor/accel_trig/adxl345-trigger.conf:5"
+    ],
+    "declaredAt": [
+      "samples/sensor/accel_trig/Kconfig:12"
+    ]
+  },
+  "APP_LITTLEFS_STORAGE_BLK_SDMMC": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/subsys/fs/littlefs/prj_blk.conf:19"
+    ],
+    "declaredAt": [
+      "samples/subsys/fs/littlefs/Kconfig:20"
+    ]
+  },
+  "APP_MSC_STORAGE_SDCARD": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/subsys/usb/mass/boards/sensortile_box_pro.conf:15",
+      "samples/subsys/usb/mass/boards/stm32l562e_dk_stm32l562xx_ns.conf:15"
+    ],
+    "declaredAt": [
+      "samples/subsys/usb/mass/Kconfig:37"
+    ]
+  },
+  "APP_SET_ALIGNED_CLOCK": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/counter/maxim_ds3231/prj.conf:14"
+    ],
+    "declaredAt": [
+      "samples/drivers/counter/maxim_ds3231/Kconfig:6"
+    ]
+  },
+  "APP_VIDEO_FRAME_HEIGHT": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/subsys/usb/host_uvc/prj.conf:15"
+    ],
+    "declaredAt": [
+      "samples/subsys/usb/host_uvc/Kconfig:8"
+    ]
+  },
+  "APP_VIDEO_FRAME_WIDTH": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/subsys/usb/host_uvc/prj.conf:14"
+    ],
+    "declaredAt": [
+      "samples/subsys/usb/host_uvc/Kconfig:14"
+    ]
+  },
+  "APP_VIDEO_PIXEL_FORMAT": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/subsys/usb/host_uvc/prj.conf:13"
+    ],
+    "declaredAt": [
+      "samples/subsys/usb/host_uvc/Kconfig:28"
+    ]
+  },
+  "APP_VIDEO_TARGET_FPS": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/subsys/usb/host_uvc/prj.conf:16"
+    ],
+    "declaredAt": [
+      "samples/subsys/usb/host_uvc/Kconfig:20"
+    ]
+  },
+  "AWS_ENDPOINT": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/cloud/aws_iot_mqtt/prj.conf:1"
+    ],
+    "declaredAt": [
+      "samples/net/cloud/aws_iot_mqtt/Kconfig:10"
+    ]
+  },
+  "AWS_MQTT_PORT": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/cloud/aws_iot_mqtt/prj.conf:2"
+    ],
+    "declaredAt": [
+      "samples/net/cloud/aws_iot_mqtt/Kconfig:17"
+    ]
+  },
+  "AWS_PUBLISH_TOPIC": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/cloud/aws_iot_mqtt/prj.conf:4"
+    ],
+    "declaredAt": [
+      "samples/net/cloud/aws_iot_mqtt/Kconfig:35"
+    ]
+  },
+  "AWS_SUBSCRIBE_TOPIC": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/cloud/aws_iot_mqtt/prj.conf:5"
+    ],
+    "declaredAt": [
+      "samples/net/cloud/aws_iot_mqtt/Kconfig:29"
+    ]
+  },
+  "AWS_TEST_SUITE_DQP": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/cloud/aws_iot_mqtt/prj.conf:6"
+    ],
+    "declaredAt": [
+      "samples/net/cloud/aws_iot_mqtt/Kconfig:50"
+    ]
+  },
+  "AWS_THING_NAME": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/cloud/aws_iot_mqtt/prj.conf:3"
+    ],
+    "declaredAt": [
+      "samples/net/cloud/aws_iot_mqtt/Kconfig:23"
+    ]
+  },
+  "BAP_BROADCAST_48_2_1": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/bluetooth/bap_broadcast_source/boards/nrf5340dk_nrf5340_cpuapp.conf:5",
+      "samples/bluetooth/bap_broadcast_source/boards/nrf54lm20dk_nrf54lm20a_cpuapp.conf:5"
+    ],
+    "declaredAt": [
+      "samples/bluetooth/bap_broadcast_source/Kconfig:21"
+    ]
+  },
+  "BLINK_DELAY_LONG": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/led/pwm/boards/arduino_uno_r4_r7fa4m1ab3cfm_minima.conf:2",
+      "samples/drivers/led/pwm/boards/arduino_uno_r4_r7fa4m1ab3cfm_wifi.conf:2",
+      "samples/drivers/led/pwm/boards/mcx_n5xx_evk_mcxn547_cpu0.conf:2",
+      "samples/drivers/led/pwm/boards/mimxrt1180_evk_mimxrt1189_cm33.conf:2",
+      "samples/drivers/led/pwm/boards/rpi_pico.conf:2",
+      "samples/drivers/led/pwm/boards/rpi_pico2_rp2350a_hazard3.conf:2",
+      "samples/drivers/led/pwm/boards/rpi_pico2_rp2350a_m33.conf:2"
+    ],
+    "declaredAt": [
+      "samples/drivers/led/pwm/Kconfig:12"
+    ]
+  },
+  "BLINK_DELAY_SHORT": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/led/pwm/boards/arduino_uno_r4_r7fa4m1ab3cfm_minima.conf:1",
+      "samples/drivers/led/pwm/boards/arduino_uno_r4_r7fa4m1ab3cfm_wifi.conf:1",
+      "samples/drivers/led/pwm/boards/mcx_n5xx_evk_mcxn547_cpu0.conf:1",
+      "samples/drivers/led/pwm/boards/mimxrt1180_evk_mimxrt1189_cm33.conf:1",
+      "samples/drivers/led/pwm/boards/rpi_pico.conf:1",
+      "samples/drivers/led/pwm/boards/rpi_pico2_rp2350a_hazard3.conf:1",
+      "samples/drivers/led/pwm/boards/rpi_pico2_rp2350a_m33.conf:1"
+    ],
+    "declaredAt": [
+      "samples/drivers/led/pwm/Kconfig:4"
+    ]
+  },
+  "BOOT_SHARE_BACKEND_RETENTION": {
+    "reason": "Referenced by a pinned-tree fixture but not declared by the canonical target-root evaluation; the declaration is generated or supplied by an optional module/image.",
+    "assignedAt": [
+      "samples/subsys/mgmt/mcumgr/smp_svr/sysbuild/mcuboot_ram_load.conf:7"
+    ]
+  },
+  "BOOT_SHARE_DATA": {
+    "reason": "Referenced by a pinned-tree fixture but not declared by the canonical target-root evaluation; the declaration is generated or supplied by an optional module/image.",
+    "assignedAt": [
+      "samples/subsys/mgmt/mcumgr/smp_svr/sysbuild/mcuboot_ram_load.conf:5"
+    ]
+  },
+  "BOOT_SHARE_DATA_BOOTINFO": {
+    "reason": "Referenced by a pinned-tree fixture but not declared by the canonical target-root evaluation; the declaration is generated or supplied by an optional module/image.",
+    "assignedAt": [
+      "samples/subsys/mgmt/mcumgr/smp_svr/sysbuild/mcuboot_ram_load.conf:6"
+    ]
+  },
+  "BROADCAST_ID": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/bluetooth/cap_initiator/prj.conf:28"
+    ],
+    "declaredAt": [
+      "samples/bluetooth/bap_broadcast_source/Kconfig:69",
+      "samples/bluetooth/cap_initiator/Kconfig:40",
+      "samples/bluetooth/pbp_public_broadcast_source/Kconfig:13"
+    ]
+  },
+  "BYTES_PER_SAMPLE": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/i2s/i2s_codec/boards/frdm_mcxn236.conf:14",
+      "samples/drivers/i2s/i2s_codec/boards/mcx_n5xx_evk_mcxn547_cpu0.conf:14"
+    ],
+    "declaredAt": [
+      "samples/drivers/i2s/i2s_codec/Kconfig:40"
+    ]
+  },
+  "CC3235SF_DEBUG": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/mqtt_publisher/boards/cc3235sf_launchxl.conf:26",
+      "samples/net/sockets/echo/boards/cc3235sf_launchxl.conf:23",
+      "samples/net/wifi/shell/boards/cc3235sf_launchxl.conf:7"
+    ],
+    "declaredAt": [
+      "soc/ti/simplelink/cc32xx/Kconfig:23"
+    ]
+  },
+  "CHRE": {
+    "reason": "Referenced by a pinned-tree fixture but not declared by the canonical target-root evaluation; the declaration is generated or supplied by an optional module/image.",
+    "assignedAt": [
+      "samples/modules/chre/prj.conf:1"
+    ]
+  },
+  "CHRE_LOG_LEVEL_DBG": {
+    "reason": "Referenced by a pinned-tree fixture but not declared by the canonical target-root evaluation; the declaration is generated or supplied by an optional module/image.",
+    "assignedAt": [
+      "samples/modules/chre/prj.conf:4"
+    ]
+  },
+  "DAC_BUFFER_NOT_SUPPORT": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/dac/boards/ek_ra2l1.conf:4",
+      "samples/drivers/dac/boards/ek_ra4l1.conf:4",
+      "samples/drivers/dac/boards/ek_ra4m1.conf:4",
+      "samples/drivers/dac/boards/ek_ra4w1.conf:4"
+    ],
+    "declaredAt": [
+      "samples/drivers/dac/Kconfig:19",
+      "tests/drivers/dac/dac_api/Kconfig:8",
+      "tests/drivers/dac/dac_loopback/Kconfig:8"
+    ]
+  },
+  "DMIC_CHANNELS": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/i2s/i2s_codec/boards/frdm_mcxn236.conf:11",
+      "samples/drivers/i2s/i2s_codec/boards/mcx_n5xx_evk_mcxn547_cpu0.conf:11"
+    ],
+    "declaredAt": [
+      "samples/drivers/i2s/i2s_codec/Kconfig:51"
+    ]
+  },
+  "ESP32_ULP_COPROC_ENABLED": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/boards/espressif/ulp/lp_core/debug_ulp/prj.conf:1",
+      "samples/boards/espressif/ulp/lp_core/echo_ulp/prj.conf:1",
+      "samples/boards/espressif/ulp/lp_core/gpio_wakeup/prj.conf:1",
+      "samples/boards/espressif/ulp/lp_core/interrupt_ulp/prj.conf:1",
+      "samples/boards/espressif/ulp/lp_core/timer_wakeup/prj.conf:1",
+      "samples/drivers/mbox/boards/esp32c6_devkitc_hpcore.conf:1"
+    ],
+    "declaredAt": [
+      "soc/espressif/Kconfig.ulp:6"
+    ]
+  },
+  "ESP32_ULP_LP_CORE_LP_TIMER_SLEEP_DURATION_US": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/boards/espressif/ulp/lp_core/timer_wakeup/prj.conf:3"
+    ],
+    "declaredAt": [
+      "soc/espressif/Kconfig.ulp:68"
+    ]
+  },
+  "ESP32_ULP_LP_CORE_WAKEUP_SOURCE_LP_IO": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/boards/espressif/ulp/lp_core/gpio_wakeup/prj.conf:2"
+    ],
+    "declaredAt": [
+      "soc/espressif/Kconfig.ulp:61"
+    ]
+  },
+  "ESP32_ULP_LP_CORE_WAKEUP_SOURCE_LP_TIMER": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/boards/espressif/ulp/lp_core/timer_wakeup/prj.conf:2"
+    ],
+    "declaredAt": [
+      "soc/espressif/Kconfig.ulp:54"
+    ]
+  },
+  "EXTRA_BLOCKS": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/i2s/i2s_codec/boards/frdm_mcxn236.conf:12",
+      "samples/drivers/i2s/i2s_codec/boards/mcx_n5xx_evk_mcxn547_cpu0.conf:12"
+    ],
+    "declaredAt": [
+      "samples/drivers/i2s/i2s_codec/Kconfig:28"
+    ]
+  },
+  "FADE_DELAY": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/led/pwm/boards/arduino_uno_r4_r7fa4m1ab3cfm_minima.conf:3",
+      "samples/drivers/led/pwm/boards/arduino_uno_r4_r7fa4m1ab3cfm_wifi.conf:3",
+      "samples/drivers/led/pwm/boards/rpi_pico.conf:3",
+      "samples/drivers/led/pwm/boards/rpi_pico2_rp2350a_hazard3.conf:3",
+      "samples/drivers/led/pwm/boards/rpi_pico2_rp2350a_m33.conf:3"
+    ],
+    "declaredAt": [
+      "samples/drivers/led/pwm/Kconfig:20"
+    ]
+  },
+  "FS_SAMPLE_CREATE_SOME_ENTRIES": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/subsys/fs/fs_sample/boards/arduino_opta_stm32h747xx_m7.conf:10",
+      "samples/subsys/fs/fs_sample/boards/bl54l15_dvk_nrf54l15_cpuapp.conf:11",
+      "samples/subsys/fs/fs_sample/boards/bl54l15u_dvk_nrf54l15_cpuapp.conf:11",
+      "samples/subsys/fs/fs_sample/boards/native_sim.conf:11",
+      "samples/subsys/fs/fs_sample/boards/nrf52840dk_nrf52840.conf:12",
+      "samples/subsys/fs/fs_sample/boards/nrf52840dk_nrf52840_qspi.conf:15",
+      "samples/subsys/fs/fs_sample/boards/nrf52840dk_nrf52840_ram_disk.conf:13",
+      "samples/subsys/fs/fs_sample/boards/nrf54l15dk_nrf54l15_cpuapp.conf:12",
+      "samples/subsys/fs/fs_sample/boards/ophelia4ev_nrf54l15_cpuapp.conf:12"
+    ],
+    "declaredAt": [
+      "samples/subsys/fs/fs_sample/Kconfig:10"
+    ]
+  },
+  "GLIKEY_MCUX_GLIKEY": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/hwspinlock/remote/boards/mimxrt700_evk_mimxrt798s_cm33_cpu1.conf:7",
+      "samples/drivers/mbox/remote/boards/mimxrt700_evk_mimxrt798s_cm33_cpu1.conf:4"
+    ],
+    "declaredAt": [
+      "soc/nxp/imxrt/imxrt7xx/Kconfig:11"
+    ]
+  },
+  "HAP_HA_HEARING_AID_BANDED": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/bluetooth/hap_ha/banded.conf:1"
+    ],
+    "declaredAt": [
+      "samples/bluetooth/hap_ha/Kconfig:34"
+    ]
+  },
+  "HAP_HA_HEARING_AID_BINAURAL": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/bluetooth/hap_ha/binaural.conf:2"
+    ],
+    "declaredAt": [
+      "samples/bluetooth/hap_ha/Kconfig:30"
+    ]
+  },
+  "HAP_HA_HEARING_AID_MONAURAL": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/bluetooth/hap_ha/prj.conf:45"
+    ],
+    "declaredAt": [
+      "samples/bluetooth/hap_ha/Kconfig:27"
+    ]
+  },
+  "HAWKBIT_POLLING": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/subsys/mgmt/hawkbit/prj.conf:56"
+    ],
+    "declaredAt": [
+      "samples/subsys/mgmt/hawkbit/Kconfig:13"
+    ]
+  },
+  "HW_CHANNEL_INDEX": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/audio/dmic/boards/kit_pse84_eval_pse846gps2dbzc4a_m55.conf:6"
+    ],
+    "declaredAt": [
+      "samples/drivers/audio/dmic/Kconfig:13",
+      "tests/drivers/audio/dmic_api/Kconfig:20"
+    ]
+  },
+  "I2S_INIT_BUFFERS": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/i2s/i2s_codec/boards/frdm_mcxn236.conf:8",
+      "samples/drivers/i2s/i2s_codec/boards/mcx_n5xx_evk_mcxn547_cpu0.conf:8"
+    ],
+    "declaredAt": [
+      "samples/drivers/i2s/i2s_codec/Kconfig:6"
+    ]
+  },
+  "INCLUDE_REMOTE_DIR": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/boards/nxp/adsp/rtxxx/amp_talk/boards/mimxrt700_evk_mimxrt798s_cm33_cpu0.conf:7",
+      "samples/drivers/hwspinlock/boards/frdm_imxrt1186_mimxrt1186_cm33.conf:5",
+      "samples/drivers/hwspinlock/boards/mimxrt1180_evk_mimxrt1189_cm33.conf:5",
+      "samples/drivers/hwspinlock/boards/mimxrt700_evk_mimxrt798s_cm33_cpu0.conf:5",
+      "samples/drivers/ipm/ipm_mcux/boards/lpcxpresso54114_lpc54114_m4.conf:1",
+      "samples/drivers/mbox/boards/frdm_imxrt1186_mimxrt1186_cm33.conf:2",
+      "samples/drivers/mbox/boards/mimxrt1160_evk_mimxrt1166_cm7.conf:2",
+      "samples/drivers/mbox/boards/mimxrt1170_evk_mimxrt1176_cm7.conf:2",
+      "samples/drivers/mbox/boards/mimxrt1180_evk_mimxrt1189_cm33.conf:2",
+      "samples/drivers/mbox/boards/mimxrt700_evk_mimxrt798s_cm33_cpu0.conf:2",
+      "samples/drivers/mbox_data/boards/frdm_imxrt1186_mimxrt1186_cm33.conf:2",
+      "samples/drivers/mbox_data/boards/mimxrt1160_evk_mimxrt1166_cm7.conf:2",
+      "samples/drivers/mbox_data/boards/mimxrt1170_evk_mimxrt1176_cm7.conf:2",
+      "samples/drivers/mbox_data/boards/mimxrt1180_evk_mimxrt1189_cm33.conf:2",
+      "samples/drivers/mbox_data/boards/mimxrt700_evk_mimxrt798s_cm33_cpu0.conf:2",
+      "samples/subsys/ipc/ipc_service/static_vrings/boards/frdm_imxrt1186_mimxrt1186_cm33.conf:2",
+      "samples/subsys/ipc/ipc_service/static_vrings/boards/mimxrt1160_evk_mimxrt1166_cm7.conf:3",
+      "samples/subsys/ipc/ipc_service/static_vrings/boards/mimxrt1170_evk_mimxrt1176_cm7.conf:3",
+      "samples/subsys/ipc/ipc_service/static_vrings/boards/mimxrt1180_evk_mimxrt1189_cm33.conf:2",
+      "samples/subsys/ipc/ipc_service/static_vrings/boards/mimxrt700_evk_mimxrt798s_cm33_cpu0.conf:8",
+      "samples/subsys/ipc/openamp/boards/frdm_imxrt1186_mimxrt1186_cm33.conf:2",
+      "samples/subsys/ipc/openamp/boards/lpcxpresso54114_lpc54114_m4.conf:2",
+      "samples/subsys/ipc/openamp/boards/mimxrt1160_evk_mimxrt1166_cm7.conf:1",
+      "samples/subsys/ipc/openamp/boards/mimxrt1170_evk_mimxrt1176_cm7.conf:6",
+      "samples/subsys/ipc/openamp/boards/mimxrt1180_evk_mimxrt1189_cm33.conf:2",
+      "samples/subsys/ipc/openamp/boards/mimxrt700_evk_mimxrt798s_cm33_cpu0.conf:7"
+    ],
+    "declaredAt": [
+      "samples/boards/nxp/adsp/rtxxx/amp_talk/Kconfig:7",
+      "samples/drivers/hwspinlock/Kconfig:7",
+      "samples/drivers/ipm/ipm_mcux/Kconfig:7",
+      "samples/drivers/mbox/Kconfig:7",
+      "samples/drivers/mbox_data/Kconfig:7",
+      "samples/subsys/ipc/ipc_service/static_vrings/Kconfig:7",
+      "samples/subsys/ipc/openamp/Kconfig:7",
+      "tests/drivers/mbox/mbox_data/Kconfig:7"
+    ]
+  },
+  "INIT_AUDIO_PLL": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/boards/nxp/adsp/rtxxx/amp_audio_loopback/boards/mimxrt685_evk_mimxrt685s_cm33.conf:1",
+      "samples/boards/nxp/adsp/rtxxx/amp_audio_output/boards/mimxrt685_evk_mimxrt685s_cm33.conf:1",
+      "samples/boards/nxp/adsp/rtxxx/amp_blinky/boards/mimxrt685_evk_mimxrt685s_cm33.conf:1",
+      "samples/boards/nxp/adsp/rtxxx/amp_mbox/boards/mimxrt685_evk_mimxrt685s_cm33.conf:1"
+    ],
+    "declaredAt": [
+      "soc/nxp/imxrt/imxrt6xx/Kconfig:47"
+    ]
+  },
+  "INIT_SYS_PLL": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/boards/nxp/adsp/rtxxx/amp_audio_loopback/boards/mimxrt685_evk_mimxrt685s_cm33.conf:2",
+      "samples/boards/nxp/adsp/rtxxx/amp_audio_output/boards/mimxrt685_evk_mimxrt685s_cm33.conf:2",
+      "samples/boards/nxp/adsp/rtxxx/amp_blinky/boards/mimxrt685_evk_mimxrt685s_cm33.conf:2",
+      "samples/boards/nxp/adsp/rtxxx/amp_mbox/boards/mimxrt685_evk_mimxrt685s_cm33.conf:2"
+    ],
+    "declaredAt": [
+      "soc/nxp/imxrt/Kconfig:194",
+      "soc/nxp/imxrt/imxrt10xx/Kconfig:78",
+      "soc/nxp/imxrt/imxrt6xx/Kconfig:44"
+    ]
+  },
+  "ISO_PACKING_INTERLEAVED": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/bluetooth/bap_broadcast_source/overlay-interleaved.conf:1",
+      "samples/bluetooth/bap_broadcast_source/overlay-sequential.conf:1"
+    ],
+    "declaredAt": [
+      "samples/bluetooth/bap_broadcast_source/Kconfig:41",
+      "samples/bluetooth/iso_broadcast/Kconfig:6"
+    ]
+  },
+  "LV_CONF_MINIMAL": {
+    "reason": "Referenced by a pinned-tree fixture but not declared by the canonical target-root evaluation; the declaration is generated or supplied by an optional module/image.",
+    "assignedAt": [
+      "samples/drivers/video/capture_to_lvgl/prj.conf:12"
+    ]
+  },
+  "LV_DRAW_BUF_ALIGN": {
+    "reason": "Referenced by a pinned-tree fixture but not declared by the canonical target-root evaluation; the declaration is generated or supplied by an optional module/image.",
+    "assignedAt": [
+      "samples/modules/lvgl/demos/boards/mimxrt700_evk_mimxrt798s_cm33_cpu0.conf:10"
+    ]
+  },
+  "LV_DRAW_BUF_STRIDE_ALIGN": {
+    "reason": "Referenced by a pinned-tree fixture but not declared by the canonical target-root evaluation; the declaration is generated or supplied by an optional module/image.",
+    "assignedAt": [
+      "samples/modules/lvgl/demos/boards/mimxrt700_evk_mimxrt798s_cm33_cpu0.conf:9"
+    ]
+  },
+  "LV_DRAW_LAYER_MAX_MEMORY": {
+    "reason": "Referenced by a pinned-tree fixture but not declared by the canonical target-root evaluation; the declaration is generated or supplied by an optional module/image.",
+    "assignedAt": [
+      "samples/modules/lvgl/demos/boards/qemu_cortex_a53.conf:6",
+      "samples/modules/lvgl/demos/boards/qemu_riscv64.conf:6",
+      "samples/modules/lvgl/demos/boards/qemu_x86.conf:6"
+    ]
+  },
+  "LV_DRAW_LAYER_SIMPLE_BUF_SIZE": {
+    "reason": "Referenced by a pinned-tree fixture but not declared by the canonical target-root evaluation; the declaration is generated or supplied by an optional module/image.",
+    "assignedAt": [
+      "samples/modules/lvgl/demos/boards/ek_ra8d2_r7ka8d2kflcac_cm85.conf:5",
+      "samples/modules/lvgl/demos/boards/ek_ra8p1_r7ka8p1kflcac_cm85.conf:5",
+      "samples/modules/lvgl/demos/boards/qemu_cortex_a53.conf:5",
+      "samples/modules/lvgl/demos/boards/qemu_riscv64.conf:5",
+      "samples/modules/lvgl/demos/boards/qemu_x86.conf:5"
+    ]
+  },
+  "LV_FONT_MONTSERRAT_12": {
+    "reason": "Referenced by a pinned-tree fixture but not declared by the canonical target-root evaluation; the declaration is generated or supplied by an optional module/image.",
+    "assignedAt": [
+      "samples/modules/lvgl/demos/prj.conf:13",
+      "samples/modules/lvgl/multi_display/prj.conf:11"
+    ]
+  },
+  "LV_FONT_MONTSERRAT_14": {
+    "reason": "Referenced by a pinned-tree fixture but not declared by the canonical target-root evaluation; the declaration is generated or supplied by an optional module/image.",
+    "assignedAt": [
+      "samples/modules/lvgl/demos/prj.conf:14",
+      "samples/modules/lvgl/multi_display/prj.conf:12",
+      "samples/subsys/display/lvgl/prj.conf:18"
+    ]
+  },
+  "LV_FONT_MONTSERRAT_16": {
+    "reason": "Referenced by a pinned-tree fixture but not declared by the canonical target-root evaluation; the declaration is generated or supplied by an optional module/image.",
+    "assignedAt": [
+      "samples/modules/lvgl/demos/prj.conf:15",
+      "samples/modules/lvgl/multi_display/prj.conf:13"
+    ]
+  },
+  "LV_FONT_MONTSERRAT_18": {
+    "reason": "Referenced by a pinned-tree fixture but not declared by the canonical target-root evaluation; the declaration is generated or supplied by an optional module/image.",
+    "assignedAt": [
+      "samples/modules/lvgl/demos/prj.conf:16",
+      "samples/modules/lvgl/multi_display/prj.conf:14"
+    ]
+  },
+  "LV_FONT_MONTSERRAT_24": {
+    "reason": "Referenced by a pinned-tree fixture but not declared by the canonical target-root evaluation; the declaration is generated or supplied by an optional module/image.",
+    "assignedAt": [
+      "samples/modules/lvgl/demos/prj.conf:17",
+      "samples/modules/lvgl/multi_display/prj.conf:15"
+    ]
+  },
+  "LV_USE_ARC": {
+    "reason": "Referenced by a pinned-tree fixture but not declared by the canonical target-root evaluation; the declaration is generated or supplied by an optional module/image.",
+    "assignedAt": [
+      "samples/subsys/display/lvgl/prj.conf:16"
+    ]
+  },
+  "LV_USE_DROPDOWN": {
+    "reason": "Referenced by a pinned-tree fixture but not declared by the canonical target-root evaluation; the declaration is generated or supplied by an optional module/image.",
+    "assignedAt": [
+      "samples/drivers/video/capture_to_lvgl/prj.conf:16"
+    ]
+  },
+  "LV_USE_FONT_COMPRESSED": {
+    "reason": "Referenced by a pinned-tree fixture but not declared by the canonical target-root evaluation; the declaration is generated or supplied by an optional module/image.",
+    "assignedAt": [
+      "samples/modules/lvgl/demos/prj.conf:20",
+      "samples/modules/lvgl/multi_display/prj.conf:18"
+    ]
+  },
+  "LV_USE_IMAGE": {
+    "reason": "Referenced by a pinned-tree fixture but not declared by the canonical target-root evaluation; the declaration is generated or supplied by an optional module/image.",
+    "assignedAt": [
+      "samples/drivers/video/capture_to_lvgl/prj.conf:13"
+    ]
+  },
+  "LV_USE_LABEL": {
+    "reason": "Referenced by a pinned-tree fixture but not declared by the canonical target-root evaluation; the declaration is generated or supplied by an optional module/image.",
+    "assignedAt": [
+      "samples/subsys/display/lvgl/prj.conf:15"
+    ]
+  },
+  "LV_USE_PERF_MONITOR": {
+    "reason": "Referenced by a pinned-tree fixture but not declared by the canonical target-root evaluation; the declaration is generated or supplied by an optional module/image.",
+    "assignedAt": [
+      "samples/drivers/video/capture_to_lvgl/prj.conf:15"
+    ]
+  },
+  "LV_USE_SYSMON": {
+    "reason": "Referenced by a pinned-tree fixture but not declared by the canonical target-root evaluation; the declaration is generated or supplied by an optional module/image.",
+    "assignedAt": [
+      "samples/drivers/video/capture_to_lvgl/prj.conf:17"
+    ]
+  },
+  "MAX32_SECONDARY_RV32": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/sysbuild/hello_world/boards/max32655evkit_max32655_m4.conf:4",
+      "samples/sysbuild/hello_world/boards/max32690evkit_max32690_m4.conf:4",
+      "samples/sysbuild/hello_world/boards/max78002evkit_max78002_m4.conf:4"
+    ],
+    "declaredAt": [
+      "soc/adi/max32/Kconfig:79"
+    ]
+  },
+  "MAX32_SECONDARY_RV32_STARTUP_DELAY": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/sysbuild/hello_world/boards/max32655evkit_max32655_m4.conf:5",
+      "samples/sysbuild/hello_world/boards/max32690evkit_max32690_m4.conf:5",
+      "samples/sysbuild/hello_world/boards/max78002evkit_max78002_m4.conf:5"
+    ],
+    "declaredAt": [
+      "soc/adi/max32/Kconfig:92"
+    ]
+  },
+  "MCUBOOT_DOWNGRADE_PREVENTION": {
+    "reason": "Referenced by a pinned-tree fixture but not declared by the canonical target-root evaluation; the declaration is generated or supplied by an optional module/image.",
+    "assignedAt": [
+      "samples/sysbuild/with_mcuboot/sysbuild/mcuboot.conf:5"
+    ]
+  },
+  "MCUBOOT_LOG_LEVEL_INF": {
+    "reason": "Referenced by a pinned-tree fixture but not declared by the canonical target-root evaluation; the declaration is generated or supplied by an optional module/image.",
+    "assignedAt": [
+      "samples/subsys/lorawan/fuota/sysbuild/mcuboot.conf:3"
+    ]
+  },
+  "MCUBOOT_LOG_LEVEL_WRN": {
+    "reason": "Referenced by a pinned-tree fixture but not declared by the canonical target-root evaluation; the declaration is generated or supplied by an optional module/image.",
+    "assignedAt": [
+      "samples/sysbuild/with_mcuboot/sysbuild/mcuboot.conf:4"
+    ]
+  },
+  "NET_SAMPLE_APP_MAX_CONNECTIONS": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/mqtt_publisher/overlay-sample.conf:3"
+    ],
+    "declaredAt": [
+      "samples/net/mqtt_publisher/Kconfig:16"
+    ]
+  },
+  "NET_SAMPLE_APP_MAX_ITERATIONS": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/mqtt_publisher/overlay-sample.conf:2"
+    ],
+    "declaredAt": [
+      "samples/net/mqtt_publisher/Kconfig:8"
+    ]
+  },
+  "NET_SAMPLE_COAPS_SERVICE": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/sockets/coap_server/overlay-dtls.conf:1"
+    ],
+    "declaredAt": [
+      "samples/net/sockets/coap_server/Kconfig:9"
+    ]
+  },
+  "NET_SAMPLE_CODE_RAM_NAME": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/zperf/boards/mimxrt1050_evk_mimxrt1052_hyperflash.conf:4",
+      "samples/net/zperf/boards/mimxrt1060_evk_mimxrt1062_qspi.conf:4",
+      "samples/net/zperf/boards/mimxrt1064_evk.conf:4",
+      "samples/net/zperf/boards/mimxrt1170_evk_mimxrt1176_cm7_A.conf:4"
+    ],
+    "declaredAt": [
+      "samples/net/zperf/Kconfig:14"
+    ]
+  },
+  "NET_SAMPLE_CODE_RELOCATE": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/zperf/boards/mimxrt1050_evk_mimxrt1052_hyperflash.conf:3",
+      "samples/net/zperf/boards/mimxrt1060_evk_mimxrt1062_qspi.conf:3",
+      "samples/net/zperf/boards/mimxrt1064_evk.conf:3",
+      "samples/net/zperf/boards/mimxrt1170_evk_mimxrt1176_cm7_A.conf:3"
+    ],
+    "declaredAt": [
+      "samples/net/zperf/Kconfig:4"
+    ]
+  },
+  "NET_SAMPLE_COMMON_TUNNEL_MY_ADDR": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/sockets/echo_server/overlay-tunnel.conf:13"
+    ],
+    "declaredAt": [
+      "samples/net/common/Kconfig:48"
+    ]
+  },
+  "NET_SAMPLE_COMMON_TUNNEL_PEER_ADDR": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/sockets/echo_server/overlay-tunnel.conf:9"
+    ],
+    "declaredAt": [
+      "samples/net/common/Kconfig:42"
+    ]
+  },
+  "NET_SAMPLE_COMMON_VLAN_SETUP_1": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/ethernet/vlan/prj.conf:46",
+      "samples/net/mdns_responder/overlay-vlan.conf:15",
+      "samples/net/pkt_filter/overlay-vlan.conf:20",
+      "samples/net/sockets/echo_client/overlay-vlan.conf:16",
+      "samples/net/sockets/echo_server/overlay-vlan.conf:20",
+      "samples/net/sockets/txtime/overlay-vlan.conf:15"
+    ],
+    "declaredAt": [
+      "samples/net/common/Kconfig:14"
+    ]
+  },
+  "NET_SAMPLE_COMMON_VLAN_SETUP_2": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/ethernet/vlan/prj.conf:50",
+      "samples/net/mdns_responder/overlay-vlan.conf:18",
+      "samples/net/pkt_filter/overlay-vlan.conf:23",
+      "samples/net/sockets/echo_client/overlay-vlan.conf:19",
+      "samples/net/sockets/echo_server/overlay-vlan.conf:23",
+      "samples/net/sockets/txtime/overlay-vlan.conf:18"
+    ],
+    "declaredAt": [
+      "samples/net/common/Kconfig:28"
+    ]
+  },
+  "NET_SAMPLE_COMMON_VPN_ALLOWED_PEER_ADDR": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/wireguard/prj.conf:53"
+    ],
+    "declaredAt": [
+      "samples/net/wireguard/Kconfig:33"
+    ]
+  },
+  "NET_SAMPLE_COMMON_VPN_MY_ADDR": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/wireguard/prj.conf:52"
+    ],
+    "declaredAt": [
+      "samples/net/wireguard/Kconfig:43"
+    ]
+  },
+  "NET_SAMPLE_COMMON_VPN_MY_PRIVATE_KEY": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/wireguard/prj.conf:54"
+    ],
+    "declaredAt": [
+      "samples/net/wireguard/Kconfig:8"
+    ]
+  },
+  "NET_SAMPLE_COMMON_VPN_PEER_IP_ADDR": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/wireguard/prj.conf:51"
+    ],
+    "declaredAt": [
+      "samples/net/wireguard/Kconfig:23"
+    ]
+  },
+  "NET_SAMPLE_COMMON_VPN_PEER_PUBLIC_KEY": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/wireguard/prj.conf:55"
+    ],
+    "declaredAt": [
+      "samples/net/wireguard/Kconfig:15"
+    ]
+  },
+  "NET_SAMPLE_COMMON_WAIT_DNS_SERVER_ADDITION": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/modem/hello_hl78xx/prj.conf:41",
+      "samples/net/cloud/aws_iot_mqtt/boards/mg100.conf:11",
+      "samples/net/cloud/aws_iot_mqtt/boards/pinnacle_100_dvk.conf:10",
+      "samples/net/cloud/aws_iot_mqtt/overlay-swir_hl78xx_ev_kit.conf:29",
+      "samples/net/sockets/http_get/overlay-hl7800.conf:6"
+    ],
+    "declaredAt": [
+      "samples/net/common/Kconfig:7"
+    ]
+  },
+  "NET_SAMPLE_DSA_MAX_USER_PORTS": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/ethernet/dsa/boards/frdm_imxrt1186_mimxrt1186_cm33.conf:4",
+      "samples/net/ethernet/dsa/boards/frdm_imxrt1186_mimxrt1186_cm7_extmem.conf:4",
+      "samples/net/ethernet/dsa/boards/mimxrt1180_evk_mimxrt1189_cm33.conf:4",
+      "samples/net/ethernet/dsa/boards/mimxrt1180_evk_mimxrt1189_cm7.conf:4"
+    ],
+    "declaredAt": [
+      "samples/net/ethernet/dsa/Kconfig:10"
+    ]
+  },
+  "NET_SAMPLE_HTTPS_SERVICE": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/sockets/http_server/overlay-tls.conf:1"
+    ],
+    "declaredAt": [
+      "samples/net/prometheus/Kconfig:17",
+      "samples/net/sockets/echo_server/Kconfig:52",
+      "samples/net/sockets/http_server/Kconfig:17"
+    ]
+  },
+  "NET_SAMPLE_IFACE2_MY_IPV4_ADDR": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/boards/nxp/s32/netc/prj.conf:42",
+      "samples/net/ethernet/lldp/prj.conf:47",
+      "samples/net/virtual/prj.conf:56"
+    ],
+    "declaredAt": [
+      "samples/boards/nxp/s32/netc/Kconfig:13",
+      "samples/net/ethernet/gptp/Kconfig:22",
+      "samples/net/ethernet/lldp/Kconfig:19",
+      "samples/net/sockets/echo_client/Kconfig:13",
+      "samples/net/sockets/echo_server/Kconfig:20",
+      "samples/net/virtual/Kconfig:13"
+    ]
+  },
+  "NET_SAMPLE_IFACE2_MY_IPV4_NETMASK": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/boards/nxp/s32/netc/prj.conf:43",
+      "samples/net/virtual/prj.conf:57"
+    ],
+    "declaredAt": [
+      "samples/boards/nxp/s32/netc/Kconfig:18",
+      "samples/net/sockets/echo_server/Kconfig:25",
+      "samples/net/virtual/Kconfig:18"
+    ]
+  },
+  "NET_SAMPLE_IFACE2_MY_IPV6_ADDR": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/boards/nxp/s32/netc/prj.conf:41",
+      "samples/net/ethernet/lldp/prj.conf:45",
+      "samples/net/virtual/prj.conf:54"
+    ],
+    "declaredAt": [
+      "samples/boards/nxp/s32/netc/Kconfig:8",
+      "samples/net/ethernet/gptp/Kconfig:17",
+      "samples/net/ethernet/lldp/Kconfig:14",
+      "samples/net/sockets/echo_client/Kconfig:8",
+      "samples/net/sockets/echo_server/Kconfig:15",
+      "samples/net/virtual/Kconfig:8"
+    ]
+  },
+  "NET_SAMPLE_IFACE2_VLAN_TAG": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/ethernet/lldp/prj.conf:49"
+    ],
+    "declaredAt": [
+      "samples/net/ethernet/gptp/Kconfig:27",
+      "samples/net/ethernet/lldp/Kconfig:24",
+      "samples/net/sockets/echo_client/Kconfig:18"
+    ]
+  },
+  "NET_SAMPLE_IFACE3_MY_IPV4_ADDR": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/ethernet/lldp/prj.conf:54",
+      "samples/net/virtual/prj.conf:62"
+    ],
+    "declaredAt": [
+      "samples/net/ethernet/gptp/Kconfig:41",
+      "samples/net/ethernet/lldp/Kconfig:38",
+      "samples/net/sockets/echo_client/Kconfig:32",
+      "samples/net/virtual/Kconfig:30"
+    ]
+  },
+  "NET_SAMPLE_IFACE3_MY_IPV4_NETMASK": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/virtual/prj.conf:63"
+    ],
+    "declaredAt": [
+      "samples/net/virtual/Kconfig:35"
+    ]
+  },
+  "NET_SAMPLE_IFACE3_MY_IPV6_ADDR": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/ethernet/lldp/prj.conf:52",
+      "samples/net/virtual/prj.conf:60"
+    ],
+    "declaredAt": [
+      "samples/net/ethernet/gptp/Kconfig:36",
+      "samples/net/ethernet/lldp/Kconfig:33",
+      "samples/net/sockets/echo_client/Kconfig:27",
+      "samples/net/virtual/Kconfig:25"
+    ]
+  },
+  "NET_SAMPLE_IFACE3_VLAN_TAG": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/ethernet/lldp/prj.conf:56"
+    ],
+    "declaredAt": [
+      "samples/net/ethernet/gptp/Kconfig:46",
+      "samples/net/ethernet/lldp/Kconfig:43",
+      "samples/net/sockets/echo_client/Kconfig:37"
+    ]
+  },
+  "NET_SAMPLE_IFACE_MY_IPV6_PREFIXLEN": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/ethernet/vlan/prj.conf:36"
+    ],
+    "declaredAt": [
+      "samples/net/ethernet/vlan/Kconfig:8"
+    ]
+  },
+  "NET_SAMPLE_LWM2M_NTN_DTLS_HANDSHAKE_TIMEOUT_MAX_MS": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/lwm2m_client/overlay-swir_hl78xx_ev_kit_ntn.conf:35"
+    ],
+    "declaredAt": [
+      "samples/net/lwm2m_client/Kconfig:73"
+    ]
+  },
+  "NET_SAMPLE_LWM2M_NTN_DTLS_HANDSHAKE_TIMEOUT_MIN_MS": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/lwm2m_client/overlay-swir_hl78xx_ev_kit_ntn.conf:34"
+    ],
+    "declaredAt": [
+      "samples/net/lwm2m_client/Kconfig:66"
+    ]
+  },
+  "NET_SAMPLE_LWM2M_NTN_MODE": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/lwm2m_client/overlay-swir_hl78xx_ev_kit_ntn.conf:31"
+    ],
+    "declaredAt": [
+      "samples/net/lwm2m_client/Kconfig:55"
+    ]
+  },
+  "NET_SAMPLE_LWM2M_SERVER": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/lwm2m_client/overlay-ot.conf:38"
+    ],
+    "declaredAt": [
+      "samples/net/lwm2m_client/Kconfig:34"
+    ]
+  },
+  "NET_SAMPLE_LWM2M_WAIT_DNS": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/lwm2m_client/overlay-hl7800.conf:8",
+      "samples/net/lwm2m_client/overlay-pinnacle_100-hl78xx.conf:9",
+      "samples/net/lwm2m_client/overlay-swir_hl78xx_ev_kit.conf:29"
+    ],
+    "declaredAt": [
+      "samples/net/lwm2m_client/Kconfig:48"
+    ]
+  },
+  "NET_SAMPLE_MQTT_BROKER_HOSTNAME": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/secure_mqtt_sensor_actuator/overlay-static-insecure.conf:18"
+    ],
+    "declaredAt": [
+      "samples/net/secure_mqtt_sensor_actuator/Kconfig:6"
+    ]
+  },
+  "NET_SAMPLE_MQTT_BROKER_PORT": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/secure_mqtt_sensor_actuator/overlay-static-insecure.conf:13"
+    ],
+    "declaredAt": [
+      "samples/net/secure_mqtt_sensor_actuator/Kconfig:12"
+    ]
+  },
+  "NET_SAMPLE_MQTT_SN_BROADCAST_ADDRESS": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/mqtt_sn_publisher/prj.conf:42"
+    ],
+    "declaredAt": [
+      "samples/net/mqtt_sn_publisher/Kconfig:15"
+    ]
+  },
+  "NET_SAMPLE_MQTT_SN_GATEWAY_ADDRESS": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/mqtt_sn_publisher/prj.conf:41"
+    ],
+    "declaredAt": [
+      "samples/net/mqtt_sn_publisher/Kconfig:11"
+    ]
+  },
+  "NET_SAMPLE_MQTT_SN_STATIC_GATEWAY": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/mqtt_sn_publisher/prj.conf:40"
+    ],
+    "declaredAt": [
+      "samples/net/mqtt_sn_publisher/Kconfig:8"
+    ]
+  },
+  "NET_SAMPLE_NUM_HANDLERS": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/sockets/echo_server/overlay-full_network_stack.conf:24",
+      "samples/net/sockets/echo_server/prj.conf:53"
+    ],
+    "declaredAt": [
+      "samples/net/sockets/dumb_http_server_mt/Kconfig:8",
+      "samples/net/sockets/echo_server/Kconfig:8"
+    ]
+  },
+  "NET_SAMPLE_OCPP_PORT": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/ocpp/prj.conf:26"
+    ],
+    "declaredAt": [
+      "samples/net/ocpp/Kconfig:12"
+    ]
+  },
+  "NET_SAMPLE_OCPP_SERVER": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/ocpp/prj.conf:25"
+    ],
+    "declaredAt": [
+      "samples/net/ocpp/Kconfig:7"
+    ]
+  },
+  "NET_SAMPLE_PACKET_INTERVAL": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/sockets/txtime/prj.conf:61"
+    ],
+    "declaredAt": [
+      "samples/net/sockets/txtime/Kconfig:44"
+    ]
+  },
+  "NET_SAMPLE_PEER": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/sockets/txtime/prj.conf:57"
+    ],
+    "declaredAt": [
+      "samples/net/sockets/txtime/Kconfig:8"
+    ]
+  },
+  "NET_SAMPLE_SERVER_RUNTIME": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/syslog_net/overlay-runtime-srv-addr.conf:3"
+    ],
+    "declaredAt": [
+      "samples/net/syslog_net/Kconfig:16"
+    ]
+  },
+  "NET_SAMPLE_SNTP_SERVER": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/ocpp/prj.conf:23"
+    ],
+    "declaredAt": [
+      "samples/net/ocpp/Kconfig:24"
+    ]
+  },
+  "NET_SAMPLE_SNTP_SERVER_PORT": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/ocpp/prj.conf:24"
+    ],
+    "declaredAt": [
+      "samples/net/ocpp/Kconfig:29",
+      "samples/net/sockets/sntp_client/Kconfig:7"
+    ]
+  },
+  "NET_SAMPLE_TUNNEL_MY_ADDR": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/capture/overlay-tunnel.conf:9"
+    ],
+    "declaredAt": [
+      "samples/net/capture/Kconfig:14"
+    ]
+  },
+  "NET_SAMPLE_TUNNEL_PEER_ADDR": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/capture/overlay-tunnel.conf:10"
+    ],
+    "declaredAt": [
+      "samples/net/capture/Kconfig:8"
+    ]
+  },
+  "NET_SAMPLE_USE_PACKET_PRIORITIES": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/pkt_filter/overlay-priority.conf:2"
+    ],
+    "declaredAt": [
+      "samples/net/pkt_filter/Kconfig:8"
+    ]
+  },
+  "NRF_SYS_EVENT": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/boards/nordic/nrf_sys_event/prj.conf:4"
+    ],
+    "declaredAt": [
+      "soc/nordic/common/Kconfig:20"
+    ]
+  },
+  "NRF_SYS_EVENT_IRQ_LATENCY": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/boards/nordic/nrf_sys_event/prj.conf:6"
+    ],
+    "declaredAt": [
+      "soc/nordic/common/Kconfig:26"
+    ]
+  },
+  "SAMPLE_BIG_HTTP_DL_NUM_ITER": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/sockets/big_http_download/overlay-ci.conf:4"
+    ],
+    "declaredAt": [
+      "samples/net/sockets/big_http_download/Kconfig:18"
+    ]
+  },
+  "SAMPLE_BIG_HTTP_DL_URL": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/sockets/big_http_download/overlay-ci.conf:3",
+      "samples/net/sockets/big_http_download/overlay-tls.conf:14"
+    ],
+    "declaredAt": [
+      "samples/net/sockets/big_http_download/Kconfig:8"
+    ]
+  },
+  "SAMPLE_BUFFER_ADDR_ALIGN": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/display/boards/mimxrt700_evk_mimxrt798s_cm33_cpu0.conf:7"
+    ],
+    "declaredAt": [
+      "samples/drivers/display/Kconfig:10"
+    ]
+  },
+  "SAMPLE_CLOCK_ACCURACY_PPM": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/boards/nordic/clock_control/configs/fll16m.conf:6",
+      "samples/boards/nordic/clock_control/configs/lfclk.conf:6",
+      "samples/boards/nordic/clock_control/configs/uart135.conf:6"
+    ],
+    "declaredAt": [
+      "samples/boards/nordic/clock_control/Kconfig:12"
+    ]
+  },
+  "SAMPLE_CLOCK_FREQUENCY_HZ": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/boards/nordic/clock_control/configs/cpuapp_hsfll.conf:6",
+      "samples/boards/nordic/clock_control/configs/global_hsfll.conf:6"
+    ],
+    "declaredAt": [
+      "samples/boards/nordic/clock_control/Kconfig:4"
+    ]
+  },
+  "SAMPLE_CLOCK_PRECISION": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/boards/nordic/clock_control/configs/lfclk.conf:7"
+    ],
+    "declaredAt": [
+      "samples/boards/nordic/clock_control/Kconfig:20"
+    ]
+  },
+  "SAMPLE_CRC_VARIANT_CRC16_CCITT": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/crc/boards/frdm_mcxe247.conf:4",
+      "samples/drivers/crc/boards/lpcxpresso55s28.conf:4"
+    ],
+    "declaredAt": [
+      "samples/drivers/crc/Kconfig:15"
+    ]
+  },
+  "SAMPLE_DO_OUTPUT": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/basic/minimal/common-runtime.conf:23"
+    ],
+    "declaredAt": [
+      "samples/basic/minimal/Kconfig:5"
+    ]
+  },
+  "SAMPLE_FREQ": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/i2s/i2s_codec/boards/frdm_mcxn236.conf:7",
+      "samples/drivers/i2s/i2s_codec/boards/lpcxpresso55s69_cpu0.conf:10",
+      "samples/drivers/i2s/i2s_codec/boards/mcx_n5xx_evk_mcxn547_cpu0.conf:7",
+      "samples/drivers/i2s/i2s_codec/boards/mimxrt1170_evk_mimxrt1176_cm4.conf:10",
+      "samples/drivers/i2s/i2s_codec/boards/mimxrt1180_evk_mimxrt1189_cm33.conf:10",
+      "samples/drivers/i2s/i2s_codec/boards/mimxrt1180_evk_mimxrt1189_cm7.conf:10",
+      "samples/drivers/i2s/i2s_codec/boards/stm32f4_disco.conf:7"
+    ],
+    "declaredAt": [
+      "samples/drivers/i2s/i2s_codec/Kconfig:14"
+    ]
+  },
+  "SAMPLE_I2S_OPT_BIT_CLK_GATED": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/i2s/output/boards/nucleo_h723zg.conf:1"
+    ],
+    "declaredAt": [
+      "samples/drivers/i2s/output/Kconfig:6"
+    ]
+  },
+  "SAMPLE_PERIOD": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/stats/prj.conf:17"
+    ],
+    "declaredAt": [
+      "samples/net/stats/Kconfig:8"
+    ]
+  },
+  "SAMPLE_PITCH_ALIGN": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/display/boards/mimxrt700_evk_mimxrt798s_cm33_cpu0.conf:8"
+    ],
+    "declaredAt": [
+      "samples/drivers/display/Kconfig:16"
+    ]
+  },
+  "SAMPLE_USBD_20_EXTENSION_DESC": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/subsys/dap/prj.conf:5",
+      "samples/subsys/usb/webusb/prj.conf:8"
+    ],
+    "declaredAt": [
+      "samples/subsys/usb/common/Kconfig.sample_usbd:57"
+    ]
+  },
+  "SAMPLE_USBD_PID": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/bluetooth/hci_usb/prj.conf:9",
+      "samples/subsys/dap/prj.conf:4",
+      "samples/subsys/usb/cdc_acm/prj.conf:14",
+      "samples/subsys/usb/cdc_acm_bridge/prj.conf:11",
+      "samples/subsys/usb/dfu/prj.conf:9",
+      "samples/subsys/usb/hid-keyboard/prj.conf:9",
+      "samples/subsys/usb/hid-mouse/prj.conf:9",
+      "samples/subsys/usb/mass/prj.conf:14",
+      "samples/subsys/usb/midi/prj.conf:6",
+      "samples/subsys/usb/testusb/prj.conf:11",
+      "samples/subsys/usb/uac2_explicit_feedback/prj.conf:7",
+      "samples/subsys/usb/uac2_implicit_feedback/prj.conf:7",
+      "samples/subsys/usb/uvc/prj.conf:3",
+      "samples/subsys/usb/webusb/prj.conf:7"
+    ],
+    "declaredAt": [
+      "samples/subsys/usb/common/Kconfig.sample_usbd:32"
+    ]
+  },
+  "SAMPLE_USBD_PRODUCT": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/bluetooth/bap_broadcast_sink/boards/nrf52833dk_nrf52833.conf:3",
+      "samples/bluetooth/bap_broadcast_sink/boards/nrf52840dk_nrf52840.conf:3",
+      "samples/bluetooth/bap_broadcast_sink/boards/nrf52840dongle_nrf52840.conf:3",
+      "samples/bluetooth/bap_broadcast_sink/boards/nrf5340_audio_dk_nrf5340_cpuapp.conf:3",
+      "samples/bluetooth/bap_broadcast_sink/boards/nrf5340dk_nrf5340_cpuapp.conf:3",
+      "samples/bluetooth/bap_broadcast_source/boards/nrf21540dk_nrf52840.conf:3",
+      "samples/bluetooth/bap_broadcast_source/boards/nrf52833dk_nrf52833.conf:3",
+      "samples/bluetooth/bap_broadcast_source/boards/nrf52840dk_nrf52840.conf:3",
+      "samples/bluetooth/bap_broadcast_source/boards/nrf52840dongle_nrf52840.conf:3",
+      "samples/bluetooth/bap_broadcast_source/boards/nrf5340_audio_dk_nrf5340_cpuapp.conf:3",
+      "samples/bluetooth/bap_broadcast_source/boards/nrf5340dk_nrf5340_cpuapp.conf:3",
+      "samples/bluetooth/bap_broadcast_source/boards/nrf54lm20dk_nrf54lm20a_cpuapp.conf:3",
+      "samples/bluetooth/hci_usb/prj.conf:10",
+      "samples/subsys/dap/prj.conf:3",
+      "samples/subsys/usb/cdc_acm/prj.conf:15",
+      "samples/subsys/usb/cdc_acm_bridge/prj.conf:12",
+      "samples/subsys/usb/mass/prj.conf:15",
+      "samples/subsys/usb/midi/prj.conf:5",
+      "samples/subsys/usb/testusb/prj.conf:12",
+      "samples/subsys/usb/uac2_explicit_feedback/prj.conf:8",
+      "samples/subsys/usb/uac2_implicit_feedback/prj.conf:8",
+      "samples/subsys/usb/uvc/prj.conf:4"
+    ],
+    "declaredAt": [
+      "samples/subsys/usb/common/Kconfig.sample_usbd:18"
+    ]
+  },
+  "SAMPLE_WIDTH": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/i2s/i2s_codec/boards/frdm_mcxn236.conf:13",
+      "samples/drivers/i2s/i2s_codec/boards/mcx_n5xx_evk_mcxn547_cpu0.conf:13"
+    ],
+    "declaredAt": [
+      "samples/drivers/i2s/i2s_codec/Kconfig:34"
+    ]
+  },
+  "SEQUENCE_32BITS_REGISTERS": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/adc/adc_sequence/boards/stm32f3_disco.conf:4"
+    ],
+    "declaredAt": [
+      "samples/drivers/adc/adc_sequence/Kconfig:16"
+    ]
+  },
+  "SEQUENCE_RESOLUTION": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/adc/adc_sequence/boards/cy8cproto_062_4343w.conf:1",
+      "samples/drivers/adc/adc_sequence/boards/cy8cproto_063_ble.conf:1",
+      "samples/drivers/adc/adc_sequence/boards/frdm_mcxe31b.conf:5",
+      "samples/drivers/adc/adc_sequence/boards/lp_em_cc2340r5.conf:1",
+      "samples/drivers/adc/adc_sequence/boards/lpcxpresso55s69_cpu0.conf:1",
+      "samples/drivers/adc/adc_sequence/boards/mec15xxevb_assy6853.conf:1",
+      "samples/drivers/adc/adc_sequence/boards/mec172xevb_assy6906.conf:1",
+      "samples/drivers/adc/adc_sequence/boards/mimxrt1040_evk.conf:1",
+      "samples/drivers/adc/adc_sequence/boards/mimxrt595_evk_cm33.conf:1",
+      "samples/drivers/adc/adc_sequence/boards/mr_canhubk3.conf:1",
+      "samples/drivers/adc/adc_sequence/boards/nrf52840dk_nrf52840.conf:1",
+      "samples/drivers/adc/adc_sequence/boards/nrf5340dk_nrf5340_cpuapp.conf:1",
+      "samples/drivers/adc/adc_sequence/boards/nucleo_c031c6.conf:1",
+      "samples/drivers/adc/adc_sequence/boards/rza2m_evk.conf:1",
+      "samples/drivers/adc/adc_sequence/boards/rza3ul_smarc.conf:1",
+      "samples/drivers/adc/adc_sequence/boards/rzg2l_smarc_r9a07g044l23gbg_cm33.conf:1",
+      "samples/drivers/adc/adc_sequence/boards/rzg2ul_smarc_r9a07g043u11gbg_cm33.conf:1",
+      "samples/drivers/adc/adc_sequence/boards/rzg3s_smarc_r9a08g045s33gbg_cm33.conf:1",
+      "samples/drivers/adc/adc_sequence/boards/rzn2l_rsk.conf:1",
+      "samples/drivers/adc/adc_sequence/boards/rzt2l_rsk.conf:1",
+      "samples/drivers/adc/adc_sequence/boards/rzt2m_rsk_r9a07g075m24gbg_cr520.conf:1",
+      "samples/drivers/adc/adc_sequence/boards/rzv2h_evk_r9a09g057h44gbg_cm33.conf:1",
+      "samples/drivers/adc/adc_sequence/boards/rzv2h_evk_r9a09g057h44gbg_cr8_0.conf:1",
+      "samples/drivers/adc/adc_sequence/boards/rzv2l_smarc_r9a07g054l23gbg_cm33.conf:1",
+      "samples/drivers/adc/adc_sequence/boards/rzv2n_evk_r9a09g056n48gbg_cm33.conf:1",
+      "samples/drivers/adc/adc_sequence/boards/s32k5xxcvb_s32k566_m7.conf:4",
+      "samples/drivers/adc/adc_sequence/boards/s32k5xxcvb_s32k566_r52.conf:4",
+      "samples/drivers/adc/adc_sequence/boards/s32z2xxdc2_s32z270_rtu0.conf:4",
+      "samples/drivers/adc/adc_sequence/boards/s32z2xxdc2_s32z270_rtu1.conf:4",
+      "samples/drivers/adc/adc_sequence/boards/sam4s_xplained.conf:1",
+      "samples/drivers/adc/adc_sequence/boards/sam_e70_xplained_same70q21.conf:1",
+      "samples/drivers/adc/adc_sequence/boards/sam_e70_xplained_same70q21b.conf:1",
+      "samples/drivers/adc/adc_sequence/boards/sam_v71_xult_samv71q21.conf:1",
+      "samples/drivers/adc/adc_sequence/boards/sam_v71_xult_samv71q21b.conf:1",
+      "samples/drivers/adc/adc_sequence/boards/stm32f3_disco.conf:3"
+    ],
+    "declaredAt": [
+      "samples/drivers/adc/adc_sequence/Kconfig:8"
+    ]
+  },
+  "SEQUENCE_SAMPLES": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/adc/adc_sequence/boards/stm32f3_disco.conf:2"
+    ],
+    "declaredAt": [
+      "samples/drivers/adc/adc_sequence/Kconfig:4"
+    ]
+  },
+  "SOC_NRF53_CPUNET_ENABLE": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/boards/nordic/nrf53_sync_rtc/prj.conf:1",
+      "samples/drivers/mbox/boards/nrf5340dk_nrf5340_cpuapp.conf:1",
+      "samples/subsys/ipc/ipc_service/icmsg/boards/nrf5340dk_nrf5340_cpuapp.conf:1",
+      "samples/subsys/ipc/ipc_service/multi_endpoint/boards/nrf5340dk_nrf5340_cpuapp.conf:1",
+      "samples/subsys/ipc/ipc_service/static_vrings/boards/nrf5340dk_nrf5340_cpuapp.conf:1",
+      "samples/subsys/logging/multidomain/boards/nrf5340dk_nrf5340_cpuapp.conf:1",
+      "samples/subsys/zbus/proxy_agent_ipc/boards/nrf5340dk_nrf5340_cpuapp.conf:7",
+      "samples/sysbuild/hello_world/boards/nrf5340dk_nrf5340_cpuapp.conf:4"
+    ],
+    "declaredAt": [
+      "soc/nordic/nrf53/Kconfig:192"
+    ]
+  },
+  "SOC_NRF54H20_CPURAD_ENABLE": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/boards/nordic/coresight_stm/prj.conf:2",
+      "samples/boards/nordic/spis_wakeup/boards/nrf54h20dk_nrf54h20_cpuapp.conf:4",
+      "samples/subsys/ipc/ipc_service/multi_endpoint/boards/nrf54h20dk_nrf54h20_cpuapp.conf:1",
+      "samples/subsys/zbus/proxy_agent_ipc/boards/nrf54h20dk_nrf54h20_cpuapp.conf:7"
+    ],
+    "declaredAt": [
+      "soc/nordic/nrf54h/Kconfig:75"
+    ]
+  },
+  "SOC_RA_ENABLE_START_SECOND_CORE": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/mbox/boards/ek_ra8p1_r7ka8p1kflcac_cm85.conf:4",
+      "samples/drivers/mbox_data/boards/ek_ra8p1_r7ka8p1kflcac_cm85.conf:4",
+      "samples/subsys/ipc/ipc_service/icmsg/boards/ek_ra8p1_r7ka8p1kflcac_cm85.conf:4",
+      "samples/subsys/ipc/ipc_service/static_vrings/boards/ek_ra8p1_r7ka8p1kflcac_cm85.conf:4",
+      "samples/subsys/ipc/openamp/boards/ek_ra8d2_r7ka8d2kflcac_cm85.conf:4",
+      "samples/subsys/ipc/openamp/boards/ek_ra8m2_r7ka8m2jflcac_cm85.conf:4",
+      "samples/subsys/ipc/openamp/boards/ek_ra8p1_r7ka8p1kflcac_cm85.conf:4",
+      "samples/subsys/ipc/openamp/boards/ek_ra8t2_r7ka8t2lflcac_cm85.conf:4"
+    ],
+    "declaredAt": [
+      "soc/renesas/ra/Kconfig:30"
+    ]
+  },
+  "SPIRAM_FETCH_INSTRUCTIONS": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "snippets/espressif/psram-reloc/esp_psram_reloc.conf:6"
+    ],
+    "declaredAt": [
+      "soc/espressif/common/Kconfig.spiram:117"
+    ]
+  },
+  "SPIRAM_MODE_OCT": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/video/capture/boards/esp32s3_eye_procpu.conf:3"
+    ],
+    "declaredAt": [
+      "soc/espressif/common/Kconfig.spiram:39"
+    ]
+  },
+  "SPIRAM_RODATA": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "snippets/espressif/psram-reloc/esp_psram_reloc.conf:7"
+    ],
+    "declaredAt": [
+      "soc/espressif/common/Kconfig.spiram:126"
+    ]
+  },
+  "STATIC_BROADCAST_ID": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/bluetooth/pbp_public_broadcast_source/prj.conf:28"
+    ],
+    "declaredAt": [
+      "samples/bluetooth/bap_broadcast_source/Kconfig:62",
+      "samples/bluetooth/cap_initiator/Kconfig:33",
+      "samples/bluetooth/pbp_public_broadcast_source/Kconfig:6"
+    ]
+  },
+  "STM32_BACKUP_SRAM": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/boards/st/backup_sram/prj.conf:1"
+    ],
+    "declaredAt": [
+      "soc/st/stm32/common/Kconfig:11"
+    ]
+  },
+  "STM32_WKUP_PINS": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/boards/st/power_mgmt/wkup_pins/prj.conf:2"
+    ],
+    "declaredAt": [
+      "soc/st/stm32/common/Kconfig:43"
+    ]
+  },
+  "TAGOIO_DEVICE_TOKEN": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/cloud/tagoio_http_post/prj.conf:43"
+    ],
+    "declaredAt": [
+      "samples/net/cloud/tagoio_http_post/Kconfig:16"
+    ]
+  },
+  "TAGOIO_HTTP_WIFI_PSK": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/cloud/tagoio_http_post/overlay-wifi.conf:5"
+    ],
+    "declaredAt": [
+      "samples/net/cloud/tagoio_http_post/Kconfig:36"
+    ]
+  },
+  "TAGOIO_HTTP_WIFI_SSID": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/cloud/tagoio_http_post/overlay-wifi.conf:4"
+    ],
+    "declaredAt": [
+      "samples/net/cloud/tagoio_http_post/Kconfig:32"
+    ]
+  },
+  "TAGOIO_MANUAL_SERVER": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/cloud/tagoio_http_post/overlay-wifi.conf:3"
+    ],
+    "declaredAt": [
+      "samples/net/cloud/tagoio_http_post/Kconfig:8"
+    ]
+  },
+  "TEST_LIB_HASH_MAP_MAX_ENTRIES": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/basic/hash_map/prj.conf:13"
+    ],
+    "declaredAt": [
+      "samples/basic/hash_map/Kconfig:5",
+      "tests/lib/hash_map/Kconfig:5"
+    ]
+  },
+  "TMAP_PERIPHERAL_DUO": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/bluetooth/tmap_peripheral/duo.conf:2"
+    ],
+    "declaredAt": [
+      "samples/bluetooth/tmap_peripheral/Kconfig:31"
+    ]
+  },
+  "UPDATEHUB_SAMPLE_WIFI_PSK": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/subsys/mgmt/updatehub/overlay-wifi.conf:14"
+    ],
+    "declaredAt": [
+      "samples/subsys/mgmt/updatehub/Kconfig:27"
+    ]
+  },
+  "UPDATEHUB_SAMPLE_WIFI_SSID": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/subsys/mgmt/updatehub/overlay-wifi.conf:13"
+    ],
+    "declaredAt": [
+      "samples/subsys/mgmt/updatehub/Kconfig:24"
+    ]
+  },
+  "USE_CODEC_AUDIO_OUTPUT": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/bluetooth/bap_broadcast_sink/boards/sf32lb52_devkit_lcd.conf:2"
+    ],
+    "declaredAt": [
+      "samples/bluetooth/bap_broadcast_sink/Kconfig:68"
+    ]
+  },
+  "USE_CODEC_CLOCK": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/i2s/i2s_codec/boards/frdm_mcxn236.conf:9",
+      "samples/drivers/i2s/i2s_codec/boards/lpcxpresso55s69_cpu0.conf:7",
+      "samples/drivers/i2s/i2s_codec/boards/mcx_n5xx_evk_mcxn547_cpu0.conf:9",
+      "samples/drivers/i2s/i2s_codec/boards/mimxrt595_evk_mimxrt595s_cm33.conf:9",
+      "samples/drivers/i2s/i2s_codec/boards/mimxrt685_evk_mimxrt685s_cm33.conf:9",
+      "samples/drivers/i2s/i2s_codec/boards/rd_rw612_bga.conf:9"
+    ],
+    "declaredAt": [
+      "samples/bluetooth/classic/a2dp_sink/Kconfig:9",
+      "samples/drivers/i2s/i2s_codec/Kconfig:20"
+    ]
+  },
+  "USE_DMIC": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/i2s/i2s_codec/boards/frdm_mcxn236.conf:10",
+      "samples/drivers/i2s/i2s_codec/boards/mcx_n5xx_evk_mcxn547_cpu0.conf:10",
+      "samples/drivers/i2s/i2s_codec/boards/mimxrt1060_evk_mimxrt1062_qspi_C.conf:8",
+      "samples/drivers/i2s/i2s_codec/boards/mimxrt1170_evk_mimxrt1176_cm7.conf:8",
+      "samples/drivers/i2s/i2s_codec/boards/mimxrt1180_evk_mimxrt1189_cm33.conf:11",
+      "samples/drivers/i2s/i2s_codec/boards/mimxrt1180_evk_mimxrt1189_cm7.conf:11",
+      "samples/drivers/i2s/i2s_codec/boards/mimxrt595_evk_mimxrt595s_cm33.conf:8",
+      "samples/drivers/i2s/i2s_codec/boards/mimxrt685_evk_mimxrt685s_cm33.conf:8",
+      "samples/drivers/i2s/i2s_codec/boards/mimxrt700_evk_mimxrt798s_cm33_cpu0.conf:8",
+      "samples/drivers/i2s/i2s_codec/boards/rd_rw612_bga.conf:8"
+    ],
+    "declaredAt": [
+      "samples/drivers/i2s/i2s_codec/Kconfig:46"
+    ]
+  },
+  "USE_USB_AUDIO_INPUT": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/bluetooth/bap_broadcast_source/boards/nrf21540dk_nrf52840.conf:2",
+      "samples/bluetooth/bap_broadcast_source/boards/nrf52833dk_nrf52833.conf:2",
+      "samples/bluetooth/bap_broadcast_source/boards/nrf52840dk_nrf52840.conf:2",
+      "samples/bluetooth/bap_broadcast_source/boards/nrf52840dongle_nrf52840.conf:2",
+      "samples/bluetooth/bap_broadcast_source/boards/nrf5340_audio_dk_nrf5340_cpuapp.conf:2",
+      "samples/bluetooth/bap_broadcast_source/boards/nrf5340dk_nrf5340_cpuapp.conf:2",
+      "samples/bluetooth/bap_broadcast_source/boards/nrf54lm20dk_nrf54lm20a_cpuapp.conf:2"
+    ],
+    "declaredAt": [
+      "samples/bluetooth/bap_broadcast_source/Kconfig:46"
+    ]
+  },
+  "USE_USB_AUDIO_OUTPUT": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/bluetooth/bap_broadcast_sink/boards/nrf52833dk_nrf52833.conf:2",
+      "samples/bluetooth/bap_broadcast_sink/boards/nrf52840dk_nrf52840.conf:2",
+      "samples/bluetooth/bap_broadcast_sink/boards/nrf52840dongle_nrf52840.conf:2",
+      "samples/bluetooth/bap_broadcast_sink/boards/nrf5340_audio_dk_nrf5340_cpuapp.conf:2",
+      "samples/bluetooth/bap_broadcast_sink/boards/nrf5340dk_nrf5340_cpuapp.conf:2"
+    ],
+    "declaredAt": [
+      "samples/bluetooth/bap_broadcast_sink/Kconfig:56"
+    ]
+  },
+  "VIDEO_CAPTURE_N_BUFFERING": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/video/tcpserversink/boards/stm32n6570_dk_jpegenc.conf:8",
+      "samples/drivers/video/tcpserversink/boards/stm32n6570_dk_stm32n657xx_fsbl_jpegenc.conf:8",
+      "samples/drivers/video/tcpserversink/boards/stm32n6570_dk_stm32n657xx_fsbl_venc.conf:8",
+      "samples/drivers/video/tcpserversink/boards/stm32n6570_dk_stm32n657xx_sb_jpegenc.conf:8",
+      "samples/drivers/video/tcpserversink/boards/stm32n6570_dk_stm32n657xx_sb_venc.conf:8",
+      "samples/drivers/video/tcpserversink/boards/stm32n6570_dk_venc.conf:8"
+    ],
+    "declaredAt": [
+      "samples/drivers/video/tcpserversink/Kconfig:52"
+    ]
+  },
+  "VIDEO_CTRL_HFLIP": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/video/capture/boards/mimxrt1060_evk_mimxrt1062_qspi_B.conf:2",
+      "samples/drivers/video/capture/boards/mimxrt1064_evk.conf:2"
+    ],
+    "declaredAt": [
+      "samples/drivers/video/capture/Kconfig:51",
+      "samples/drivers/video/tcpserversink/Kconfig:61"
+    ]
+  },
+  "VIDEO_CTRL_VFLIP": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/video/capture/boards/esp32s3_eye_procpu.conf:11"
+    ],
+    "declaredAt": [
+      "samples/drivers/video/capture/Kconfig:56",
+      "samples/drivers/video/tcpserversink/Kconfig:66"
+    ]
+  },
+  "VIDEO_ENCODED_PIXEL_FORMAT": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/video/tcpserversink/boards/stm32n6570_dk_jpegenc.conf:13",
+      "samples/drivers/video/tcpserversink/boards/stm32n6570_dk_stm32n657xx_fsbl_jpegenc.conf:13",
+      "samples/drivers/video/tcpserversink/boards/stm32n6570_dk_stm32n657xx_fsbl_venc.conf:13",
+      "samples/drivers/video/tcpserversink/boards/stm32n6570_dk_stm32n657xx_sb_jpegenc.conf:13",
+      "samples/drivers/video/tcpserversink/boards/stm32n6570_dk_stm32n657xx_sb_venc.conf:13",
+      "samples/drivers/video/tcpserversink/boards/stm32n6570_dk_venc.conf:13"
+    ],
+    "declaredAt": [
+      "samples/drivers/video/tcpserversink/Kconfig:71"
+    ]
+  },
+  "VIDEO_FRAME_HEIGHT": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/video/capture/boards/ek_ra8d1.conf:2",
+      "samples/drivers/video/capture/boards/esp32s3_eye_procpu.conf:8",
+      "samples/drivers/video/capture/boards/frdm_mcxn236.conf:3",
+      "samples/drivers/video/capture/boards/stm32h7b3i_dk.conf:11",
+      "samples/drivers/video/capture/boards/stm32mp135f_dk.conf:3",
+      "samples/drivers/video/capture/boards/stm32n6570_dk.conf:2",
+      "samples/drivers/video/capture/boards/stm32n6570_dk_stm32n657xx_fsbl.conf:2",
+      "samples/drivers/video/capture/boards/stm32n6570_dk_stm32n657xx_sb.conf:2",
+      "samples/drivers/video/tcpserversink/boards/stm32n6570_dk_jpegenc.conf:18",
+      "samples/drivers/video/tcpserversink/boards/stm32n6570_dk_stm32n657xx_fsbl_jpegenc.conf:18",
+      "samples/drivers/video/tcpserversink/boards/stm32n6570_dk_stm32n657xx_fsbl_venc.conf:18",
+      "samples/drivers/video/tcpserversink/boards/stm32n6570_dk_stm32n657xx_sb_jpegenc.conf:18",
+      "samples/drivers/video/tcpserversink/boards/stm32n6570_dk_stm32n657xx_sb_venc.conf:18",
+      "samples/drivers/video/tcpserversink/boards/stm32n6570_dk_venc.conf:18"
+    ],
+    "declaredAt": [
+      "samples/drivers/video/capture/Kconfig:34",
+      "samples/drivers/video/tcpserversink/Kconfig:35"
+    ]
+  },
+  "VIDEO_FRAME_WIDTH": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/video/capture/boards/ek_ra8d1.conf:1",
+      "samples/drivers/video/capture/boards/esp32s3_eye_procpu.conf:9",
+      "samples/drivers/video/capture/boards/frdm_mcxn236.conf:2",
+      "samples/drivers/video/capture/boards/stm32h7b3i_dk.conf:10",
+      "samples/drivers/video/capture/boards/stm32mp135f_dk.conf:2",
+      "samples/drivers/video/capture/boards/stm32n6570_dk.conf:1",
+      "samples/drivers/video/capture/boards/stm32n6570_dk_stm32n657xx_fsbl.conf:1",
+      "samples/drivers/video/capture/boards/stm32n6570_dk_stm32n657xx_sb.conf:1",
+      "samples/drivers/video/tcpserversink/boards/stm32n6570_dk_jpegenc.conf:17",
+      "samples/drivers/video/tcpserversink/boards/stm32n6570_dk_stm32n657xx_fsbl_jpegenc.conf:17",
+      "samples/drivers/video/tcpserversink/boards/stm32n6570_dk_stm32n657xx_fsbl_venc.conf:17",
+      "samples/drivers/video/tcpserversink/boards/stm32n6570_dk_stm32n657xx_sb_jpegenc.conf:17",
+      "samples/drivers/video/tcpserversink/boards/stm32n6570_dk_stm32n657xx_sb_venc.conf:17",
+      "samples/drivers/video/tcpserversink/boards/stm32n6570_dk_venc.conf:17"
+    ],
+    "declaredAt": [
+      "samples/drivers/video/capture/Kconfig:40",
+      "samples/drivers/video/tcpserversink/Kconfig:41"
+    ]
+  },
+  "VIDEO_HEIGHT": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/video/capture_to_lvgl/boards/mini_stm32h743.conf:11",
+      "samples/drivers/video/capture_to_lvgl/boards/stm32h7b3i_dk.conf:10",
+      "samples/drivers/video/capture_to_lvgl/boards/stm32n6570_dk.conf:2",
+      "samples/drivers/video/capture_to_lvgl/boards/stm32n6570_dk_stm32n657xx_fsbl.conf:2",
+      "samples/drivers/video/capture_to_lvgl/boards/stm32n6570_dk_stm32n657xx_sb.conf:2"
+    ],
+    "declaredAt": [
+      "samples/drivers/video/capture_to_lvgl/Kconfig:40"
+    ]
+  },
+  "VIDEO_PIXEL_FORMAT": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/video/capture/boards/esp32s3_eye_procpu.conf:10",
+      "samples/drivers/video/capture/boards/stm32h7b3i_dk.conf:9",
+      "samples/drivers/video/capture/boards/stm32mp135f_dk.conf:1",
+      "samples/drivers/video/capture/boards/stm32n6570_dk.conf:3",
+      "samples/drivers/video/capture/boards/stm32n6570_dk_stm32n657xx_fsbl.conf:3",
+      "samples/drivers/video/capture/boards/stm32n6570_dk_stm32n657xx_sb.conf:3",
+      "samples/drivers/video/tcpserversink/boards/stm32n6570_dk_jpegenc.conf:16",
+      "samples/drivers/video/tcpserversink/boards/stm32n6570_dk_stm32n657xx_fsbl_jpegenc.conf:16",
+      "samples/drivers/video/tcpserversink/boards/stm32n6570_dk_stm32n657xx_fsbl_venc.conf:16",
+      "samples/drivers/video/tcpserversink/boards/stm32n6570_dk_stm32n657xx_sb_jpegenc.conf:16",
+      "samples/drivers/video/tcpserversink/boards/stm32n6570_dk_stm32n657xx_sb_venc.conf:16",
+      "samples/drivers/video/tcpserversink/boards/stm32n6570_dk_venc.conf:16"
+    ],
+    "declaredAt": [
+      "samples/drivers/video/capture/Kconfig:46",
+      "samples/drivers/video/tcpserversink/Kconfig:47"
+    ]
+  },
+  "VIDEO_SOURCE_CROP_HEIGHT": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/video/capture/boards/stm32mp135f_dk.conf:8"
+    ],
+    "declaredAt": [
+      "samples/drivers/video/capture/Kconfig:27",
+      "samples/drivers/video/capture_to_lvgl/Kconfig:29",
+      "samples/drivers/video/tcpserversink/Kconfig:28"
+    ]
+  },
+  "VIDEO_SOURCE_CROP_LEFT": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/video/capture/boards/stm32mp135f_dk.conf:5"
+    ],
+    "declaredAt": [
+      "samples/drivers/video/capture/Kconfig:8",
+      "samples/drivers/video/capture_to_lvgl/Kconfig:10",
+      "samples/drivers/video/tcpserversink/Kconfig:9"
+    ]
+  },
+  "VIDEO_SOURCE_CROP_TOP": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/video/capture/boards/stm32mp135f_dk.conf:6"
+    ],
+    "declaredAt": [
+      "samples/drivers/video/capture/Kconfig:14",
+      "samples/drivers/video/capture_to_lvgl/Kconfig:16",
+      "samples/drivers/video/tcpserversink/Kconfig:15"
+    ]
+  },
+  "VIDEO_SOURCE_CROP_WIDTH": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/video/capture/boards/stm32mp135f_dk.conf:7"
+    ],
+    "declaredAt": [
+      "samples/drivers/video/capture/Kconfig:20",
+      "samples/drivers/video/capture_to_lvgl/Kconfig:22",
+      "samples/drivers/video/tcpserversink/Kconfig:21"
+    ]
+  },
+  "VIDEO_WIDTH": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/drivers/video/capture_to_lvgl/boards/mini_stm32h743.conf:10",
+      "samples/drivers/video/capture_to_lvgl/boards/stm32h7b3i_dk.conf:9",
+      "samples/drivers/video/capture_to_lvgl/boards/stm32n6570_dk.conf:1",
+      "samples/drivers/video/capture_to_lvgl/boards/stm32n6570_dk_stm32n657xx_fsbl.conf:1",
+      "samples/drivers/video/capture_to_lvgl/boards/stm32n6570_dk_stm32n657xx_sb.conf:1"
+    ],
+    "declaredAt": [
+      "samples/drivers/video/capture_to_lvgl/Kconfig:36"
+    ]
+  },
+  "WIFI_SAMPLE_AP_IP_ADDRESS": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/wifi/apsta_mode/socs/esp32_procpu.conf:9"
+    ],
+    "declaredAt": [
+      "samples/net/wifi/apsta_mode/Kconfig:50"
+    ]
+  },
+  "WIFI_SAMPLE_AP_NETMASK": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/wifi/apsta_mode/socs/esp32_procpu.conf:10"
+    ],
+    "declaredAt": [
+      "samples/net/wifi/apsta_mode/Kconfig:56"
+    ]
+  },
+  "WIFI_SAMPLE_AP_PSK": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/wifi/apsta_mode/nxp/overlay_rw612.conf:3",
+      "samples/net/wifi/apsta_mode/socs/esp32_procpu.conf:5"
+    ],
+    "declaredAt": [
+      "samples/net/wifi/apsta_mode/Kconfig:12"
+    ]
+  },
+  "WIFI_SAMPLE_AP_SSID": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/wifi/apsta_mode/nxp/overlay_rw612.conf:2",
+      "samples/net/wifi/apsta_mode/socs/esp32_procpu.conf:4"
+    ],
+    "declaredAt": [
+      "samples/net/wifi/apsta_mode/Kconfig:6"
+    ]
+  },
+  "WIFI_SAMPLE_DHCPV4_START": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/wifi/apsta_mode/nxp/overlay_rw612.conf:6",
+      "samples/net/wifi/apsta_mode/socs/esp32_procpu.conf:8"
+    ],
+    "declaredAt": [
+      "samples/net/wifi/apsta_mode/Kconfig:30"
+    ]
+  },
+  "WIFI_SAMPLE_PSK": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/wifi/apsta_mode/nxp/overlay_rw612.conf:5",
+      "samples/net/wifi/apsta_mode/socs/esp32_procpu.conf:7"
+    ],
+    "declaredAt": [
+      "samples/net/wifi/apsta_mode/Kconfig:24"
+    ]
+  },
+  "WIFI_SAMPLE_SSID": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/wifi/apsta_mode/nxp/overlay_rw612.conf:4",
+      "samples/net/wifi/apsta_mode/socs/esp32_procpu.conf:6"
+    ],
+    "declaredAt": [
+      "samples/net/wifi/apsta_mode/Kconfig:18"
+    ]
+  },
+  "ZVFS_OPEN_ADD_SIZE_NET_SAMPLE": {
+    "reason": "Declared by application/test-local Kconfig outside the canonical target-root catalogue.",
+    "assignedAt": [
+      "samples/net/lwm2m_client/boards/native_sim.conf:7",
+      "samples/net/openthread/border_router/prj.conf:25",
+      "samples/net/sockets/echo_client/overlay-tls.conf:15",
+      "samples/net/sockets/echo_server/overlay-tls.conf:16",
+      "samples/net/sockets/echo_server/overlay-ws-console.conf:11",
+      "samples/net/sockets/echo_server/prj.conf:50",
+      "samples/net/sockets/http_server/prj.conf:9"
+    ],
+    "declaredAt": [
+      "samples/net/common/Kconfig:55"
+    ]
+  }
+}

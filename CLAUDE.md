@@ -17,6 +17,7 @@ wraps both with skills, agents, and hooks.
 ```bash
 npm run check:quick  # unit/fixture tests and validation; no Zephyr checkout required
 npm run check        # fetch/verify, rebuild index, all real-data tests and quality gates
+npm run check:release # Doxygen API, skill compile matrix, copied-artifact clean room
 ```
 
 Run the full gate before reporting work complete. It recreates missing release inputs
@@ -34,13 +35,13 @@ breakage:
   through esbuild, including tests.
 - **Query `dt_property_v`, not `dt_property`** — descriptions are interned in
   `text_pool`.
-- **Bump `SCHEMA_VERSION` and rebuild the index** after any schema *or parser*
-  change.
+- **Bump the shared schema/descriptor versions and rebuild the index** after any
+  stored semantic, schema, or parser change.
 - **Throw `ToolError`** for anything the model can correct; reserve JSON-RPC
   error codes for protocol faults.
 - **PostToolUse hooks must exit 2 with stderr** to reach the model. On exit 0,
   stdout goes only to the debug log.
-- **Never commit `index/` (72 MB) or `.cache/` (610 MB).**
+- **Never commit `index/` or `.cache/`.**
 - **No runtime dependencies in `packages/mcp-server`** — the bundle must stay
   dependency-free and fast to start.
 
@@ -73,8 +74,7 @@ Skill edits take effect immediately. Changes to `hooks/`, `.mcp.json`, and
 Match the surrounding code: TypeScript with `strict` and
 `noUncheckedIndexedAccess`, no `any`, explicit return types on exported
 functions. Comments explain *why* — a domain constraint, a spec requirement, a
-non-obvious trade-off — not what the line does. Several parsers encode real
-Zephyr quirks (devicetree include flattening, Kconfig multi-definition
-aggregation, Doxygen group nesting); when you change one, keep the comment that
-explains the quirk accurate, and add a test that pins the behaviour against the
-real tree rather than only a fixture.
+non-obvious trade-off — not what the line does. The semantic adapters encode
+real Zephyr quirks (Kconfig definition alternatives, recursive binding includes,
+Doxygen member identity); when you change one, keep the rationale accurate and
+add both a focused fixture and pinned-tree differential evidence.

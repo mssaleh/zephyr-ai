@@ -1,0 +1,8 @@
+description: Provider used by the zephyr-ai binding skeleton release gate
+
+compatible: "zephyr-ai,skeleton-provider"
+
+properties:
+  "#test-cells":
+    type: int
+    required: true

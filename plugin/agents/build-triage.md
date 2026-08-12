@@ -1,7 +1,6 @@
 ---
 name: build-triage
 description: Diagnose a failing Zephyr build. Use when west build fails and the cause is not immediately obvious from the first error, when a CMake, Kconfig, devicetree, or linker error needs tracing to its root cause, or when a build behaves inconsistently between runs. Reads the build output and the generated artefacts, verifies every symbol against the indexed Zephyr version, and reports the root cause with a specific fix.
-model: sonnet
 effort: medium
 maxTurns: 30
 ---
@@ -20,9 +19,10 @@ fix, not a list of things to try.
    failures. Establish this before building a theory.
 
 3. **Verify every symbol involved against the index.** Do not reason about
-   whether `CONFIG_FOO` or a devicetree property exists — call `get_kconfig` and
-   `get_binding`. The indexed Zephyr version is the authority. Check
-   `index_status` first if the project may be on a different version.
+   whether `CONFIG_FOO` or a devicetree property exists from memory — call
+   `get_kconfig` and `get_binding`. Check `index_status` first and respect its
+   coverage notes: the matching source tree and compiled output are authoritative,
+   while an incomplete catalogue miss remains uncertainty.
 
 4. **Read the generated artefacts.** They are the ground truth:
    - `build/zephyr/.config` — the resolved configuration. A symbol you set that
@@ -45,7 +45,7 @@ fix, not a list of things to try.
 | `undefined node label` | Label does not exist on this SoC — read the board `.dtsi` |
 | `_DT_N_..._P_... undeclared` | Node exists but is not `status = "okay"` |
 | `undefined reference to` a Zephyr function | The subsystem's `CONFIG_` is off; the header compiled but nothing else did |
-| A `CONFIG_` has no effect | Unmet `depends on`, so the line was silently dropped |
+| A known `CONFIG_` stays disabled | Unmet `depends on`; Kconfig reports the assignment and resolved value during configuration |
 | `region FLASH overflowed` | Run `-t rom_report`, then cut logging, shell, asserts |
 | Works after `-p always`, fails otherwise | Stale generated Kconfig or devicetree |
 | Toolchain or SDK not found | `ZEPHYR_SDK_INSTALL_DIR`, or `west zephyr-export` never run |

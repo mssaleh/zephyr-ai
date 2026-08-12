@@ -1,4 +1,5 @@
 import { clampLimit, json } from '../db.ts';
+import { ToolError } from '../protocol.ts';
 import {
   type ToolFactory,
   catalogueMiss,
@@ -27,8 +28,8 @@ export const searchSamples: ToolFactory = (index) => ({
   title: 'Search Zephyr samples',
   description:
     'Find Zephyr sample applications by what they demonstrate. Samples are the highest-value ' +
-    'reference material in the tree: each is a known-good combination of prj.conf, devicetree ' +
-    'overlay, and C source that is built in CI, so copying from one is far more reliable than ' +
+    'reference material in the tree: each combines prj.conf, devicetree overlays, and source, ' +
+    'with explicit Twister platform evidence where upstream records it. Adapting one is safer than ' +
     'assembling a configuration from prose. Search before writing a new application that uses an ' +
     'unfamiliar subsystem.',
   inputSchema: {
@@ -40,7 +41,7 @@ export const searchSamples: ToolFactory = (index) => ({
       },
       board: {
         type: 'string',
-        description: 'Prefer samples known to build for this board target.',
+        description: 'Rank samples with recorded integration or allowlist evidence for this board first.',
       },
       limit: limitSchema(10),
     },
@@ -53,19 +54,20 @@ export const searchSamples: ToolFactory = (index) => ({
     const board = optionalString(args, 'board');
     const limit = clampLimit(args['limit'], 10);
 
-    const filters: string[] = [];
-    const params: unknown[] = [];
-    if (board) {
-      const bare = board.split('/')[0]!;
-      filters.push('AND (s.integration_platforms LIKE ? OR s.platform_allow LIKE ?)');
-      params.push(`%${bare}%`, `%${bare}%`);
-    }
+    const bareBoard = board?.split('/')[0];
+    const ranking = bareBoard
+      ? `CASE WHEN EXISTS (
+           SELECT 1 FROM sample_platform p
+            WHERE p.sample_id = s.id AND (p.platform = ? OR p.platform LIKE ?)
+         ) THEN 0 ELSE 1 END,`
+      : '';
+    const params: unknown[] = bareBoard ? [bareBoard, `${bareBoard}/%`] : [];
 
     const rows = index().search(
       `SELECT s.path, s.name, s.description, s.tags, s.integration_platforms, s.files
          FROM sample_fts f JOIN sample s ON s.id = f.rowid
-        WHERE sample_fts MATCH ? ${filters.join(' ')}
-        ORDER BY bm25(sample_fts, 6.0, 4.0, 3.0, 2.0)
+        WHERE sample_fts MATCH ?
+        ORDER BY ${ranking} bm25(sample_fts, 6.0, 4.0, 3.0, 2.0)
         LIMIT ?`,
       query,
       [...params, limit],
@@ -97,7 +99,7 @@ export const searchSamples: ToolFactory = (index) => ({
           r.description || '',
           r.tags.length > 0 ? `tags: ${r.tags.join(', ')}` : '',
           r.integrationPlatforms.length > 0
-            ? `known to build on: ${r.integrationPlatforms.slice(0, 6).join(', ')}`
+            ? `recorded Twister integration platforms: ${r.integrationPlatforms.slice(0, 6).join(', ')}`
             : '',
         ]
           .filter(Boolean)
@@ -117,11 +119,11 @@ export const getSample: ToolFactory = (index) => ({
   name: 'get_sample',
   title: 'Read a Zephyr sample',
   description:
-    'Read a sample application: its description, the boards it is verified against, and the ' +
+    'Read a sample application: its description, recorded Twister platform evidence, and the ' +
     'contents of its prj.conf, devicetree overlays, CMakeLists.txt, and C sources. Use this to ' +
     'copy a working configuration rather than deriving one — the Kconfig and devicetree changes ' +
-    'a subsystem needs are rarely all documented in one place, but they are always all present ' +
-    'in a sample that uses it.',
+    'a subsystem needs are rarely all documented in one place. The index returns the small, ' +
+    'high-value files retained under its explicit size policy.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -163,12 +165,20 @@ export const getSample: ToolFactory = (index) => ({
       path,
     );
     if (!row) {
-      row = idx.get(
+      const escaped = path.replace(/[\\%_]/g, '\\$&');
+      const candidates = idx.all(
         `SELECT id, path, name, description, tags, depends_on, integration_platforms,
                 platform_allow, files, doc_path
-           FROM sample WHERE path LIKE ? ORDER BY LENGTH(path) LIMIT 1`,
-        `%${path}%`,
+           FROM sample WHERE path LIKE ? ESCAPE '\\' ORDER BY LENGTH(path), path LIMIT 12`,
+        `%/${escaped}`,
       );
+      if (candidates.length > 1) {
+        throw new ToolError(
+          `Sample path "${path}" is ambiguous. Use one exact path:\n` +
+            candidates.map((candidate) => `- ${String(candidate['path'])}`).join('\n'),
+        );
+      }
+      row = candidates[0];
     }
 
     if (!row) {
@@ -221,9 +231,9 @@ export const getSample: ToolFactory = (index) => ({
       section('Tags', tags),
       section('Requires board support for', dependsOn),
       integration.length > 0
-        ? `**Verified on**: ${integration.map((p) => `\`${p}\``).join(', ')}`
+        ? `**Twister integration platforms**: ${integration.map((p) => `\`${p}\``).join(', ')}`
         : allow.length > 0
-          ? `**Restricted to**: ${allow.slice(0, 12).map((p) => `\`${p}\``).join(', ')}`
+          ? `**Twister platform allowlist**: ${allow.slice(0, 12).map((p) => `\`${p}\``).join(', ')}`
           : undefined,
       `**Build it:**\n\`\`\`bash\nwest build -b <board-target> ${String(row['path'])}\n\`\`\``,
       rendered ? `## Files\n\n${rendered.trimEnd()}` : '_No file contents stored for this sample._',

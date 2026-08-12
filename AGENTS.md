@@ -23,14 +23,15 @@ single dependency-free `.mjs` and uses Node's built-in `node:sqlite`.
 
 ```bash
 npm install
-npm run fetch:zephyr     # pinned Zephyr into .cache/ (~610 MB, ~15 s) — do this first
+npm run fetch:zephyr     # pinned Zephyr into .cache/ — do this first
 npm run build            # bundles BOTH plugin/mcp/*.mjs artefacts
-npm run build:index      # index/zephyr.db (~4 s, ~72 MiB)
-npm test                 # 78 tests
+npm run build:index      # semantic Kconfig/bindings; local API fallback
+npm test                 # fixture, pinned-tree, real stdio, and hook/fetch suites
 npm run typecheck
 npm run validate:plugin
 npm run check:quick      # no pinned tree/index required
 npm run check            # fetch, rebuild index, test real inputs, quality, validation
+npm run check:release    # Doxygen API, skill compile matrix, copied-artifact clean room
 ```
 
 `npm run check` is the gate. Nothing is done until it passes.
@@ -49,6 +50,9 @@ npm run check            # fetch, rebuild index, test real inputs, quality, vali
   esbuild invocation that pulls in `ingest` carries
   `--banner:js="import{createRequire}from'node:module';…"`. Copy it when adding a
   new bundle target.
+- **Ingestion requires Python 3.10+, PyYAML, and the selected tree's Kconfiglib
+  and python-devicetree.** The preflight prefers the west interpreter and fails
+  before scanning. Do not add a silent handwritten-parser fallback.
 
 ## Tests
 
@@ -74,8 +78,9 @@ Breaking any of these produces failures that are hard to trace back.
 Changing `packages/*/src` without `npm run build` ships stale code that passes
 review and fails in the field.
 
-**Schema version.** Bump `SCHEMA_VERSION` in `packages/ingest/src/schema.ts`
-whenever the database schema changes; the server warns on mismatch. Rebuild the
+**Schema version.** Bump `INDEX_SCHEMA_VERSION` in
+`packages/shared/index-descriptor.ts` whenever the database schema or stored
+semantics change; `schema.ts` imports it and the server fails closed on mismatch. Rebuild the
 index after any schema *or parser* change — parser output is baked in.
 
 **FTS5 tables are external-content and populated once** by the `BUILD_FTS`
@@ -85,9 +90,13 @@ table. This is why a chunk carries its page `title` and a binding carries
 `prop_names`.
 
 **Query `dt_property_v`, never `dt_property`.** Property descriptions are
-interned into `text_pool` — 20.7 MB of text across 119 718 rows is only 0.8 MB of
-distinct strings. The view hides the join; the base table has a `description_id`,
-not a description.
+interned into `text_pool`. The view hides the join; the base table has a
+`description_id`, not a description.
+
+**Descriptor identity is semantic.** Commit alone is insufficient. The
+descriptor fingerprints tracked diffs, untracked source, west manifest, and module
+state. Keep private paths out of normal MCP projections and bump descriptor/builder
+versions when its contract changes.
 
 **`Index.search(sql, query, params, limit)`.** `params` is an array of the
 bindings that follow the MATCH placeholder, *including* the LIMIT. The method
@@ -114,7 +123,8 @@ validate ./plugin --strict` catches this; run it.
 
 | Path | Contents |
 | --- | --- |
-| `packages/ingest/src/parsers/` | `kconfig.ts`, `binding.ts`, `rst.ts`, `doxygen.ts` — pure functions, no I/O, heavily tested |
+| `packages/ingest/src/adapters/` | Embedded Python exporters for target-tree Kconfiglib, edtlib, and Doxygen XML |
+| `packages/ingest/src/parsers/` | RST and conservative fallback/fixture parsers; pure functions, no I/O |
 | `packages/ingest/src/sources/` | Filesystem walkers that feed the parsers and shape records |
 | `packages/ingest/src/schema.ts` | DDL and the FTS population statement |
 | `packages/ingest/src/cli.ts` | Orchestration and all SQL writes |
@@ -147,10 +157,10 @@ before writing code; that is what converts the index into correct output.
 
 ## Do not
 
-- **Do not commit `index/` or `.cache/`.** They are 72 MB and 610 MB. Both are
-  gitignored; keep it that way. The repository is ~1.6 MB without them.
+- **Do not commit `index/` or `.cache/`.** They are large reproducible inputs and
+  outputs. Both are gitignored; keep it that way.
 - **Do not add runtime dependencies to `packages/mcp-server`.** The bundle is
-  43 KB and starts on every session. `ingest` may use dependencies; the server
+  size-gated and starts on every session. `ingest` may use dependencies; the server
   may not. This is also why the MCP protocol layer is hand-written rather than
   taken from `@modelcontextprotocol/sdk`, which pulls in express, hono, jose,
   cors, ajv and zod to cover transports this server does not use.
@@ -158,8 +168,8 @@ before writing code; that is what converts the index into correct output.
   devicetree parse to know which node — and therefore which binding — a property
   belongs to. Matching names globally produces false positives on `aliases`,
   `chosen`, and label assignments, and a validator that cries wolf gets ignored.
-  Compatibles and `CONFIG_` symbols are validated; properties are left to
-  `get_binding`.
+  Compatible and `CONFIG_` existence is a hard error only when descriptor coverage
+  proves the relevant context complete; properties are left to `get_binding`.
 - **Do not re-pin Zephyr casually.** `scripts/fetch-zephyr.mjs` verifies the
   checked-out commit against `zephyr.lock.json` and refuses a mismatch. Re-pin
   deliberately with `--update <tag>`, then rebuild the index and re-run the

@@ -1,18 +1,21 @@
 #!/usr/bin/env node
-/**
- * SessionStart hook: make the model aware of the index situation, once.
- *
- * Emits context only when there is something worth saying — no index at all, or
- * an index whose Zephyr version differs from the workspace the user is actually
- * building against. In the common case where everything lines up it prints
- * nothing, so it costs no tokens.
- */
-
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+/** SessionStart index compatibility and project-identity check. */
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 
-import { findWestWorkspace, readHookInput, resolveIndexPath } from './index-paths.mjs';
+import {
+  descriptorFingerprint,
+  findWestWorkspace,
+  gitTreeFingerprint,
+  readHookInput,
+  resolveIndexPath,
+  validIndexDescriptor,
+} from './index-paths.mjs';
+
+const EXPECTED_SCHEMA = 5;
+const EXPECTED_DESCRIPTOR = 2;
 
 function treeVersion(root) {
   try {
@@ -26,13 +29,21 @@ function treeVersion(root) {
   }
 }
 
+function treeCommit(root) {
+  const result = spawnSync('git', ['-C', root, 'rev-parse', 'HEAD'], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  return result.status === 0 ? result.stdout.trim() : null;
+}
+
 function westZephyrBase(workspace) {
   try {
     const config = readFileSync(join(workspace, '.west', 'config'), 'utf8');
     const path = config.match(/^\s*path\s*=\s*(.+)$/m)?.[1]?.trim();
     if (path && existsSync(join(workspace, path, 'VERSION'))) return join(workspace, path);
   } catch {
-    /* unreadable */
+    /* fall through */
   }
   const fallback = join(workspace, 'zephyr');
   return existsSync(join(fallback, 'VERSION')) ? fallback : null;
@@ -47,46 +58,85 @@ function emit(context) {
   );
 }
 
+function readDescriptor(path) {
+  const db = new DatabaseSync(path, { readOnly: true });
+  try {
+    const rows = db.prepare('SELECT key, value FROM meta').all();
+    const meta = Object.fromEntries(rows.map((row) => [String(row.key), String(row.value)]));
+    const descriptor = JSON.parse(meta.index_descriptor ?? 'null');
+    if (
+      Number(meta.schema_version) !== EXPECTED_SCHEMA ||
+      !validIndexDescriptor(descriptor, EXPECTED_SCHEMA, EXPECTED_DESCRIPTOR) ||
+      descriptor?.contextFingerprint !== meta.context_fingerprint ||
+      descriptorFingerprint(descriptor) !== descriptor?.contextFingerprint
+    ) throw new Error('incompatible descriptor');
+    return { meta, descriptor };
+  } finally {
+    db.close();
+  }
+}
+
 async function main() {
   await readHookInput();
-
-  const workspace = findWestWorkspace();
+  const requestedProjectRoot = resolve(
+    process.env.ZEPHYR_AI_PROJECT_ROOT ?? process.env.CLAUDE_PROJECT_DIR ?? process.cwd(),
+  );
+  const projectRoot = existsSync(requestedProjectRoot)
+    ? realpathSync(requestedProjectRoot)
+    : requestedProjectRoot;
+  const workspace = findWestWorkspace(projectRoot);
   const info = resolveIndexPath();
-
   if (!info) {
-    // Only worth saying inside a Zephyr project; elsewhere it is noise.
-    if (!workspace) return;
+    if (workspace) {
+      emit(
+        'The Zephyr lookup and edit-validation services have no compatible project index. ' +
+          'Use the zephyr-index skill to build one before relying on generated CONFIG_, binding, board, or API facts.',
+      );
+    }
+    return;
+  }
+
+  let state;
+  try {
+    state = readDescriptor(info.path);
+  } catch {
     emit(
-      'The zephyr MCP server has no index available, so its lookup tools will fail. Tell the ' +
-        'user to build one by running the zephyr-index skill, then continue.',
+      'The selected Zephyr index is corrupt or incompatible with this plugin version. ' +
+        'Use the zephyr-index skill to replace it; until then, index-backed answers and edit validation are unavailable.',
+    );
+    return;
+  }
+
+  if (state.descriptor.projectRoot && resolve(state.descriptor.projectRoot) !== projectRoot) {
+    emit(
+      'The selected Zephyr index belongs to a different project root. Rebuild a project-scoped index with the ' +
+        'zephyr-index skill; treat current index-backed answers as catalogue-only.',
     );
     return;
   }
 
   if (!workspace) return;
-
   const base = westZephyrBase(workspace);
-  const projectVersion = base ? treeVersion(base) : null;
-  if (!projectVersion) return;
-
-  let indexedVersion = null;
-  try {
-    const db = new DatabaseSync(info.path, { readOnly: true });
-    indexedVersion = db.prepare("SELECT value FROM meta WHERE key = 'zephyr_version'").get()?.value ?? null;
-    db.close();
-  } catch {
-    return;
-  }
-
-  if (indexedVersion && indexedVersion !== projectVersion) {
+  const version = base ? treeVersion(base) : null;
+  const treeIdentity = base ? gitTreeFingerprint(base) : null;
+  const commit = treeIdentity?.commit ?? (base ? treeCommit(base) : null);
+  if (
+    (version && version !== state.descriptor.zephyrVersion) ||
+    (commit && commit !== state.descriptor.zephyrCommit) ||
+    (treeIdentity && treeIdentity.stateFingerprint !== state.descriptor.zephyrTreeFingerprint)
+  ) {
     emit(
-      `This project is a west workspace using Zephyr ${projectVersion}, but the zephyr MCP index ` +
-        `describes Zephyr ${indexedVersion}. Kconfig symbols, devicetree properties, and APIs ` +
-        'differ between releases. Tell the user they should rebuild the index for this workspace ' +
-        '(the zephyr-index skill does it), and until then treat MCP answers as approximate and ' +
-        'verify anything version-sensitive against the source tree.',
+      `The active west workspace uses Zephyr ${version ?? 'of unknown version'} at commit ` +
+        `${commit ?? 'unknown'}, while the project index describes ${state.descriptor.zephyrVersion} at commit ` +
+        `${state.descriptor.zephyrCommit}. Its tracked or untracked source content also differs from the indexed ` +
+        `fingerprint. Rebuild it with the zephyr-index skill before relying on ` +
+        'version-sensitive Kconfig, devicetree, board, or API answers.',
     );
   }
 }
 
-main().catch(() => process.exit(0));
+main().catch(() => {
+  emit(
+    'The Zephyr SessionStart compatibility check failed unexpectedly. Run index_status before relying on index-backed facts.',
+  );
+});

@@ -11,7 +11,9 @@
  * rather than being kept in sync with triggers.
  */
 
-export const SCHEMA_VERSION = 1;
+import { INDEX_SCHEMA_VERSION } from '../../shared/index-descriptor.ts';
+
+export const SCHEMA_VERSION = INDEX_SCHEMA_VERSION;
 
 /**
  * FTS5 columns must exist by name on the content table, so a few searchable
@@ -60,6 +62,16 @@ CREATE TABLE doc_chunk (
 );
 CREATE INDEX doc_chunk_doc_idx ON doc_chunk(doc_id, ord);
 
+CREATE TABLE doc_origin (
+  id         INTEGER PRIMARY KEY,
+  doc_id     INTEGER NOT NULL REFERENCES doc(id),
+  path       TEXT NOT NULL,
+  start_line INTEGER NOT NULL,
+  end_line   INTEGER NOT NULL,
+  directive  TEXT NOT NULL
+);
+CREATE INDEX doc_origin_doc_idx ON doc_origin(doc_id);
+
 CREATE VIRTUAL TABLE doc_fts USING fts5(
   title, heading_path, body,
   content='doc_chunk', content_rowid='id',
@@ -82,7 +94,76 @@ CREATE TABLE kconfig (
   menu_path  TEXT NOT NULL DEFAULT '',
   is_choice  INTEGER NOT NULL DEFAULT 0,
   choice     TEXT,
-  n_defs     INTEGER NOT NULL DEFAULT 1
+  n_defs     INTEGER NOT NULL DEFAULT 1,
+  has_prompt INTEGER NOT NULL DEFAULT 0
+);
+
+-- Semantic Kconfig graph exported by the target tree's own Kconfiglib. The
+-- legacy JSON columns above are a denormalised search/read projection only.
+CREATE TABLE kconfig_expr (
+  id       INTEGER PRIMARY KEY,
+  kind     TEXT NOT NULL,
+  value    TEXT,
+  display  TEXT NOT NULL,
+  left_id  INTEGER REFERENCES kconfig_expr(id),
+  right_id INTEGER REFERENCES kconfig_expr(id)
+);
+
+CREATE TABLE kconfig_definition (
+  id                    INTEGER PRIMARY KEY,
+  symbol_id             INTEGER NOT NULL REFERENCES kconfig(id),
+  file                  TEXT NOT NULL,
+  line                  INTEGER NOT NULL,
+  prompt                TEXT,
+  menu_path             TEXT NOT NULL DEFAULT '[]',
+  condition_expr_id     INTEGER REFERENCES kconfig_expr(id),
+  prompt_condition_id   INTEGER REFERENCES kconfig_expr(id),
+  is_menuconfig         INTEGER NOT NULL DEFAULT 0,
+  is_configdefault      INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX kconfig_definition_symbol_idx ON kconfig_definition(symbol_id);
+
+CREATE TABLE kconfig_default (
+  id                INTEGER PRIMARY KEY,
+  definition_id     INTEGER NOT NULL REFERENCES kconfig_definition(id),
+  value_expr_id     INTEGER NOT NULL REFERENCES kconfig_expr(id),
+  condition_expr_id INTEGER REFERENCES kconfig_expr(id),
+  ord               INTEGER NOT NULL
+);
+CREATE INDEX kconfig_default_definition_idx ON kconfig_default(definition_id, ord);
+
+CREATE TABLE kconfig_relation (
+  id                INTEGER PRIMARY KEY,
+  definition_id     INTEGER NOT NULL REFERENCES kconfig_definition(id),
+  kind              TEXT NOT NULL CHECK(kind IN ('select', 'imply')),
+  target_name       TEXT NOT NULL,
+  target_symbol_id  INTEGER REFERENCES kconfig(id),
+  condition_expr_id INTEGER REFERENCES kconfig_expr(id),
+  ord               INTEGER NOT NULL
+);
+CREATE INDEX kconfig_relation_target_idx ON kconfig_relation(target_name, kind);
+
+CREATE TABLE kconfig_range (
+  id                INTEGER PRIMARY KEY,
+  definition_id     INTEGER NOT NULL REFERENCES kconfig_definition(id),
+  low_expr_id       INTEGER NOT NULL REFERENCES kconfig_expr(id),
+  high_expr_id      INTEGER NOT NULL REFERENCES kconfig_expr(id),
+  condition_expr_id INTEGER REFERENCES kconfig_expr(id),
+  ord               INTEGER NOT NULL
+);
+
+CREATE TABLE kconfig_choice (
+  id                INTEGER PRIMARY KEY,
+  stable_id         TEXT NOT NULL UNIQUE,
+  name              TEXT,
+  type              TEXT,
+  definitions       TEXT NOT NULL DEFAULT '[]'
+);
+
+CREATE TABLE kconfig_choice_member (
+  choice_id INTEGER NOT NULL REFERENCES kconfig_choice(id),
+  symbol_id INTEGER NOT NULL REFERENCES kconfig(id),
+  PRIMARY KEY(choice_id, symbol_id)
 );
 
 -- Reverse dependency graph: answers "what turns this symbol on?", which is the
@@ -131,7 +212,10 @@ CREATE TABLE dt_property (
   const_value     TEXT,
   deprecated      INTEGER NOT NULL DEFAULT 0,
   specifier_space TEXT,
-  inherited_from  TEXT
+  inherited_from  TEXT,
+  provenance      TEXT NOT NULL DEFAULT '{}',
+  constraints     TEXT NOT NULL DEFAULT '{}',
+  child_path      TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX dt_property_binding_idx ON dt_property(binding_id, child_level);
 CREATE INDEX dt_property_name_idx ON dt_property(name);
@@ -141,7 +225,8 @@ CREATE VIEW dt_property_v AS
   SELECT p.id, p.binding_id, p.child_level, p.name, p.type, p.required,
          COALESCE(t.text, '') AS description,
          p.default_value, p.enum_values, p.const_value, p.deprecated,
-         p.specifier_space, p.inherited_from
+         p.specifier_space, p.inherited_from, p.provenance, p.constraints,
+         p.child_path
   FROM dt_property p
   LEFT JOIN text_pool t ON t.id = p.description_id;
 
@@ -218,6 +303,14 @@ CREATE TABLE sample_file (
 );
 CREATE INDEX sample_file_sample_idx ON sample_file(sample_id, path);
 
+CREATE TABLE sample_platform (
+  sample_id INTEGER NOT NULL REFERENCES sample(id),
+  platform  TEXT NOT NULL,
+  evidence  TEXT NOT NULL CHECK(evidence IN ('integration', 'allowlist')),
+  PRIMARY KEY(sample_id, platform, evidence)
+);
+CREATE INDEX sample_platform_lookup_idx ON sample_platform(platform, evidence);
+
 CREATE VIRTUAL TABLE sample_fts USING fts5(
   name, path, description, tags_text,
   content='sample', content_rowid='id',
@@ -239,9 +332,13 @@ CREATE TABLE api_symbol (
   since      TEXT,
   deprecated INTEGER NOT NULL DEFAULT 0,
   header     TEXT NOT NULL,
-  line       INTEGER NOT NULL DEFAULT 0
+  line       INTEGER NOT NULL DEFAULT 0,
+  doxygen_id TEXT,
+  compound_id TEXT,
+  doc_anchor TEXT
 );
 CREATE INDEX api_symbol_name_idx ON api_symbol(name);
+CREATE INDEX api_symbol_doxygen_idx ON api_symbol(doxygen_id);
 CREATE INDEX api_symbol_group_idx ON api_symbol(api_group);
 CREATE INDEX api_symbol_header_idx ON api_symbol(header);
 

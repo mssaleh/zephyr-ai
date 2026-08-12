@@ -1,4 +1,5 @@
 import { clampLimit, snippet } from '../db.ts';
+import { ToolError } from '../protocol.ts';
 import {
   type ToolFactory,
   catalogueMiss,
@@ -129,26 +130,55 @@ export const getDoc: ToolFactory = (index) => ({
   },
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   handler: (args) => {
-    const path = requireString(args, 'path');
+    const requestedPath = requireString(args, 'path');
     const wanted = optionalString(args, 'section');
     const maxChars = clampLimit(args['max_chars'], 18000, 60000);
     const idx = index();
 
-    // Accept a bare path, a published URL, or a path missing the .rst suffix.
-    const candidates = [path, path.replace(/\.html?(#.*)?$/, '.rst'), `${path}.rst`, `doc/${path}`];
+    // Accept an exact source path, an exact stored URL, or a canonical path
+    // derived from this index's documentation base URL.
+    const baseUrl = (idx.meta['doc_base_url'] ?? '').replace(/\/?$/, '/');
+    const withoutAnchor = requestedPath.replace(/#.*$/, '');
+    const fromUrl = baseUrl && withoutAnchor.startsWith(baseUrl)
+      ? `doc/${withoutAnchor.slice(baseUrl.length).replace(/\.html?$/, '.rst')}`
+      : undefined;
+    const candidates = [
+      requestedPath,
+      withoutAnchor,
+      fromUrl,
+      withoutAnchor.replace(/\.html?$/, '.rst'),
+      `${withoutAnchor}.rst`,
+      `doc/${withoutAnchor}`,
+    ].filter((value): value is string => Boolean(value));
     let page = undefined;
     for (const candidate of candidates) {
-      page = idx.get('SELECT id, path, url, title, area FROM doc WHERE path = ?', candidate);
+      page = idx.get(
+        'SELECT id, path, url, title, area FROM doc WHERE path = ? OR url = ?',
+        candidate,
+        candidate,
+      );
       if (page) break;
     }
     if (!page) {
-      page = idx.get('SELECT id, path, url, title, area FROM doc WHERE path LIKE ?', `%${path}%`);
+      const escaped = withoutAnchor.replace(/[\\%_]/g, '\\$&');
+      const suffixes = idx.all(
+        `SELECT id, path, url, title, area FROM doc
+          WHERE path LIKE ? ESCAPE '\\' ORDER BY LENGTH(path), path LIMIT 12`,
+        `%/${escaped}`,
+      );
+      if (suffixes.length > 1) {
+        throw new ToolError(
+          `Documentation path "${requestedPath}" is ambiguous. Use one exact path:\n` +
+            suffixes.map((candidate) => `- ${String(candidate['path'])}`).join('\n'),
+        );
+      }
+      page = suffixes[0];
     }
 
     if (!page) {
       return catalogueMiss(
         'Documentation page',
-        path,
+        requestedPath,
         idx.meta['zephyr_version'] ?? 'unknown',
         [],
         'Module documentation and pages excluded by this index\'s coverage report may not be covered. Use search_docs to find an indexed path.',
@@ -169,10 +199,9 @@ export const getDoc: ToolFactory = (index) => ({
       : chunks;
 
     if (selected.length === 0) {
-      return result(
+      throw new ToolError(
         `Page \`${String(page['path'])}\` has no section matching "${wanted}".\n\nSections:\n` +
           chunks.map((c) => `- ${String(c['heading'])}`).join('\n'),
-        { path: page['path'], found: true, sectionFound: false },
       );
     }
 

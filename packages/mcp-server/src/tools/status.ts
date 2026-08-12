@@ -1,15 +1,17 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
+import { basename, join, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
 
 import { findWestWorkspace, westZephyrBase } from '../db.ts';
 import { type ToolFactory, joinSections, result, section } from './common.ts';
+import { publicDescriptor } from '../../../shared/index-descriptor.ts';
+import { gitTreeIdentity } from '../../../shared/source-identity.ts';
 
 const ORIGIN_LABEL: Record<string, string> = {
-  env: 'explicitly selected via ZEPHYR_AI_INDEX',
-  workspace: "built from this project's own west workspace",
-  'plugin-data': 'the default index installed with the plugin',
-  'plugin-root': 'bundled inside the plugin directory',
-  cwd: 'found in the working directory (development build)',
+  explicit: 'explicitly selected via ZEPHYR_AI_INDEX',
+  project: "the active fingerprinted index for this project",
+  development: 'the repository development index',
 };
 
 /** Read the Zephyr version from a checkout, for comparison with the index. */
@@ -23,6 +25,66 @@ function treeVersion(root: string): string | null {
     return extra ? `${version}-${extra}` : version;
   } catch {
     return null;
+  }
+}
+
+function manifestHash(workspace: string): string | null {
+  const frozen = spawnSync('west', ['manifest', '--freeze'], {
+    cwd: workspace,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  if (frozen.status === 0 && frozen.stdout.trim()) {
+    return createHash('sha256').update(frozen.stdout).digest('hex');
+  }
+  let manifestPath = '';
+  let manifestFile = 'west.yml';
+  try {
+    const config = readFileSync(join(workspace, '.west', 'config'), 'utf8');
+    manifestPath = config.match(/^\s*path\s*=\s*(.+)$/m)?.[1]?.trim() ?? '';
+    manifestFile = config.match(/^\s*file\s*=\s*(.+)$/m)?.[1]?.trim() ?? manifestFile;
+  } catch {
+    /* fallback candidates below */
+  }
+  const manifest = [
+    ...(manifestPath ? [join(workspace, manifestPath, manifestFile)] : []),
+    join(workspace, 'west.yml'),
+    join(workspace, 'west.yaml'),
+  ].find(existsSync);
+  return manifest ? createHash('sha256').update(readFileSync(manifest)).digest('hex') : null;
+}
+
+function storedIndexUsage(): { bytes: number; files: number } {
+  const data = process.env['ZEPHYR_AI_PLUGIN_DATA'] ?? process.env['CLAUDE_PLUGIN_DATA'];
+  if (!data) return { bytes: 0, files: 0 };
+  const root = resolve(data, 'indexes');
+  let bytes = 0;
+  let files = 0;
+  const visit = (path: string): void => {
+    let entries;
+    try {
+      entries = readdirSync(path, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const child = join(path, entry.name);
+      if (entry.isDirectory()) visit(child);
+      else if (entry.isFile() && entry.name === 'zephyr.db') {
+        bytes += statSync(child).size;
+        files++;
+      }
+    }
+  };
+  visit(root);
+  return { bytes, files };
+}
+
+function canonicalPath(path: string): string {
+  try {
+    return realpathSync(resolve(path));
+  } catch {
+    return resolve(path);
   }
 }
 
@@ -54,18 +116,42 @@ export const indexStatus: ToolFactory = (index) => ({
       ['C API symbols', meta['count_api'] ?? '?'],
     ];
 
-    const workspace = findWestWorkspace();
+    const projectStart = idx.info.projectRoot ?? process.env['ZEPHYR_AI_PROJECT_ROOT'] ?? process.env['CLAUDE_PROJECT_DIR'];
+    const workspace = findWestWorkspace(projectStart ?? process.cwd());
     const workspaceBase = workspace ? westZephyrBase(workspace) : null;
     const workspaceVersion = workspaceBase ? treeVersion(workspaceBase) : null;
+    const workspaceIdentity = workspaceBase ? gitTreeIdentity(workspaceBase) : null;
+    const workspaceCommit = workspaceIdentity?.commit ?? null;
+    const workspaceTreeFingerprint = workspaceIdentity?.stateFingerprint ?? null;
     const indexedVersion = meta['zephyr_version'] ?? 'unknown';
-    const mismatch =
-      workspaceVersion !== null && workspaceVersion !== indexedVersion;
+    const indexedCommit = idx.descriptor.zephyrCommit;
+    const versionMismatch = workspaceVersion !== null && workspaceVersion !== indexedVersion;
+    const commitMismatch = workspaceCommit !== null && workspaceCommit !== indexedCommit;
+    const treeMismatch =
+      workspaceTreeFingerprint !== null &&
+      workspaceTreeFingerprint !== idx.descriptor.zephyrTreeFingerprint;
+    const mismatch = versionMismatch || commitMismatch || treeMismatch;
+    const projectMatch = idx.descriptor.projectRoot
+      ? Boolean(projectStart && canonicalPath(projectStart) === canonicalPath(idx.descriptor.projectRoot))
+      : null;
+    const activeManifestHash = workspace ? manifestHash(workspace) : null;
+    const manifestMatch = idx.descriptor.westManifestHash
+      ? activeManifestHash === null
+        ? null
+        : activeManifestHash === idx.descriptor.westManifestHash
+      : null;
+    const usage = storedIndexUsage();
+    const contextKind = idx.descriptor.boardTarget || idx.descriptor.buildDirectory
+      ? 'catalogue context with build identity recorded (resolved values are not ingested)'
+      : 'catalogue context';
 
     const text = joinSections([
       `# Zephyr index: version ${indexedVersion}`,
       `Source: ${ORIGIN_LABEL[idx.info.origin] ?? idx.info.origin}` +
-        `\nFile: \`${idx.info.path}\` (${(idx.sizeBytes / 1024 / 1024).toFixed(1)} MiB)` +
-        (meta['zephyr_commit'] ? `\nCommit: \`${meta['zephyr_commit'].slice(0, 12)}\`` : '') +
+        `\nArtifact: \`${basename(idx.info.path)}\` (${(idx.sizeBytes / 1024 / 1024).toFixed(1)} MiB)` +
+        `\nContext: ${contextKind}` +
+        (indexedCommit ? `\nCommit: \`${indexedCommit}\`` : '') +
+        `\nFingerprint: \`${idx.descriptor.contextFingerprint}\`` +
         (meta['built_at'] ? `\nBuilt: ${meta['built_at']}` : ''),
       section(
         'Coverage',
@@ -73,30 +159,43 @@ export const indexStatus: ToolFactory = (index) => ({
       ),
       workspace
         ? mismatch
-          ? `## ⚠️ Version mismatch\n\nThis project is a west workspace at \`${workspace}\` whose Zephyr is ` +
-            `**${workspaceVersion}**, but the index describes **${indexedVersion}**.\n\n` +
+          ? `## ⚠️ Source-context mismatch\n\nThis project is a west workspace whose Zephyr is ` +
+            `**${workspaceVersion}** at commit \`${workspaceCommit ?? 'unknown'}\`, but the index describes ` +
+            `**${indexedVersion}** at commit \`${indexedCommit}\`.\n\n` +
+            (treeMismatch
+              ? 'The checkout content also differs from the indexed tree (tracked or untracked changes are present).\n\n'
+              : '') +
             'Kconfig symbol names, devicetree properties, and APIs move between releases, so ' +
             'answers from this index may not apply. Rebuild it against this workspace by ' +
-            'invoking the `zephyr-index` skill' +
-            (workspaceBase ? ` (its Zephyr tree is \`${workspaceBase}\`)` : '') +
-            '.'
-          : `**West workspace** detected at \`${workspace}\`, Zephyr ${workspaceVersion ?? 'unknown'} — matches the index.`
-        : '_No west workspace detected in or above the working directory; serving the default index._',
+            'invoking the `zephyr-index` skill.'
+          : `**West workspace** detected; Zephyr ${workspaceVersion ?? 'unknown'} at the same commit as the index.`
+        : '_No west workspace detected for the active project; this answer is catalogue-scoped._',
+      `**Stored indexes:** ${usage.files} artifact(s), ${(usage.bytes / 1024 / 1024).toFixed(1)} MiB total.`,
+      manifestMatch === false
+        ? '**Manifest mismatch:** the active west manifest differs from the index descriptor; rebuild the project index.'
+        : undefined,
     ]);
 
     return result(text, {
       zephyrVersion: indexedVersion,
       zephyrCommit: meta['zephyr_commit'] ?? null,
       origin: idx.info.origin,
-      path: idx.info.path,
       sizeBytes: idx.sizeBytes,
       builtAt: meta['built_at'] ?? null,
       docBaseUrl: meta['doc_base_url'] ?? null,
       counts: Object.fromEntries(counts),
-      workspace,
-      workspaceZephyrBase: workspaceBase,
+      workspaceDetected: Boolean(workspace),
       workspaceZephyrVersion: workspaceVersion,
-      versionMismatch: mismatch,
+      workspaceZephyrCommit: workspaceCommit,
+      workspaceTreeFingerprint,
+      treeMismatch,
+      versionMismatch,
+      commitMismatch,
+      sourceContextMismatch: mismatch,
+      projectMatch,
+      manifestMatch,
+      descriptor: publicDescriptor(idx.descriptor),
+      storedIndexUsage: usage,
     });
   },
 });

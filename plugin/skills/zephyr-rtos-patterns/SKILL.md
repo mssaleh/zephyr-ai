@@ -9,6 +9,8 @@ metadata:
 
 # Real-time patterns
 
+> Example status: fenced snippets are illustrative unless an immediately preceding `zephyr-ai-example` metadata comment names a verified target and build command.
+
 Firmware bugs of this class do not show up in testing. They show up in the field,
 at rates that make them nearly impossible to reproduce. The rules below are worth
 following even when a shortcut appears to work.
@@ -29,23 +31,44 @@ These are **not**, and will either assert or corrupt the system:
 - Anything that logs in immediate mode, or does floating point on a target
   without lazy FPU context saving
 
-The correct shape is: do the minimum in the ISR, hand off to a thread.
+The correct shape is: do the minimum in the ISR, hand off to a thread. A work
+item can coalesce repeated submissions, so use a counting or queued primitive
+when every event matters:
 
 ```c
+struct edge_event {
+        uint32_t pins;
+        k_ticks_t timestamp;
+};
+
+K_MSGQ_DEFINE(edge_events, sizeof(struct edge_event), 16, 4);
+static atomic_t dropped_edges;
+
 static void gpio_isr(const struct device *dev, struct gpio_callback *cb, uint32_t pins)
 {
-        /* Timestamp here — by the time the worker runs, it is too late. */
-        edge_time = k_uptime_ticks();
-        k_work_submit(&edge_work);   /* returns immediately */
+        struct edge_event event = {
+                .pins = pins,
+                .timestamp = k_uptime_ticks(),
+        };
+
+        /* Define and monitor an overflow policy; never silently lose edges. */
+        if (k_msgq_put(&edge_events, &event, K_NO_WAIT) != 0) {
+                atomic_inc(&dropped_edges);
+        }
 }
 
-static void edge_handler(struct k_work *work)
+static void edge_thread(void)
 {
-        /* Thread context: blocking, allocation, and logging are all fine. */
-        process_edge(edge_time);
+        struct edge_event event;
+
+        while (k_msgq_get(&edge_events, &event, K_FOREVER) == 0) {
+                process_edge(&event);
+        }
 }
-K_WORK_DEFINE(edge_work, edge_handler);
 ```
+
+Use `k_work` when processing only the latest state is intentional; record that
+coalescing contract next to the submission.
 
 If the handler can take more than a few hundred microseconds, put it on a
 dedicated workqueue rather than the system one — the system workqueue is shared,
@@ -100,8 +123,9 @@ into a silent hang.
 
 ## Sharing data with an ISR
 
-Any variable written by an ISR and read by a thread must be `volatile` **and**
-accessed atomically, or protected by a lock the ISR can take:
+`volatile` is not synchronization: it supplies neither an atomic transaction nor
+the ordering needed between an ISR and a thread. Use Zephyr atomics for scalar
+state, an ISR-safe queue for data transfer, or a very short ISR-safe lock:
 
 ```c
 static atomic_t event_count;
@@ -110,7 +134,8 @@ void isr(void) { atomic_inc(&event_count); }
 void thread(void) { atomic_val_t n = atomic_clear(&event_count); }
 ```
 
-For multi-word state, disable interrupts briefly:
+For a small multi-word snapshot on one CPU, a short interrupt-locked critical
+section can be appropriate; SMP code needs a `k_spinlock` or an ownership protocol:
 
 ```c
 unsigned int key = irq_lock();

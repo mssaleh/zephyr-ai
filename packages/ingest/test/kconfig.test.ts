@@ -1,11 +1,14 @@
 import { deepStrictEqual, ok, strictEqual } from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { describe, it } from 'node:test';
 
 import { aggregate, parseKconfig, symbolsInExpr } from '../src/parsers/kconfig.ts';
+import { collectKconfig } from '../src/sources/kconfig.ts';
 
 const ZEPHYR = process.env.ZEPHYR_BASE ?? join(process.cwd(), '..', '..', '.cache', 'zephyr');
+const INDEX = process.env.ZEPHYR_AI_INDEX ?? join(process.cwd(), '..', '..', 'index', 'zephyr.db');
 const RELEASE_TEST = process.env.ZEPHYR_AI_RELEASE_TEST === '1';
 
 describe('parseKconfig', () => {
@@ -233,5 +236,55 @@ describe('against the real Zephyr tree', () => {
     strictEqual(fallback.type, 'int');
     deepStrictEqual(fallback.defaults, [{ value: '4' }]);
     ok(fallback.help!.startsWith('When RTIO is used'), 'help text should be captured');
+  });
+
+  it('evaluates the canonical source graph with Zephyr Kconfiglib', { skip: text === null && 'Zephyr tree not fetched' }, () => {
+    const semantic = collectKconfig(ZEPHYR);
+    ok(semantic.symbols.some((symbol) => symbol.name === 'SENSOR_LOG_LEVEL_DBG'));
+    ok(semantic.symbols.every((symbol) => !symbol.name.includes('$(')));
+    ok(
+      semantic.symbols.some((symbol) =>
+        symbol.definitions.some((definition) => definition.isConfigDefault),
+      ),
+    );
+    ok(
+      semantic.symbols.every((symbol) =>
+        symbol.definitions.every((definition) => !definition.file.startsWith('samples/')),
+      ),
+    );
+  });
+
+  it('matches a deterministic semantic sample against the rebuilt SQLite projection', {
+    skip: (text === null || !existsSync(INDEX)) && 'Zephyr tree or rebuilt index not available',
+  }, () => {
+    const semantic = collectKconfig(ZEPHYR);
+    const selected = [...semantic.symbols]
+      .sort((left, right) => left.name.localeCompare(right.name))
+      .filter((_symbol, index) => index % 317 === 0)
+      .slice(0, 64);
+    const db = new DatabaseSync(INDEX, { readOnly: true });
+    try {
+      for (const symbol of selected) {
+        const row = db.prepare(
+          'SELECT id, type, has_prompt, n_defs FROM kconfig WHERE name = ?',
+        ).get(symbol.name);
+        ok(row, `index is missing sampled Kconfiglib symbol ${symbol.name}`);
+        strictEqual(row.type, symbol.type);
+        strictEqual(Number(row.has_prompt), symbol.hasPrompt ? 1 : 0);
+        strictEqual(Number(row.n_defs), symbol.definitions.length);
+        const defaults = Number(db.prepare(
+          `SELECT COUNT(*) AS n FROM kconfig_default d
+             JOIN kconfig_definition k ON k.id = d.definition_id
+            WHERE k.symbol_id = ?`,
+        ).get(Number(row.id))!.n);
+        strictEqual(
+          defaults,
+          symbol.definitions.reduce((count, definition) => count + definition.defaults.length, 0),
+          `${symbol.name} default projection differs from Kconfiglib`,
+        );
+      }
+    } finally {
+      db.close();
+    }
   });
 });

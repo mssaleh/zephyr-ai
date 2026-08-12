@@ -9,8 +9,8 @@
     "zephyr-ai-ingest": "./dist/cli.js"
   },
   "scripts": {
-    "build": "esbuild src/cli.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/cli.js --banner:js=\"import{createRequire}from'node:module';const require=createRequire(import.meta.url);\"",
-    "pretest": "esbuild test/*.test.ts --bundle --platform=node --target=node22 --format=esm --outdir=dist-test --out-extension:.js=.mjs --banner:js=\"import{createRequire}from'node:module';const require=createRequire(import.meta.url);\"",
+    "build": "esbuild src/cli.ts --bundle --platform=node --target=node22 --format=esm --loader:.py=text --outfile=dist/cli.js --banner:js=\"import{createRequire}from'node:module';const require=createRequire(import.meta.url);\"",
+    "pretest": "esbuild test/*.test.ts --bundle --platform=node --target=node22 --format=esm --loader:.py=text --outdir=dist-test --out-extension:.js=.mjs --banner:js=\"import{createRequire}from'node:module';const require=createRequire(import.meta.url);\"",
     "test": "node --test \"dist-test/*.test.mjs\""
   },
   "dependencies": {

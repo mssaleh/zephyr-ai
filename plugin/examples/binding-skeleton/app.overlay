@@ -1,0 +1,19 @@
+/ {
+	provider: zephyr_ai_provider {
+		compatible = "zephyr-ai,skeleton-provider";
+		#test-cells = <1>;
+	};
+
+	zephyr_ai_consumer {
+		compatible = "zephyr-ai,skeleton-consumer";
+		required-bool;
+		required-string = "replace-me";
+		required-strings = "first", "second";
+		required-int = <0>;
+		required-array = <0 1>;
+		required-bytes = [00 01];
+		required-phandle = <&provider>;
+		required-phandles = <&provider>;
+		required-specifiers = <&provider 0>;
+	};
+};

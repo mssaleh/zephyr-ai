@@ -9,6 +9,8 @@ metadata:
 
 # ESP32 on Zephyr
 
+> Example status: fenced snippets are illustrative unless an immediately preceding `zephyr-ai-example` metadata comment names a verified target and build command.
+
 Zephyr supports Espressif parts through the `hal_espressif` module. Zephyr is a
 different world from ESP-IDF: there is no `app_main`, no `menuconfig` in the IDF
 sense, no `idf.py`, and IDF component code does not port over. ESP-IDF answers

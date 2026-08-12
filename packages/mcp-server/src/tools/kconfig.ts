@@ -15,6 +15,21 @@ interface Conditional {
   cond?: string;
 }
 
+interface DefinitionDetail {
+  file: string;
+  line: number;
+  prompt: string | null;
+  promptCondition: string | null;
+  menuPath: string[];
+  condition: string;
+  isMenuconfig: boolean;
+  isConfigDefault: boolean;
+  defaults: Conditional[];
+  selects: Conditional[];
+  implies: Conditional[];
+  ranges: Array<{ low: string; high: string; cond?: string }>;
+}
+
 /** Kconfig symbols are stored without the `CONFIG_` prefix that appears in .conf files. */
 function normaliseName(name: string): string {
   return name.trim().replace(/^CONFIG_/, '').toUpperCase();
@@ -125,8 +140,7 @@ export const getKconfig: ToolFactory = (index) => ({
     const idx = index();
 
     const row = idx.get(
-      `SELECT name, type, prompt, help, defaults, depends, selects, implies, ranges,
-              defined_in, menu_path, is_choice, choice, n_defs
+      `SELECT id, name, type, prompt, help, has_prompt, choice, n_defs
          FROM kconfig WHERE name = ?`,
       name,
     );
@@ -151,12 +165,69 @@ export const getKconfig: ToolFactory = (index) => ({
       );
     }
 
-    const defaults = json<Conditional[]>(row['defaults'], []);
-    const depends = json<string[]>(row['depends'], []);
-    const selects = json<Conditional[]>(row['selects'], []);
-    const implies = json<Conditional[]>(row['implies'], []);
-    const ranges = json<{ low: string; high: string; cond?: string }[]>(row['ranges'], []);
-    const definedIn = json<{ file: string; line: number }[]>(row['defined_in'], []);
+    const definitionRows = idx.all(
+      `SELECT d.id, d.file, d.line, d.prompt, d.menu_path, d.is_menuconfig,
+              d.is_configdefault, COALESCE(e.display, 'y') AS condition,
+              pe.display AS prompt_condition
+         FROM kconfig_definition d
+         LEFT JOIN kconfig_expr e ON e.id = d.condition_expr_id
+         LEFT JOIN kconfig_expr pe ON pe.id = d.prompt_condition_id
+        WHERE d.symbol_id = ? ORDER BY d.id`,
+      Number(row['id']),
+    );
+    const definitions: DefinitionDetail[] = definitionRows.map((definition) => {
+      const definitionId = Number(definition['id']);
+      const defaults = idx.all(
+        `SELECT v.display AS value, COALESCE(c.display, 'y') AS cond
+           FROM kconfig_default d
+           JOIN kconfig_expr v ON v.id = d.value_expr_id
+           LEFT JOIN kconfig_expr c ON c.id = d.condition_expr_id
+          WHERE d.definition_id = ? ORDER BY d.ord`,
+        definitionId,
+      ).map((item) => ({
+        value: String(item['value']),
+        ...(item['cond'] !== 'y' ? { cond: String(item['cond']) } : {}),
+      }));
+      const relations = (kind: 'select' | 'imply'): Conditional[] =>
+        idx.all(
+          `SELECT r.target_name AS value, COALESCE(c.display, 'y') AS cond
+             FROM kconfig_relation r
+             LEFT JOIN kconfig_expr c ON c.id = r.condition_expr_id
+            WHERE r.definition_id = ? AND r.kind = ? ORDER BY r.ord`,
+          definitionId,
+          kind,
+        ).map((item) => ({
+          value: String(item['value']),
+          ...(item['cond'] !== 'y' ? { cond: String(item['cond']) } : {}),
+        }));
+      const ranges = idx.all(
+        `SELECT low.display AS low, high.display AS high, COALESCE(c.display, 'y') AS cond
+           FROM kconfig_range r
+           JOIN kconfig_expr low ON low.id = r.low_expr_id
+           JOIN kconfig_expr high ON high.id = r.high_expr_id
+           LEFT JOIN kconfig_expr c ON c.id = r.condition_expr_id
+          WHERE r.definition_id = ? ORDER BY r.ord`,
+        definitionId,
+      ).map((item) => ({
+        low: String(item['low']),
+        high: String(item['high']),
+        ...(item['cond'] !== 'y' ? { cond: String(item['cond']) } : {}),
+      }));
+      return {
+        file: String(definition['file']),
+        line: Number(definition['line']),
+        prompt: (definition['prompt'] as string) ?? null,
+        promptCondition: (definition['prompt_condition'] as string) ?? null,
+        menuPath: json<string[]>(definition['menu_path'], []),
+        condition: String(definition['condition']),
+        isMenuconfig: Number(definition['is_menuconfig']) === 1,
+        isConfigDefault: Number(definition['is_configdefault']) === 1,
+        defaults,
+        selects: relations('select'),
+        implies: relations('imply'),
+        ranges,
+      };
+    });
 
     const selectedBy = idx
       .all('SELECT DISTINCT from_sym FROM kconfig_edge WHERE to_sym = ? AND kind = ? ORDER BY from_sym LIMIT 40', name, 'select')
@@ -171,22 +242,36 @@ export const getKconfig: ToolFactory = (index) => ({
     const text = joinSections([
       header,
       row['help'] ? String(row['help']) : undefined,
-      section('Defaults', renderConditionals(defaults)),
-      section('Depends on', depends.map((d) => `\`${d}\``)),
-      section('Range', ranges.map((r) => `\`${r.low}\` .. \`${r.high}\`${r.cond ? ` if \`${r.cond}\`` : ''}`)),
-      section('Selects', renderConditionals(selects)),
-      section('Implies', renderConditionals(implies)),
+      definitions.length > 0
+        ? `## Definition contexts (${definitions.length})\n\n` +
+          definitions.map((definition, index) => joinSections([
+            `### Alternative ${index + 1}: \`${definition.file}:${definition.line}\`${definition.isConfigDefault ? ' (`configdefault`)' : ''}`,
+            `**Depends on in this context:** \`${definition.condition}\``,
+            definition.prompt ? `**Prompt:** ${definition.prompt}` : '**Prompt:** _none (not directly assignable from application configuration)_',
+            definition.promptCondition
+              ? `**Prompt visibility expression:** \`${definition.promptCondition}\``
+              : undefined,
+            section('Defaults in this context', renderConditionals(definition.defaults)),
+            section('Selects in this context', renderConditionals(definition.selects)),
+            section('Implies in this context', renderConditionals(definition.implies)),
+            section(
+              'Ranges in this context',
+              definition.ranges.map((range) =>
+                `\`${range.low}\` .. \`${range.high}\`${range.cond ? ` if \`${range.cond}\`` : ''}`,
+              ),
+            ),
+            definition.menuPath.length > 0 ? `**Menu path:** ${definition.menuPath.join(' > ')}` : undefined,
+          ])).join('\n\n')
+        : undefined,
       section(
         'Selected by (enabling any of these forces it on)',
         selectedBy.map((s) => `CONFIG_${s}`),
       ),
       section('Implied by', impliedBy.map((s) => `CONFIG_${s}`)),
       row['choice'] ? `**Part of choice** \`${String(row['choice'])}\` — options are mutually exclusive.` : undefined,
-      section(
-        `Defined in (${definedIn.length} location${definedIn.length === 1 ? '' : 's'})`,
-        definedIn.slice(0, 12).map((d) => `\`${d.file}:${d.line}\``),
-      ),
-      row['menu_path'] ? `**Menu path** ${String(row['menu_path'])}` : undefined,
+      Number(row['has_prompt']) === 0
+        ? '**Assignability:** promptless; do not assign this symbol from `prj.conf`.'
+        : '**Assignability:** at least one definition has a user-visible prompt. Visibility still depends on the selected build context.',
     ]);
 
     return result(text, {
@@ -195,16 +280,12 @@ export const getKconfig: ToolFactory = (index) => ({
       type,
       prompt: row['prompt'] ?? '',
       help: row['help'] ?? '',
-      defaults,
-      depends,
-      selects,
-      implies,
-      ranges,
+      hasPrompt: Number(row['has_prompt']) === 1,
+      definitions,
       selectedBy: selectedBy.map((s) => `CONFIG_${s}`),
       impliedBy: impliedBy.map((s) => `CONFIG_${s}`),
-      definedIn,
       choice: row['choice'] ?? null,
-      menuPath: row['menu_path'] ?? '',
+      knowledgeLevel: 'catalogue',
     });
   },
 });

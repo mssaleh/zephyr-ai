@@ -1,93 +1,79 @@
-import { readFileSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 
-import {
-  type BindingLoader,
-  type ResolvedBinding,
-  resolveBinding,
-  safeParseYaml,
-} from '../parsers/binding.ts';
-import { walk } from '../walk.ts';
+import BINDING_EXPORTER from '../adapters/binding-export.py';
+import type { BindingProperty, ResolvedBinding } from '../parsers/binding.ts';
+import { semanticPython } from '../python.ts';
+import type { SourceReport } from '../report.ts';
 
-/**
- * Build a loader over every binding directory in the tree.
- *
- * Zephyr resolves `include:` by bare filename across all binding directories,
- * so the loader is a filename index. Later roots (modules, vendor HALs in a west
- * workspace) are registered first-wins so the core tree cannot be shadowed
- * accidentally by a module that ships a same-named file.
- */
-export function createBindingLoader(roots: string[]): {
-  loader: BindingLoader;
-  files: { rel: string; abs: string }[];
-} {
-  const byName = new Map<string, string>();
-  const absByRel = new Map<string, string>();
-  const files: { rel: string; abs: string }[] = [];
-  const cache = new Map<string, ReturnType<typeof safeParseYaml>>();
+export interface SemanticBindingProperty extends BindingProperty {
+  provenance?: { declaredIn: string; includeChain: string[] };
+  constraints?: Record<string, unknown>;
+}
 
-  for (const root of roots) {
-    for (const rel of walk(root, {
-      match: (name) => name.endsWith('.yaml') || name.endsWith('.yml'),
-    })) {
-      const abs = join(root, rel);
-      if (!absByRel.has(rel)) {
-        absByRel.set(rel, abs);
-        files.push({ rel, abs });
-      }
-      const name = basename(rel);
-      if (!byName.has(name)) byName.set(name, rel);
-    }
-  }
-
-  const loader: BindingLoader = {
-    resolve(name) {
-      return byName.get(name) ?? byName.get(basename(name));
-    },
-    load(rel) {
-      if (cache.has(rel)) return cache.get(rel)!;
-      const abs = absByRel.get(rel);
-      let parsed = null;
-      if (abs) {
-        try {
-          parsed = safeParseYaml(readFileSync(abs, 'utf8'));
-        } catch {
-          parsed = null;
-        }
-      }
-      cache.set(rel, parsed);
-      return parsed;
-    },
-  };
-
-  return { loader, files };
+export interface SemanticResolvedBinding extends Omit<ResolvedBinding, 'properties' | 'children'> {
+  properties: SemanticBindingProperty[];
+  children: SemanticResolvedBinding[];
+  adapter?: string;
 }
 
 export interface CollectedBindings {
-  /** Bindings that declare a `compatible`, keyed by resolution order. */
-  bindings: ResolvedBinding[];
-  /** Include-only fragments (`base.yaml`, `spi-controller.yaml`, ...). */
+  bindings: SemanticResolvedBinding[];
   fragments: number;
+  report: SourceReport;
 }
 
-/**
- * Resolve every binding under the given directories.
- *
- * `roots` are the binding directories themselves (e.g. `<zephyr>/dts/bindings`),
- * because binding include resolution is scoped to those directories.
- */
+const CACHE = new Map<string, CollectedBindings>();
+
 export function collectBindings(roots: string[]): CollectedBindings {
-  const { loader, files } = createBindingLoader(roots);
-  const bindings: ResolvedBinding[] = [];
-  let fragments = 0;
-
-  for (const { rel } of files) {
-    const resolved = resolveBinding(rel, loader);
-    if (!resolved) continue;
-    if (resolved.compatible) bindings.push(resolved);
-    else fragments++;
+  const cacheKey = JSON.stringify(roots);
+  const cached = CACHE.get(cacheKey);
+  if (cached) return cached;
+  if (roots.length === 0) throw new Error('At least one devicetree binding root is required.');
+  const zephyrRoot = dirname(dirname(roots[0]!));
+  const officialLibrary = join(
+    zephyrRoot,
+    'scripts',
+    'dts',
+    'python-devicetree',
+    'src',
+    'devicetree',
+    'edtlib.py',
+  );
+  if (!existsSync(officialLibrary)) {
+    throw new Error('The selected Zephyr tree does not provide its Python devicetree tooling.');
   }
-
-  bindings.sort((a, b) => a.compatible!.localeCompare(b.compatible!));
-  return { bindings, fragments };
+  const temporary = mkdtempSync(join(tmpdir(), 'zephyr-ai-bindings-'));
+  const exporter = join(temporary, 'binding-export.py');
+  try {
+    writeFileSync(exporter, BINDING_EXPORTER, { mode: 0o600 });
+    const args = [exporter, '--zephyr', zephyrRoot];
+    for (const root of roots) args.push('--root', root);
+    const result = spawnSync(semanticPython(zephyrRoot), args, {
+      encoding: 'utf8',
+      maxBuffer: 512 * 1024 * 1024,
+      env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
+    });
+    if (result.status !== 0) {
+      let reportDetail = '';
+      try {
+        const failed = JSON.parse(result.stdout) as { report?: SourceReport };
+        reportDetail = (failed.report?.errors ?? [])
+          .slice(0, 12)
+          .map((error) => `${error.path ?? '<unknown>'} [${error.code}]: ${error.message}`)
+          .join('\n');
+      } catch {
+        /* stderr below covers exporter crashes before a report is written */
+      }
+      const detail = reportDetail || result.stderr.trim().split('\n').slice(-12).join('\n');
+      throw new Error(`Zephyr devicetree binding export failed.\n${detail}`);
+    }
+    const collected = JSON.parse(result.stdout) as CollectedBindings;
+    CACHE.set(cacheKey, collected);
+    return collected;
+  } finally {
+    rmSync(temporary, { recursive: true, force: true });
+  }
 }

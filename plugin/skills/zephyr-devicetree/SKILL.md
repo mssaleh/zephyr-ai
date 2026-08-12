@@ -9,6 +9,8 @@ metadata:
 
 # Devicetree in Zephyr
 
+> Example status: fenced snippets are illustrative unless an immediately preceding `zephyr-ai-example` metadata comment names a verified target and build command.
+
 Devicetree describes the hardware; Kconfig selects the software. A driver only
 runs if a node with its `compatible` exists **and** is `status = "okay"`. Enabling
 a `CONFIG_` for a driver without a matching enabled node does nothing at all.

@@ -22,6 +22,9 @@ interface PropertyRow {
   specifier_space: string | null;
   inherited_from: string | null;
   child_level: number;
+  child_path: string;
+  provenance: string;
+  constraints: string;
 }
 
 /** Devicetree properties that every node has; noise in a property listing. */
@@ -53,13 +56,71 @@ function formatProperty(p: PropertyRow): string {
   const extras: string[] = [];
   if (p.const_value !== null) extras.push(`const ${p.const_value}`);
   if (p.default_value !== null) extras.push(`default ${p.default_value}`);
-  const enums = json<unknown[]>(p.enum_values, []);
+  const rawEnums = json<unknown>(p.enum_values, []);
+  const enums = Array.isArray(rawEnums) ? rawEnums : [];
   if (enums.length > 0) extras.push(`one of ${enums.map((e) => JSON.stringify(e)).join(', ')}`);
   if (p.specifier_space) extras.push(`specifier-space ${p.specifier_space}`);
+  const constraints = json<Record<string, unknown>>(p.constraints, {});
+  for (const [name, value] of Object.entries(constraints)) {
+    extras.push(`${name} ${Array.isArray(value) ? value.map(String).join(', ') : JSON.stringify(value)}`);
+  }
 
   const head = `- ${bits.join(' ')}${extras.length > 0 ? ` — ${extras.join('; ')}` : ''}`;
   const desc = p.description ? `\n  ${snippet(p.description.replace(/\n+/g, ' '), 240)}` : '';
-  return `${head}${desc}`;
+  const provenance = json<{ declaredIn?: string; includeChain?: string[] }>(p.provenance, {});
+  const origin = provenance.declaredIn
+    ? `\n  _Declared in \`${provenance.declaredIn}\`${
+        provenance.includeChain && provenance.includeChain.length > 1
+          ? ` via ${provenance.includeChain.map((path) => `\`${path}\``).join(' → ')}`
+          : ''
+      }._`
+    : '';
+  return `${head}${desc}${origin}`;
+}
+
+function dtsLiteral(value: unknown, type: string | null): string | null {
+  if (value === true) return '';
+  if (typeof value === 'string') return `"${value.replace(/"/g, '\\"')}"`;
+  if (typeof value === 'number') return `<${value}>`;
+  if (Array.isArray(value)) {
+    if (type === 'string-array') return value.map((item) => `"${String(item)}"`).join(', ');
+    if (type === 'uint8-array') return `[${value.map((item) => Number(item).toString(16).padStart(2, '0')).join(' ')}]`;
+    return `<${value.map(String).join(' ')}>`;
+  }
+  return null;
+}
+
+export function skeletonProperty(property: PropertyRow): string {
+  const fixed = json<unknown>(property.const_value, undefined);
+  const defaultValue = json<unknown>(property.default_value, undefined);
+  const rawEnums = json<unknown>(property.enum_values, []);
+  const enums = Array.isArray(rawEnums) ? rawEnums : [];
+  const known = fixed ?? defaultValue ?? enums[0];
+  const literal = dtsLiteral(known, property.type);
+  if (literal !== null) {
+    return literal === '' ? `        ${property.name};` : `        ${property.name} = ${literal};`;
+  }
+  switch (property.type) {
+    case 'boolean':
+      return `        ${property.name};`;
+    case 'string':
+    case 'string-array':
+      return `        ${property.name} = "replace-me";`;
+    case 'int':
+    case 'array':
+      return `        ${property.name} = <0>;`;
+    case 'uint8-array':
+      return `        ${property.name} = [00];`;
+    case 'phandle':
+    case 'phandles':
+      return `        ${property.name} = <&replace_me>;`;
+    case 'phandle-array':
+      return `        ${property.name} = <&replace_me 0>;`;
+    case 'path':
+      return `        ${property.name} = &replace_me;`;
+    default:
+      return `        /* Required: ${property.name} (${property.type ?? 'binding-specific value'}). */`;
+  }
 }
 
 export const searchBindings: ToolFactory = (index) => ({
@@ -210,7 +271,8 @@ export const getBinding: ToolFactory = (index) => ({
     const bindingId = Number(binding['id']);
     const all = idx.all(
       `SELECT name, type, required, description, default_value, enum_values, const_value,
-              deprecated, specifier_space, inherited_from, child_level
+              deprecated, specifier_space, inherited_from, child_level, child_path,
+              provenance, constraints
          FROM dt_property_v WHERE binding_id = ? ORDER BY child_level, required DESC, name`,
       bindingId,
     ) as unknown as PropertyRow[];
@@ -231,7 +293,7 @@ export const getBinding: ToolFactory = (index) => ({
       `        compatible = "${compatible}";`,
       ...required
         .filter((p) => p.name !== 'compatible')
-        .map((p) => `        ${p.name} = <...>;   /* ${p.type ?? 'value'} */`),
+        .map(skeletonProperty),
       `        status = "okay";`,
       `};`,
       '```',
@@ -278,9 +340,28 @@ export const getBinding: ToolFactory = (index) => ({
       onBus: binding['on_bus'] ?? null,
       cells,
       includes,
-      required: required.map((p) => ({ name: p.name, type: p.type, description: p.description })),
-      optional: optional.map((p) => ({ name: p.name, type: p.type, description: p.description })),
-      childProperties: childProps.map((p) => ({ name: p.name, type: p.type, level: p.child_level })),
+      required: required.map((p) => ({
+        name: p.name,
+        type: p.type,
+        description: p.description,
+        provenance: json<Record<string, unknown>>(p.provenance, {}),
+        constraints: json<Record<string, unknown>>(p.constraints, {}),
+      })),
+      optional: optional.map((p) => ({
+        name: p.name,
+        type: p.type,
+        description: p.description,
+        provenance: json<Record<string, unknown>>(p.provenance, {}),
+        constraints: json<Record<string, unknown>>(p.constraints, {}),
+      })),
+      childProperties: childProps.map((p) => ({
+        name: p.name,
+        type: p.type,
+        level: p.child_level,
+        childPath: p.child_path,
+        provenance: json<Record<string, unknown>>(p.provenance, {}),
+        constraints: json<Record<string, unknown>>(p.constraints, {}),
+      })),
     });
   },
 });

@@ -9,6 +9,8 @@ metadata:
 
 # Kconfig in Zephyr
 
+> Example status: fenced snippets are illustrative unless an immediately preceding `zephyr-ai-example` metadata comment names a verified target and build command.
+
 ## The failure mode to understand first
 
 Setting a symbol that does not exist, or whose `depends on` is unsatisfied, is
@@ -59,8 +61,9 @@ otherwise default it on — but it cannot defeat a `select`.
 This distinction causes most Kconfig confusion:
 
 - **`depends on X`** — this symbol is invisible and unsettable unless `X` is on.
-  You must enable `X` yourself. If you set the symbol without `X`, the line is
-  silently dropped.
+  You must enable `X` yourself. If you assign the symbol without `X`, Kconfig
+  reports that the requested value could not be honored and the resolved value
+  remains off; warnings are fatal in the standard Zephyr application flow.
 - **`select X`** — enabling this symbol forces `X` on, *ignoring X's own
   dependencies*. This is why a symbol you never enabled shows up in the build.
 

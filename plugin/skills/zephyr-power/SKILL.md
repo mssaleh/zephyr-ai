@@ -9,6 +9,8 @@ metadata:
 
 # Power management
 
+> Example status: fenced snippets are illustrative unless an immediately preceding `zephyr-ai-example` metadata comment names a verified target and build command.
+
 ## The two layers
 
 - **System PM** (`CONFIG_PM`) — the idle thread picks a low-power state when no

@@ -164,7 +164,7 @@ export const getBoard: ToolFactory = (index) => ({
   handler: (args) => {
     // A qualified target (board/soc/cluster) reduces to the board name.
     const requested = requireString(args, 'name');
-    const name = requested.split('/')[0]!.trim();
+    const name = requested.split('/')[0]!.split('@')[0]!.trim();
     const idx = index();
 
     const row = idx.get(

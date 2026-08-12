@@ -9,6 +9,8 @@ metadata:
 
 # Project setup
 
+> Example status: fenced snippets are illustrative unless an immediately preceding `zephyr-ai-example` metadata comment names a verified target and build command.
+
 ## Choose a workspace topology
 
 | Topology | Shape | Use when |

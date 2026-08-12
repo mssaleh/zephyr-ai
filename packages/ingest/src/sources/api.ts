@@ -1,12 +1,53 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 
+import API_EXPORTER from '../adapters/api-export.py';
 import { type ApiGroup, type ApiSymbol, parseHeader } from '../parsers/doxygen.ts';
+import { standardPython } from '../python.ts';
+import type { SourceReport } from '../report.ts';
 import { walk } from '../walk.ts';
 
 export interface CollectedApi {
   symbols: ApiSymbol[];
   groups: ApiGroup[];
+  mode: 'doxygen-xml' | 'header-fallback';
+  report: SourceReport;
+}
+
+function collectDoxygenXml(root: string, xmlDirectory: string): CollectedApi {
+  if (!existsSync(join(xmlDirectory, 'index.xml'))) {
+    throw new Error(`The Doxygen XML directory has no index.xml: ${xmlDirectory}`);
+  }
+  const temporary = mkdtempSync(join(tmpdir(), 'zephyr-ai-api-'));
+  const exporter = join(temporary, 'api-export.py');
+  try {
+    writeFileSync(exporter, API_EXPORTER, { mode: 0o600 });
+    const exported = spawnSync(standardPython(), [exporter, '--xml', xmlDirectory], {
+      encoding: 'utf8',
+      maxBuffer: 512 * 1024 * 1024,
+      env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
+    });
+    if (exported.status !== 0) {
+      throw new Error(
+        `Doxygen XML export failed.\n${exported.stderr.trim().split('\n').slice(-12).join('\n')}`,
+      );
+    }
+    const collected = JSON.parse(exported.stdout) as CollectedApi;
+    collected.symbols = collected.symbols.map((symbol) => {
+      const portable = symbol.header.replaceAll('\\', '/');
+      const marker = '/include/zephyr/';
+      const index = portable.lastIndexOf(marker);
+      return {
+        ...symbol,
+        header: index >= 0 ? `include/zephyr/${portable.slice(index + marker.length)}` : portable,
+      };
+    });
+    return collected;
+  } finally {
+    rmSync(temporary, { recursive: true, force: true });
+  }
 }
 
 /**
@@ -16,11 +57,12 @@ export interface CollectedApi {
  * and the arch-private trees describe implementation detail an application must
  * not call, and indexing them would let a model reach for private functions.
  */
-export function collectApi(root: string): CollectedApi {
+export function collectApi(root: string, xmlDirectory?: string): CollectedApi {
+  if (xmlDirectory) return collectDoxygenXml(root, xmlDirectory);
   const base = join(root, 'include', 'zephyr');
   const symbols: ApiSymbol[] = [];
   const groups: ApiGroup[] = [];
-  const seen = new Set<string>();
+  const intentionallyExcluded: SourceReport['intentionallyExcluded'] = [];
 
   for (const rel of walk(base, {
     skipPrefixes: ['internal', 'arch/arm/internal'],
@@ -29,33 +71,49 @@ export function collectApi(root: string): CollectedApi {
     let text: string;
     try {
       text = readFileSync(join(base, rel), 'utf8');
-    } catch {
-      continue;
+    } catch (error) {
+      throw new Error(
+        `Cannot read public API header ${join(base, rel)}: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
 
     const header = `include/zephyr/${rel}`;
     const parsed = parseHeader(text, header);
 
     for (const symbol of parsed.symbols) {
-      // A syscall appears twice: the `__syscall` declaration and the
-      // `z_impl_`-prefixed inline. Both normalise to the same public name, so
-      // keep whichever is documented most richly.
-      const key = `${symbol.kind}:${symbol.name}`;
-      const existing = seen.has(key)
-        ? symbols.find((s) => s.kind === symbol.kind && s.name === symbol.name)
-        : undefined;
-
-      if (!existing) {
-        seen.add(key);
-        symbols.push(symbol);
+      // The fallback remains deliberately conservative. These two shapes are
+      // proven parser artefacts, never public declarations. Semantic release
+      // indexes use Doxygen XML and do not pass through this filter.
+      if (symbol.kind === 'function' && symbol.signature.includes('=')) {
+        intentionallyExcluded.push({
+          path: `${header}:${symbol.line}`,
+          reason: 'fallback-initializer-artifact',
+        });
         continue;
       }
-
-      const score = (s: ApiSymbol) =>
-        (s.brief ? 2 : 0) + (s.detail ? 1 : 0) + s.params.length + s.retvals.length;
-      if (score(symbol) > score(existing)) {
-        symbols[symbols.indexOf(existing)] = symbol;
+      const array = symbol.signature.indexOf('[');
+      const call = symbol.signature.indexOf('(');
+      if (symbol.kind === 'function' && array >= 0 && (call < 0 || array < call)) {
+        intentionallyExcluded.push({
+          path: `${header}:${symbol.line}`,
+          reason: 'fallback-array-declarator-artifact',
+        });
+        continue;
       }
+      if (
+        symbol.kind === 'macro' &&
+        /^#define\s+[A-Z][A-Z0-9_]*_H_*$/.test(symbol.signature)
+      ) {
+        intentionallyExcluded.push({
+          path: `${header}:${symbol.line}`,
+          reason: 'fallback-include-guard',
+        });
+        continue;
+      }
+      // Preserve duplicate contexts. A syscall declaration and inline wrapper
+      // may share a public name, but distinct provenance is useful and Doxygen
+      // IDs disambiguate it in semantic mode.
+      symbols.push(symbol);
     }
 
     groups.push(...parsed.groups);
@@ -68,5 +126,31 @@ export function collectApi(root: string): CollectedApi {
     if (!groupById.has(g.id) || (g.title && !groupById.get(g.id)!.title)) groupById.set(g.id, g);
   }
 
-  return { symbols, groups: [...groupById.values()] };
+  return {
+    symbols,
+    groups: [...groupById.values()],
+    mode: 'header-fallback',
+    report: {
+      // One additional discovered source unit records the explicitly excluded
+      // private-header subtree. This keeps the report balanced without
+      // pretending those implementation headers were parsed as public API.
+      discovered: symbols.length + groupById.size + intentionallyExcluded.length + 1,
+      indexed: symbols.length + groupById.size,
+      intentionallyExcluded: [
+        ...intentionallyExcluded,
+        {
+          path: 'include/zephyr/internal',
+          reason: 'private-header-policy',
+        },
+      ],
+      warnings: [
+        {
+          code: 'header-fallback',
+          message:
+            'Doxygen XML was not supplied; API results are an incomplete header-comment catalogue.',
+        },
+      ],
+      errors: [],
+    },
+  };
 }

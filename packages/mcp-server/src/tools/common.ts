@@ -84,15 +84,14 @@ export function catalogueMiss(
   version: string,
   suggestions: string[] = [],
   coverageNote = 'Generated, application-local, and external-module declarations may not be covered.',
-): ToolResult {
+): never {
   const close = relevantSuggestions(requested, suggestions);
-  return result(
+  throw new ToolError(
     `${kind} "${requested}" was not found in the indexed Zephyr ${version} catalogue. ` +
       coverageNote +
       (close.length > 0
         ? `\n\nClose spelling matches:\n${close.map((value) => `- \`${value}\``).join('\n')}`
         : '\n\nNo sufficiently close spelling match was found.'),
-    { query: requested, found: false, suggestions: close, corpusScope: 'indexed-catalogue' },
   );
 }
 

@@ -1,60 +1,40 @@
 # zephyr-ai
 
-Zephyr RTOS firmware development for Claude Code, on STM32 and ESP32.
+Grounded Zephyr RTOS firmware development for Claude Code, with STM32 and ESP32
+workflow guidance.
 
-Gives Claude a version-exact reference for the Zephyr tree you build against —
-Kconfig symbols, devicetree bindings with inherited properties resolved, board
-targets, C API, and samples — plus workflow skills, review agents, and edit-time
-validation.
+## First use
 
-## Setup
+Ask Claude to **build the Zephyr index for this project**. The bundled
+`zephyr-index` skill discovers the workspace and creates an immutable,
+project/fingerprint-scoped database in the plugin data directory. Requirements are
+Node.js 22.13+, Python 3.10+, PyYAML, and the semantic Python libraries shipped in the
+selected Zephyr tree. No npm installation occurs at runtime.
 
-The plugin needs an index of a Zephyr tree. Ask Claude:
+The server does not ship or silently select a global default. `ZEPHYR_AI_INDEX` is a
+strict override; otherwise the active index for `CLAUDE_PROJECT_DIR` is used. Call
+`index_status` to inspect the exact commit, fingerprint, coverage, and project match.
 
-> build the Zephyr index for this project
+## How it behaves
 
-which runs the `zephyr-index` skill. It finds your west workspace, indexes it in
-about four seconds, and writes to the plugin's persistent data directory so it
-survives plugin updates.
+- Thirteen MCP tools search/get Kconfig, bindings, boards, APIs, samples, and docs.
+- Fifteen skills activate by workflow and query the index before generating firmware.
+- Four specialist agents cover architecture, build triage, devicetree, and review.
+- Session and edit hooks validate only what available evidence can prove. Catalogue
+  misses remain uncertainty when generated, application-local, or external-module
+  declarations are not covered.
 
-Requires Node.js 22.13 or newer. Nothing is compiled and nothing is installed at
-runtime.
+`--modules` currently extends Kconfig and binding coverage only. Ordinary workspace
+indexes use an explicitly incomplete API header fallback; release indexes are built
+from Doxygen XML.
 
-## Using it
+Troubleshooting:
 
-Just work on firmware. The skills activate on their own — `zephyr-devicetree`
-when you touch an overlay, `stm32-platform` when the target is an STM32, and so
-on. Claude queries the MCP tools before writing configuration rather than after a
-build fails.
-
-Worth invoking explicitly:
-
-- `@zephyr-ai:zephyr-architect` — design a firmware project before writing code
-- `@zephyr-ai:build-triage` — root-cause a failing build
-- `@zephyr-ai:firmware-reviewer` — review for ISR-context violations, unchecked
-  returns, stack sizing, and the other defects that fail in the field
-- `@zephyr-ai:devicetree-specialist` — author or repair devicetree
-
-## Configuration
-
-| Environment variable | Effect |
-| --- | --- |
-| `ZEPHYR_AI_INDEX` | Use this index file, overriding everything else |
-| `ZEPHYR_BASE` | Where the `zephyr-index` skill looks for a Zephyr tree |
-
-The server prefers, in order: `ZEPHYR_AI_INDEX`, a `workspace.db` built from your
-own tree, then the default index.
-
-## Troubleshooting
-
-**"No Zephyr index is available"** — run the `zephyr-index` skill.
-
-**Answers are wrong for your Zephyr version** — call `index_status`. It reports
-the indexed version and detects a west workspace pinned to a different one.
-Rebuild with `zephyr-index`.
-
-**A symbol exists but the validator flags it** — it is probably from an
-out-of-tree module. Pass that module to the indexer with `--modules`, or ignore
-the warning; it never blocks an edit.
+- **No index:** invoke `zephyr-index`.
+- **Schema, commit, manifest, or context mismatch:** rebuild the project index.
+- **Python contract failure:** activate the west environment containing PyYAML or set
+  `PYTHON_EXECUTABLE`.
+- **A catalogue miss for module syntax:** rebuild with the applicable module root and
+  treat the miss as unproven until coverage is complete.
 
 Apache-2.0.

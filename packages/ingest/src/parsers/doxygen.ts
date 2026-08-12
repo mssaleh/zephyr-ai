@@ -14,12 +14,21 @@
  *    that the published documentation is organised by.
  */
 
-export type SymbolKind = 'function' | 'macro' | 'struct' | 'enum' | 'typedef' | 'union';
+export type SymbolKind =
+  | 'function'
+  | 'macro'
+  | 'struct'
+  | 'enum'
+  | 'enumvalue'
+  | 'typedef'
+  | 'union'
+  | 'variable';
 
 export interface ApiParam {
   name: string;
   description: string;
   direction?: string;
+  type?: string;
 }
 
 export interface ApiSymbol {
@@ -37,6 +46,10 @@ export interface ApiSymbol {
   deprecated?: boolean;
   header: string;
   line: number;
+  /** Stable identities exist only for Doxygen XML ingestion. */
+  doxygenId?: string;
+  compoundId?: string;
+  docAnchor?: string;
 }
 
 export interface ApiGroup {

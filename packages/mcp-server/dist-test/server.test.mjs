@@ -20,6 +20,8 @@ var Client = class {
   #child;
   #buffer = "";
   #pending = /* @__PURE__ */ new Map();
+  #unmatched = [];
+  #queued = [];
   #nextId = 1;
   stderr = [];
   constructor() {
@@ -36,10 +38,15 @@ var Client = class {
         this.#buffer = this.#buffer.slice(newline + 1);
         if (line === "") continue;
         const message = JSON.parse(line);
-        const resolver = this.#pending.get(message.id);
+        const responseId = message.id;
+        const resolver = responseId === null ? void 0 : this.#pending.get(responseId);
         if (resolver) {
-          this.#pending.delete(message.id);
+          this.#pending.delete(responseId);
           resolver(message);
+        } else {
+          const waiter = this.#unmatched.shift();
+          if (waiter) waiter(message);
+          else this.#queued.push(message);
         }
       }
     });
@@ -60,6 +67,33 @@ var Client = class {
   }
   notify(method, params = {}) {
     this.#child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method, params })}
+`);
+  }
+  exchange(message, raw = false) {
+    return new Promise((resolvePromise, reject) => {
+      const timer = setTimeout(() => reject(new Error("timeout waiting for raw response")), 2e4);
+      this.#unmatched.push((response) => {
+        clearTimeout(timer);
+        resolvePromise(response);
+      });
+      this.#child.stdin.write(raw ? `${String(message)}
+` : `${JSON.stringify(message)}
+`);
+    });
+  }
+  nextMessage() {
+    const queued = this.#queued.shift();
+    if (queued) return Promise.resolve(queued);
+    return new Promise((resolvePromise, reject) => {
+      const timer = setTimeout(() => reject(new Error("timeout waiting for server message")), 2e4);
+      this.#unmatched.push((response) => {
+        clearTimeout(timer);
+        resolvePromise(response);
+      });
+    });
+  }
+  respond(id, result) {
+    this.#child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, result })}
 `);
   }
   /** Call a tool and return its text content. */
@@ -117,6 +151,60 @@ describe("MCP server", { skip: !ready && "run `npm run build` and build the inde
       strictEqual(res.result?.["protocolVersion"], LATEST_PROTOCOL_VERSION);
       fresh.close();
     });
+    it("enforces the complete initialization lifecycle", async () => {
+      const fresh = new Client();
+      const before2 = await fresh.request("tools/list");
+      strictEqual(before2.error?.code, -32600);
+      const initialized = await fresh.request("initialize", {
+        protocolVersion: LATEST_PROTOCOL_VERSION,
+        capabilities: {},
+        clientInfo: { name: "test", version: "1" }
+      });
+      strictEqual(initialized.error, void 0);
+      const tooEarly = await fresh.request("tools/list");
+      strictEqual(tooEarly.error?.code, -32600);
+      fresh.notify("notifications/initialized");
+      const readyResponse = await fresh.request("tools/list");
+      strictEqual(readyResponse.error, void 0);
+      const duplicate = await fresh.request("initialize");
+      strictEqual(duplicate.error?.code, -32600);
+      fresh.close();
+    });
+    it("negotiates roots and refreshes them after list_changed", async () => {
+      const fresh = new Client();
+      await fresh.request("initialize", {
+        protocolVersion: LATEST_PROTOCOL_VERSION,
+        capabilities: { roots: { listChanged: true } },
+        clientInfo: { name: "roots-client", version: "1" }
+      });
+      fresh.notify("notifications/initialized");
+      const first = await fresh.nextMessage();
+      strictEqual(first.method, "roots/list");
+      fresh.respond(first.id, { roots: [{ uri: `file://${REPO}` }] });
+      fresh.notify("notifications/roots/list_changed");
+      const second = await fresh.nextMessage();
+      strictEqual(second.method, "roots/list");
+      fresh.respond(second.id, { roots: [{ uri: `file://${REPO}` }] });
+      fresh.close();
+    });
+    it("rejects malformed JSON-RPC envelopes with standard IDs and codes", async () => {
+      const fresh = new Client();
+      const malformed = await fresh.exchange("{not json", true);
+      strictEqual(malformed.id, null);
+      strictEqual(malformed.error?.code, -32700);
+      for (const envelope of [
+        7,
+        [],
+        { jsonrpc: "2.0", id: 3 },
+        { jsonrpc: "1.0", id: 4, method: "ping" },
+        { jsonrpc: "2.0", id: [], method: "ping" },
+        { jsonrpc: "2.0", id: 6, method: "ping", params: [] }
+      ]) {
+        const response = await fresh.exchange(envelope);
+        strictEqual(response.error?.code, -32600);
+      }
+      fresh.close();
+    });
     it("answers ping", async () => {
       const res = await client.request("ping");
       strictEqual(res.error, void 0);
@@ -160,9 +248,28 @@ describe("MCP server", { skip: !ready && "run `npm run build` and build the inde
       const content = res.result?.["content"];
       ok(content[0].text.includes("name"), "should name the missing argument");
     });
+    it("enforces every reproduced schema boundary without coercion", async () => {
+      for (const [name, args] of [
+        ["get_doc", { path: "kernel/index.rst", max_chars: 1 }],
+        ["get_kconfig", { name: "BT", bogus_property: "x" }],
+        ["search_kconfig", { query: "gpio", limit: "3" }]
+      ]) {
+        const res = await client.request("tools/call", { name, arguments: args });
+        strictEqual(res.error, void 0);
+        strictEqual(res.result?.["isError"], true);
+        const text = (res.result?.["content"] ?? [])[0]?.text ?? "";
+        ok(text.includes("Invalid input"), text);
+      }
+    });
     it("returns a protocol error for an unknown tool", async () => {
       const res = await client.request("tools/call", { name: "no_such_tool", arguments: {} });
       strictEqual(res.error?.code, -32602);
+    });
+    it("reports unknown catalogue entities as correctable tool errors", async () => {
+      const res = await client.call("get_kconfig", { name: "CONFIG_BT_PERIPHERAL_MODE" });
+      strictEqual(res.isError, true);
+      ok(res.text.includes("not found in the indexed"));
+      ok(!res.text.includes("does not exist in Zephyr"));
     });
     it("does not crash on FTS operator characters in a query", async () => {
       for (const query of ['"', "a OR OR b", "NEAR(", "*", "st,stm32-spi", "#gpio-cells"]) {
@@ -186,12 +293,6 @@ describe("MCP server", { skip: !ready && "run `npm run build` and build the inde
       const res = await client.call("get_kconfig", { name: "RTIO" });
       ok(res.text.includes("Selected by"), "should list symbols that select RTIO");
       ok(res.text.includes("CONFIG_SPI_RTIO"));
-    });
-    it("suggests alternatives for a symbol that does not exist", async () => {
-      const res = await client.call("get_kconfig", { name: "CONFIG_BT_PERIPHERAL_MODE" });
-      strictEqual(res.structured["found"], false);
-      ok(res.text.includes("does not exist"));
-      ok(res.structured["suggestions"].length > 0);
     });
   });
   describe("devicetree tools", () => {
@@ -246,6 +347,12 @@ describe("MCP server", { skip: !ready && "run `npm run build` and build the inde
       ok(res.text.includes("-ENOTSUP"), "retval list should be present");
       ok(res.text.includes("Parameters"));
       strictEqual(res.structured["params"].length, 3);
+    });
+    it("does not turn absent return documentation into a no-failure claim", async () => {
+      const res = await client.call("get_api", { name: "adc_raw_to_microvolts" });
+      strictEqual(res.structured["found"], true);
+      ok(res.text.includes("No return description is present"));
+      ok(res.text.includes("does not prove the call cannot fail"));
     });
   });
   describe("sample tools", () => {

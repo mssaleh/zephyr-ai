@@ -2,43 +2,104 @@
  * Index location, opening, and query helpers.
  */
 
-import { existsSync, readFileSync, statSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { existsSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+
+import {
+  INDEX_SCHEMA_VERSION,
+  parseIndexDescriptor,
+  projectId,
+  type IndexDescriptor,
+} from '../../shared/index-descriptor.ts';
 
 export interface IndexInfo {
   path: string;
   /** How the index was chosen, for `index_status` to report. */
-  origin: 'env' | 'workspace' | 'plugin-data' | 'plugin-root' | 'cwd';
+  origin: 'explicit' | 'project' | 'development';
+  identity: string;
+  projectRoot?: string;
+}
+
+export class IndexResolutionError extends Error {}
+
+function fileInfo(path: string, origin: IndexInfo['origin'], projectRoot?: string): IndexInfo {
+  let stat;
+  try {
+    stat = statSync(path, { bigint: true });
+  } catch {
+    throw new IndexResolutionError('The selected Zephyr index is unavailable. Rebuild it with the zephyr-index skill.');
+  }
+  if (!stat.isFile()) {
+    throw new IndexResolutionError('The selected Zephyr index is not a regular file. Select or rebuild a valid index.');
+  }
+  return {
+    path: realpathSync(path),
+    origin,
+    identity: `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}`,
+    ...(projectRoot ? { projectRoot } : {}),
+  };
+}
+
+function pluginData(env: NodeJS.ProcessEnv): string | undefined {
+  return env['ZEPHYR_AI_PLUGIN_DATA'] ?? env['CLAUDE_PLUGIN_DATA'];
+}
+
+function activeProjectIndex(data: string, projectRoot: string): string | null {
+  const projectDir = join(data, 'indexes', 'projects', projectId(projectRoot));
+  const active = join(projectDir, 'active.json');
+  if (!existsSync(active)) return null;
+  let relativePath: unknown;
+  try {
+    relativePath = (JSON.parse(readFileSync(active, 'utf8')) as Record<string, unknown>)['relativePath'];
+  } catch {
+    throw new IndexResolutionError('The active project-index pointer is corrupt. Rebuild the project index.');
+  }
+  if (typeof relativePath !== 'string' || isAbsolute(relativePath)) {
+    throw new IndexResolutionError('The active project-index pointer is invalid. Rebuild the project index.');
+  }
+  const candidate = resolve(projectDir, relativePath);
+  const escaped = relative(projectDir, candidate);
+  if (escaped === '..' || escaped.startsWith(`..${sep}`)) {
+    throw new IndexResolutionError('The active project-index pointer escapes its storage directory.');
+  }
+  if (!existsSync(candidate)) {
+    throw new IndexResolutionError(
+      'The active project-index pointer names a missing artifact. Rebuild the project index.',
+    );
+  }
+  return candidate;
 }
 
 /** Candidate index locations, most specific first. */
 export function resolveIndexPath(env: NodeJS.ProcessEnv = process.env): IndexInfo | null {
   const explicit = env['ZEPHYR_AI_INDEX'];
-  if (explicit && existsSync(explicit)) return { path: resolve(explicit), origin: 'env' };
+  if (explicit) {
+    if (!existsSync(explicit)) {
+      throw new IndexResolutionError('ZEPHYR_AI_INDEX names a missing file. Correct it or rebuild the index.');
+    }
+    return fileInfo(resolve(explicit), 'explicit');
+  }
 
-  const data = env['CLAUDE_PLUGIN_DATA'];
+  const projectRootValue = env['ZEPHYR_AI_PROJECT_ROOT'] ?? env['CLAUDE_PROJECT_DIR'];
+  const requestedRoot = projectRootValue ? resolve(projectRootValue) : resolve(process.cwd());
+  const projectRoot = existsSync(requestedRoot) ? realpathSync(requestedRoot) : requestedRoot;
+  const data = pluginData(env);
   if (data) {
-    // An index built from the user's own west workspace wins over the shipped
-    // one: it matches the Zephyr version and vendor HAL modules they build against.
-    const workspace = join(data, 'index', 'workspace.db');
-    if (existsSync(workspace)) return { path: workspace, origin: 'workspace' };
-    const shipped = join(data, 'index', 'zephyr.db');
-    if (existsSync(shipped)) return { path: shipped, origin: 'plugin-data' };
+    const project = activeProjectIndex(resolve(data), projectRoot);
+    if (project) return fileInfo(project, 'project', projectRoot);
   }
 
-  const root = env['CLAUDE_PLUGIN_ROOT'];
-  if (root) {
-    const bundled = join(root, 'index', 'zephyr.db');
-    if (existsSync(bundled)) return { path: bundled, origin: 'plugin-root' };
-  }
-
-  // Development fallback: running from the repository.
-  for (const candidate of [
-    join(process.cwd(), 'index', 'zephyr.db'),
-    join(process.cwd(), '..', '..', 'index', 'zephyr.db'),
-  ]) {
-    if (existsSync(candidate)) return { path: resolve(candidate), origin: 'cwd' };
+  // Development fallback only. The presence of plugin-data means this is an
+  // installed-plugin context; falling through to a source checkout there could
+  // silently answer one project's request with an unrelated development DB.
+  if (!data) {
+    for (const candidate of [
+      join(process.cwd(), 'index', 'zephyr.db'),
+      join(process.cwd(), '..', '..', 'index', 'zephyr.db'),
+    ]) {
+      if (existsSync(candidate)) return fileInfo(resolve(candidate), 'development', projectRoot);
+    }
   }
 
   return null;
@@ -83,6 +144,7 @@ export class Index {
   readonly db: DatabaseSync;
   readonly info: IndexInfo;
   readonly meta: Record<string, string>;
+  readonly descriptor: IndexDescriptor;
 
   constructor(info: IndexInfo) {
     this.info = info;
@@ -90,6 +152,36 @@ export class Index {
     this.meta = {};
     for (const row of this.db.prepare('SELECT key, value FROM meta').all() as Row[]) {
       this.meta[String(row['key'])] = String(row['value']);
+    }
+    const schema = Number(this.meta['schema_version']);
+    if (schema !== INDEX_SCHEMA_VERSION) {
+      this.db.close();
+      throw new Error(
+        `Index schema ${Number.isFinite(schema) ? schema : 'unknown'} is incompatible; expected ${INDEX_SCHEMA_VERSION}. Rebuild the index.`,
+      );
+    }
+    const rawDescriptor = this.meta['index_descriptor'];
+    if (!rawDescriptor) {
+      this.db.close();
+      throw new Error('The index has no descriptor. Rebuild it with the current indexer.');
+    }
+    try {
+      this.descriptor = parseIndexDescriptor(rawDescriptor);
+    } catch (error) {
+      this.db.close();
+      throw error;
+    }
+    if (this.meta['context_fingerprint'] !== this.descriptor.contextFingerprint) {
+      this.db.close();
+      throw new Error('The index descriptor fingerprint does not match its metadata. Rebuild the index.');
+    }
+    if (info.origin === 'project') {
+      try {
+        writeFileSync(join(dirname(info.path), 'last-used'), `${new Date().toISOString()}\n`);
+      } catch {
+        // Usage tracking is best-effort; read-only plugin data must not make
+        // an otherwise valid index unusable.
+      }
     }
   }
 

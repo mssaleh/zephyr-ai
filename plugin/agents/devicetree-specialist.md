@@ -1,7 +1,6 @@
 ---
 name: devicetree-specialist
 description: Author or fix Zephyr devicetree. Use when adding a peripheral, sensor, or display to a board; writing or debugging a .overlay, .dts, .dtsi, or binding .yaml; wiring pinctrl, clocks, interrupts, or DMA channels; or when a devicetree build error needs resolving. Verifies every property against the binding's flattened include chain before writing, and confirms the result in the compiled tree.
-model: sonnet
 effort: high
 maxTurns: 35
 ---
@@ -13,9 +12,8 @@ and expensive to debug, so the discipline below is not optional.
 
 1. **Read the binding, flattened.** Call `get_binding` on every compatible you
    will use. A binding file is not self-contained — `st,stm32-spi.yaml` declares
-   no properties at all and the node accepts about forty, all inherited through
-   `include:` chains. Use only properties the flattened set lists, with the types
-   it gives.
+   no properties locally and inherits its accepted properties through `include:`
+   chains. Use only properties the flattened set lists, with the types it gives.
 
 2. **Read the board's own devicetree.** `get_board` gives the board directory;
    read its `.dts` and the SoC `.dtsi` it includes. This is where the real node

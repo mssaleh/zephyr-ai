@@ -1,4 +1,4 @@
-import { readdirSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 
 /** Directories never worth descending into when indexing a Zephyr tree. */
@@ -28,6 +28,7 @@ export interface WalkOptions {
  * several subtrees (notably `tests/`) that are deliberately excluded.
  */
 export function* walk(root: string, opts: WalkOptions = {}): Generator<string> {
+  if (!existsSync(root)) return;
   const skipDirs = opts.skipDirs ?? DEFAULT_SKIP;
   const skipPrefixes = opts.skipPrefixes ?? [];
   const stack: string[] = [root];
@@ -37,8 +38,10 @@ export function* walk(root: string, opts: WalkOptions = {}): Generator<string> {
     let entries;
     try {
       entries = readdirSync(dir, { withFileTypes: true });
-    } catch {
-      continue; // unreadable directory: skip rather than abort the whole build
+    } catch (error) {
+      throw new Error(
+        `Failed to read source directory ${dir}: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
 
     for (const entry of entries) {
@@ -53,6 +56,8 @@ export function* walk(root: string, opts: WalkOptions = {}): Generator<string> {
         if (skipPrefixes.some((p) => rel.startsWith(`${p}/`))) continue;
         if (opts.match && !opts.match(entry.name)) continue;
         yield rel;
+      } else if (entry.isSymbolicLink()) {
+        throw new Error(`Refusing symbolic link in indexed source tree: ${abs}`);
       }
     }
   }

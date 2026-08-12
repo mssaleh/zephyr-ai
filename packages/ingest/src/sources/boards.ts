@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 
 import { parse as parseYaml } from 'yaml';
 
@@ -45,14 +46,15 @@ export interface SocRecord {
   cpuclusters: string[];
 }
 
-function safeYaml(path: string): Record<string, unknown> | null {
+function safeYaml(path: string): Record<string, unknown> {
   try {
     const parsed = parseYaml(readFileSync(path, 'utf8'), { logLevel: 'silent' });
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : null;
-  } catch {
-    return null;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('expected a YAML mapping');
+    }
+    return parsed as Record<string, unknown>;
+  } catch (error) {
+    throw new Error(`Failed to parse board/SoC metadata ${path}: ${(error as Error).message}`);
   }
 }
 
@@ -62,6 +64,55 @@ function asArray(v: unknown): unknown[] {
 
 function asStrings(v: unknown): string[] {
   return asArray(v).filter((x): x is string => typeof x === 'string');
+}
+
+interface OfficialBoard {
+  qualifiers: string[];
+  revisions: string[];
+  defaultRevision?: string;
+}
+
+/** Enumerate targets through the exact implementation used by `west boards`. */
+function officialBoards(root: string): Map<string, OfficialBoard> {
+  const script = join(root, 'scripts', 'list_boards.py');
+  if (!existsSync(script)) throw new Error('The selected Zephyr tree has no scripts/list_boards.py.');
+  let exported;
+  for (const python of [process.env['PYTHON_EXECUTABLE'], 'python3', 'python']) {
+    if (!python) continue;
+    exported = spawnSync(
+      python,
+      [
+        script,
+        '--board-root', root,
+        '--soc-root', root,
+        '--arch-root', root,
+        '--cmakeformat=@@{NAME}@@{QUALIFIERS}@@{REVISIONS}@@{REVISION_DEFAULT}',
+      ],
+      { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
+    );
+    if (!exported.error || (exported.error as NodeJS.ErrnoException).code !== 'ENOENT') break;
+  }
+  if (!exported || exported.status !== 0) {
+    throw new Error(
+      'Board ingestion requires Python 3 plus the PyYAML and jsonschema modules used by Zephyr scripts/list_boards.py. ' +
+        `The official board exporter failed: ${exported?.stderr.trim() ?? 'Python was not found.'}`,
+    );
+  }
+  const result = new Map<string, OfficialBoard>();
+  for (const line of exported.stdout.split('\n').filter(Boolean)) {
+    const fields = line.split('@@').filter(Boolean).map((field) => field.split(';'));
+    const value = (name: string) => fields.find(([label]) => label === name)?.slice(1) ?? [];
+    const name = value('NAME')[0];
+    if (!name) continue;
+    const record: OfficialBoard = {
+      qualifiers: value('QUALIFIERS').filter(Boolean),
+      revisions: value('REVISIONS').filter(Boolean),
+    };
+    const defaultRevision = value('REVISION_DEFAULT')[0];
+    if (defaultRevision && defaultRevision !== 'NOTFOUND') record.defaultRevision = defaultRevision;
+    result.set(name, record);
+  }
+  return result;
 }
 
 /**
@@ -85,20 +136,36 @@ function readTargets(boardDir: string): BoardTarget[] {
     if (entry === 'board.yml' || entry === 'board.yaml') continue;
 
     const doc = safeYaml(join(boardDir, entry));
-    if (!doc || typeof doc['identifier'] !== 'string') continue;
-
-    const target: BoardTarget = {
-      identifier: doc['identifier'],
+    const common = {
       toolchains: asStrings(doc['toolchain']),
       supported: asStrings(doc['supported']),
+      ...(typeof doc['name'] === 'string' ? { name: doc['name'] } : {}),
+      ...(typeof doc['arch'] === 'string' ? { arch: doc['arch'] } : {}),
+      ...(typeof doc['type'] === 'string' ? { type: doc['type'] } : {}),
+      ...(typeof doc['ram'] === 'number' ? { ram: doc['ram'] } : {}),
+      ...(typeof doc['flash'] === 'number' ? { flash: doc['flash'] } : {}),
+      ...(typeof doc['vendor'] === 'string' ? { vendor: doc['vendor'] } : {}),
     };
-    if (typeof doc['name'] === 'string') target.name = doc['name'];
-    if (typeof doc['arch'] === 'string') target.arch = doc['arch'];
-    if (typeof doc['type'] === 'string') target.type = doc['type'];
-    if (typeof doc['ram'] === 'number') target.ram = doc['ram'];
-    if (typeof doc['flash'] === 'number') target.flash = doc['flash'];
-    if (typeof doc['vendor'] === 'string') target.vendor = doc['vendor'];
-    targets.push(target);
+    if (typeof doc['identifier'] === 'string') {
+      targets.push({ identifier: doc['identifier'], ...common });
+    }
+    const variants =
+      doc['variants'] && typeof doc['variants'] === 'object' && !Array.isArray(doc['variants'])
+        ? (doc['variants'] as Record<string, unknown>)
+        : {};
+    for (const [identifier, override] of Object.entries(variants)) {
+      const details = override && typeof override === 'object' && !Array.isArray(override)
+        ? (override as Record<string, unknown>)
+        : {};
+      targets.push({
+        identifier,
+        ...common,
+        toolchains: asStrings(details['toolchain']).length
+          ? asStrings(details['toolchain'])
+          : common.toolchains,
+        supported: [...new Set([...common.supported, ...asStrings(details['supported'])])],
+      });
+    }
   }
 
   targets.sort((a, b) => a.identifier.localeCompare(b.identifier));
@@ -107,13 +174,13 @@ function readTargets(boardDir: string): BoardTarget[] {
 
 export function collectBoards(root: string): BoardRecord[] {
   const boards: BoardRecord[] = [];
+  const official = officialBoards(root);
 
   for (const rel of walk(join(root, 'boards'), {
     match: (name) => name === 'board.yml' || name === 'board.yaml',
   })) {
     const abs = join(root, 'boards', rel);
     const doc = safeYaml(abs);
-    if (!doc) continue;
 
     // `board:` is the common shape; `boards:` (a list) appears in shared-directory setups.
     const entries: Record<string, unknown>[] = [];
@@ -131,9 +198,9 @@ export function collectBoards(root: string): BoardRecord[] {
     const boardDir = dirname(abs);
     const relDir = toPosix(join('boards', dirname(rel)));
     const targets = readTargets(boardDir);
-    const docPath = existsSync(join(boardDir, 'doc', 'index.rst'))
-      ? `${relDir}/doc/index.rst`
-      : undefined;
+    const documentation = [...walk(join(boardDir, 'doc'), { match: (name) => name.endsWith('.rst') })];
+    const preferredDoc = documentation.includes('index.rst') ? 'index.rst' : documentation.sort()[0];
+    const docPath = preferredDoc ? `${relDir}/doc/${preferredDoc}` : undefined;
 
     for (const entry of entries) {
       if (typeof entry['name'] !== 'string') continue;
@@ -160,35 +227,46 @@ export function collectBoards(root: string): BoardRecord[] {
         ];
       });
 
-      const revisionRec =
-        entry['revision'] && typeof entry['revision'] === 'object'
-          ? (entry['revision'] as Record<string, unknown>)
-          : null;
-
       // Targets are matched by prefix because an identifier is
       // `<board>/<soc>/<cluster>` and a directory can define several boards.
       const own = targets.filter(
         (t) => t.identifier === name || t.identifier.startsWith(`${name}/`),
       );
-      const effective = own.length > 0 ? own : entries.length === 1 ? targets : [];
+      const officialBoard = official.get(name);
+      if (!officialBoard) throw new Error(`Zephyr's board model did not enumerate ${name}.`);
+      const qualifiers = officialBoard.qualifiers.length > 0 ? officialBoard.qualifiers : [''];
+      const identifiers = qualifiers.map((qualifier) => qualifier ? `${name}/${qualifier}` : name);
+      for (const revision of officialBoard.revisions) {
+        identifiers.push(
+          ...qualifiers.map((qualifier) => qualifier ? `${name}@${revision}/${qualifier}` : `${name}@${revision}`),
+        );
+      }
+      const generated: BoardTarget[] = identifiers.map((identifier) => ({
+        identifier,
+        toolchains: [],
+        supported: [],
+      }));
+      const candidates = own.length > 0 ? own : entries.length === 1 ? targets : [];
+      const targetByName = new Map(generated.map((target) => [target.identifier, target]));
+      for (const target of candidates) {
+        const existing = targetByName.get(target.identifier);
+        targetByName.set(target.identifier, existing ? { ...existing, ...target } : target);
+      }
+      const effective = [...targetByName.values()].sort((left, right) =>
+        left.identifier.localeCompare(right.identifier),
+      );
 
       const record: BoardRecord = {
         name,
         dir: relDir,
         socs,
         targets: effective,
-        revisions: revisionRec ? asArray(revisionRec['revisions']).flatMap((r) =>
-          r && typeof r === 'object' && typeof (r as Record<string, unknown>)['name'] === 'string'
-            ? [(r as Record<string, unknown>)['name'] as string]
-            : [],
-        ) : [],
+        revisions: officialBoard.revisions,
         supported: [...new Set(effective.flatMap((t) => t.supported))].sort(),
       };
       if (typeof entry['full_name'] === 'string') record.fullName = entry['full_name'];
       if (typeof entry['vendor'] === 'string') record.vendor = entry['vendor'];
-      if (revisionRec && typeof revisionRec['default'] === 'string') {
-        record.defaultRevision = revisionRec['default'];
-      }
+      if (officialBoard.defaultRevision) record.defaultRevision = officialBoard.defaultRevision;
       if (docPath) record.docPath = docPath;
 
       const arch = effective.find((t) => t.arch)?.arch;
@@ -215,7 +293,6 @@ export function collectSocs(root: string): SocRecord[] {
   })) {
     const abs = join(root, 'soc', rel);
     const doc = safeYaml(abs);
-    if (!doc) continue;
 
     const relDir = toPosix(join('soc', dirname(rel)));
     const vendor = rel.includes('/') ? rel.split('/')[0] : undefined;

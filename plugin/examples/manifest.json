@@ -1,0 +1,32 @@
+{
+  "examples": [
+    {
+      "id": "binding-skeleton-types",
+      "path": "plugin/examples/binding-skeleton",
+      "target": "native_sim",
+      "command": "cmake configure and build",
+      "class": "generic"
+    },
+    {
+      "id": "kernel-smoke-native",
+      "path": "plugin/examples/kernel-smoke",
+      "target": "native_sim",
+      "command": "cmake configure and build",
+      "class": "generic"
+    },
+    {
+      "id": "kernel-smoke-stm32",
+      "path": "plugin/examples/kernel-smoke",
+      "target": "nucleo_h743zi",
+      "command": "cmake configure and build",
+      "class": "stm32"
+    },
+    {
+      "id": "kernel-smoke-esp32",
+      "path": "plugin/examples/kernel-smoke",
+      "target": "esp32s3_devkitc/esp32s3/procpu",
+      "command": "cmake configure and build",
+      "class": "esp32"
+    }
+  ]
+}

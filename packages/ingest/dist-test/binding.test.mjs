@@ -3992,10 +3992,10 @@ var require_resolve_block_map = __commonJS({
       let offset = bm.offset;
       let commentEnd = null;
       for (const collItem of bm.items) {
-        const { start, key, sep: sep2, value } = collItem;
+        const { start, key, sep, value } = collItem;
         const keyProps = resolveProps.resolveProps(start, {
           indicator: "explicit-key-ind",
-          next: key ?? sep2?.[0],
+          next: key ?? sep?.[0],
           offset,
           onError,
           parentIndent: bm.indent,
@@ -4009,7 +4009,7 @@ var require_resolve_block_map = __commonJS({
             else if ("indent" in key && key.indent !== bm.indent)
               onError(offset, "BAD_INDENT", startColMsg);
           }
-          if (!keyProps.anchor && !keyProps.tag && !sep2) {
+          if (!keyProps.anchor && !keyProps.tag && !sep) {
             commentEnd = keyProps.end;
             if (keyProps.comment) {
               if (map.comment)
@@ -4033,7 +4033,7 @@ var require_resolve_block_map = __commonJS({
         ctx.atKey = false;
         if (utilMapIncludes.mapIncludes(ctx, map.items, keyNode))
           onError(keyStart, "DUPLICATE_KEY", "Map keys must be unique");
-        const valueProps = resolveProps.resolveProps(sep2 ?? [], {
+        const valueProps = resolveProps.resolveProps(sep ?? [], {
           indicator: "map-value-ind",
           next: value,
           offset: keyNode.range[2],
@@ -4049,7 +4049,7 @@ var require_resolve_block_map = __commonJS({
             if (ctx.options.strict && keyProps.start < valueProps.found.offset - 1024)
               onError(keyNode.range, "KEY_OVER_1024_CHARS", "The : indicator must be at most 1024 chars after the start of an implicit block mapping key");
           }
-          const valueNode = value ? composeNode(ctx, value, valueProps, onError) : composeEmptyNode(ctx, offset, sep2, null, valueProps, onError);
+          const valueNode = value ? composeNode(ctx, value, valueProps, onError) : composeEmptyNode(ctx, offset, sep, null, valueProps, onError);
           if (ctx.schema.compat)
             utilFlowIndentCheck.flowIndentCheck(bm.indent, value, onError);
           offset = valueNode.range[2];
@@ -4140,7 +4140,7 @@ var require_resolve_end = __commonJS({
       let comment = "";
       if (end) {
         let hasSpace = false;
-        let sep2 = "";
+        let sep = "";
         for (const token of end) {
           const { source, type } = token;
           switch (type) {
@@ -4154,13 +4154,13 @@ var require_resolve_end = __commonJS({
               if (!comment)
                 comment = cb;
               else
-                comment += sep2 + cb;
-              sep2 = "";
+                comment += sep + cb;
+              sep = "";
               break;
             }
             case "newline":
               if (comment)
-                sep2 += source;
+                sep += source;
               hasSpace = true;
               break;
             default:
@@ -4203,18 +4203,18 @@ var require_resolve_flow_collection = __commonJS({
       let offset = fc.offset + fc.start.source.length;
       for (let i = 0; i < fc.items.length; ++i) {
         const collItem = fc.items[i];
-        const { start, key, sep: sep2, value } = collItem;
+        const { start, key, sep, value } = collItem;
         const props = resolveProps.resolveProps(start, {
           flow: fcName,
           indicator: "explicit-key-ind",
-          next: key ?? sep2?.[0],
+          next: key ?? sep?.[0],
           offset,
           onError,
           parentIndent: fc.indent,
           startOnNewline: false
         });
         if (!props.found) {
-          if (!props.anchor && !props.tag && !sep2 && !value) {
+          if (!props.anchor && !props.tag && !sep && !value) {
             if (i === 0 && props.comma)
               onError(props.comma, "UNEXPECTED_TOKEN", `Unexpected , in ${fcName}`);
             else if (i < fc.items.length - 1)
@@ -4268,8 +4268,8 @@ var require_resolve_flow_collection = __commonJS({
             }
           }
         }
-        if (!isMap && !sep2 && !props.found) {
-          const valueNode = value ? composeNode(ctx, value, props, onError) : composeEmptyNode(ctx, props.end, sep2, null, props, onError);
+        if (!isMap && !sep && !props.found) {
+          const valueNode = value ? composeNode(ctx, value, props, onError) : composeEmptyNode(ctx, props.end, sep, null, props, onError);
           coll.items.push(valueNode);
           offset = valueNode.range[2];
           if (isBlock(value))
@@ -4281,7 +4281,7 @@ var require_resolve_flow_collection = __commonJS({
           if (isBlock(key))
             onError(keyNode.range, "BLOCK_IN_FLOW", blockMsg);
           ctx.atKey = false;
-          const valueProps = resolveProps.resolveProps(sep2 ?? [], {
+          const valueProps = resolveProps.resolveProps(sep ?? [], {
             flow: fcName,
             indicator: "map-value-ind",
             next: value,
@@ -4292,8 +4292,8 @@ var require_resolve_flow_collection = __commonJS({
           });
           if (valueProps.found) {
             if (!isMap && !props.found && ctx.options.strict) {
-              if (sep2)
-                for (const st of sep2) {
+              if (sep)
+                for (const st of sep) {
                   if (st === valueProps.found)
                     break;
                   if (st.type === "newline") {
@@ -4310,7 +4310,7 @@ var require_resolve_flow_collection = __commonJS({
             else
               onError(valueProps.start, "MISSING_CHAR", `Missing , or : between ${fcName} items`);
           }
-          const valueNode = value ? composeNode(ctx, value, valueProps, onError) : valueProps.found ? composeEmptyNode(ctx, valueProps.end, sep2, null, valueProps, onError) : null;
+          const valueNode = value ? composeNode(ctx, value, valueProps, onError) : valueProps.found ? composeEmptyNode(ctx, valueProps.end, sep, null, valueProps, onError) : null;
           if (valueNode) {
             if (isBlock(value))
               onError(valueNode.range, "BLOCK_IN_FLOW", blockMsg);
@@ -4490,7 +4490,7 @@ var require_resolve_block_scalar = __commonJS({
           chompStart = i + 1;
       }
       let value = "";
-      let sep2 = "";
+      let sep = "";
       let prevMoreIndented = false;
       for (let i = 0; i < contentStart; ++i)
         value += lines[i][0].slice(trimIndent) + "\n";
@@ -4507,24 +4507,24 @@ var require_resolve_block_scalar = __commonJS({
           indent = "";
         }
         if (type === Scalar.Scalar.BLOCK_LITERAL) {
-          value += sep2 + indent.slice(trimIndent) + content;
-          sep2 = "\n";
+          value += sep + indent.slice(trimIndent) + content;
+          sep = "\n";
         } else if (indent.length > trimIndent || content[0] === "	") {
-          if (sep2 === " ")
-            sep2 = "\n";
-          else if (!prevMoreIndented && sep2 === "\n")
-            sep2 = "\n\n";
-          value += sep2 + indent.slice(trimIndent) + content;
-          sep2 = "\n";
+          if (sep === " ")
+            sep = "\n";
+          else if (!prevMoreIndented && sep === "\n")
+            sep = "\n\n";
+          value += sep + indent.slice(trimIndent) + content;
+          sep = "\n";
           prevMoreIndented = true;
         } else if (content === "") {
-          if (sep2 === "\n")
+          if (sep === "\n")
             value += "\n";
           else
-            sep2 = "\n";
+            sep = "\n";
         } else {
-          value += sep2 + content;
-          sep2 = " ";
+          value += sep + content;
+          sep = " ";
           prevMoreIndented = false;
         }
       }
@@ -4706,25 +4706,25 @@ var require_resolve_flow_scalar = __commonJS({
       if (!match)
         return source;
       let res = match[1];
-      let sep2 = " ";
+      let sep = " ";
       let pos = first.lastIndex;
       line.lastIndex = pos;
       while (match = line.exec(source)) {
         if (match[1] === "") {
-          if (sep2 === "\n")
-            res += sep2;
+          if (sep === "\n")
+            res += sep;
           else
-            sep2 = "\n";
+            sep = "\n";
         } else {
-          res += sep2 + match[1];
-          sep2 = " ";
+          res += sep + match[1];
+          sep = " ";
         }
         pos = line.lastIndex;
       }
       const last = /[ \t]*(.*)/sy;
       last.lastIndex = pos;
       match = last.exec(source);
-      return res + sep2 + (match?.[1] ?? "");
+      return res + sep + (match?.[1] ?? "");
     }
     function doubleQuotedValue(source, onError) {
       let res = "";
@@ -5534,14 +5534,14 @@ var require_cst_stringify = __commonJS({
         }
       }
     }
-    function stringifyItem({ start, key, sep: sep2, value }) {
+    function stringifyItem({ start, key, sep, value }) {
       let res = "";
       for (const st of start)
         res += st.source;
       if (key)
         res += stringifyToken(key);
-      if (sep2)
-        for (const st of sep2)
+      if (sep)
+        for (const st of sep)
           res += st.source;
       if (value)
         res += stringifyToken(value);
@@ -6708,18 +6708,18 @@ var require_parser = __commonJS({
         if (this.type === "map-value-ind") {
           const prev = getPrevProps(this.peek(2));
           const start = getFirstKeyStartProps(prev);
-          let sep2;
+          let sep;
           if (scalar.end) {
-            sep2 = scalar.end;
-            sep2.push(this.sourceToken);
+            sep = scalar.end;
+            sep.push(this.sourceToken);
             delete scalar.end;
           } else
-            sep2 = [this.sourceToken];
+            sep = [this.sourceToken];
           const map = {
             type: "block-map",
             offset: scalar.offset,
             indent: scalar.indent,
-            items: [{ start, key: scalar, sep: sep2 }]
+            items: [{ start, key: scalar, sep }]
           };
           this.onKeyLine = true;
           this.stack[this.stack.length - 1] = map;
@@ -6872,15 +6872,15 @@ var require_parser = __commonJS({
                 } else if (isFlowToken(it2.key) && !includesToken(it2.sep, "newline")) {
                   const start2 = getFirstKeyStartProps(it2.start);
                   const key = it2.key;
-                  const sep2 = it2.sep;
-                  sep2.push(this.sourceToken);
+                  const sep = it2.sep;
+                  sep.push(this.sourceToken);
                   delete it2.key;
                   delete it2.sep;
                   this.stack.push({
                     type: "block-map",
                     offset: this.offset,
                     indent: this.indent,
-                    items: [{ start: start2, key, sep: sep2 }]
+                    items: [{ start: start2, key, sep }]
                   });
                 } else if (start.length > 0) {
                   it2.sep = it2.sep.concat(start, this.sourceToken);
@@ -7074,13 +7074,13 @@ var require_parser = __commonJS({
             const prev = getPrevProps(parent);
             const start = getFirstKeyStartProps(prev);
             fixFlowSeqItems(fc);
-            const sep2 = fc.end.splice(1, fc.end.length);
-            sep2.push(this.sourceToken);
+            const sep = fc.end.splice(1, fc.end.length);
+            sep.push(this.sourceToken);
             const map = {
               type: "block-map",
               offset: fc.offset,
               indent: fc.indent,
-              items: [{ start, key: fc, sep: sep2 }]
+              items: [{ start, key: fc, sep }]
             };
             this.onKeyLine = true;
             this.stack[this.stack.length - 1] = map;
@@ -7360,7 +7360,7 @@ var require_dist = __commonJS({
 
 // test/binding.test.ts
 import { ok, strictEqual } from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync as existsSync3 } from "node:fs";
 import { join as join3 } from "node:path";
 import { describe, it } from "node:test";
 
@@ -7601,109 +7601,450 @@ function safeParseYaml(text) {
 }
 
 // src/sources/bindings.ts
-import { readFileSync } from "node:fs";
-import { basename, join as join2 } from "node:path";
+import { existsSync as existsSync2, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname as dirname2, join as join2 } from "node:path";
+import { spawnSync as spawnSync2 } from "node:child_process";
 
-// src/walk.ts
-import { readdirSync } from "node:fs";
-import { join, relative, sep } from "node:path";
-var DEFAULT_SKIP = /* @__PURE__ */ new Set([
-  ".git",
-  "node_modules",
-  "__pycache__",
-  ".venv",
-  "build",
-  "twister-out"
-]);
-function* walk(root, opts = {}) {
-  const skipDirs = opts.skipDirs ?? DEFAULT_SKIP;
-  const skipPrefixes = opts.skipPrefixes ?? [];
-  const stack = [root];
-  while (stack.length > 0) {
-    const dir = stack.pop();
-    let entries;
-    try {
-      entries = readdirSync(dir, { withFileTypes: true });
-    } catch {
-      continue;
+// src/adapters/binding-export.py
+var binding_export_default = `#!/usr/bin/env python3
+"""Resolve a Zephyr binding catalogue with the target tree's edtlib."""
+
+import argparse
+import copy
+import json
+import os
+from pathlib import Path
+import sys
+import yaml
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--zephyr", required=True)
+    parser.add_argument("--root", action="append", required=True)
+    return parser.parse_args()
+
+
+def relative_path(path, roots):
+    resolved = Path(path).resolve()
+    for prefix, root in roots:
+        try:
+            return prefix + resolved.relative_to(root).as_posix()
+        except ValueError:
+            pass
+    return "external/{}".format(resolved.name)
+
+
+def include_specs(raw):
+    value = raw.get("include") if isinstance(raw, dict) else None
+    if isinstance(value, str):
+        return [(value, None, None, None)]
+    if not isinstance(value, list):
+        return []
+    output = []
+    for item in value:
+        if isinstance(item, str):
+            output.append((item, None, None, None))
+        elif isinstance(item, dict) and isinstance(item.get("name"), str):
+            output.append(
+                (
+                    item["name"],
+                    item.get("property-allowlist"),
+                    item.get("property-blocklist"),
+                    item.get("child-binding"),
+                )
+            )
+    return output
+
+
+def property_origins(path, raw_by_path, fname2path, level=0, stack=None):
+    stack = list(stack or [])
+    if path in stack:
+        raise RuntimeError("binding include cycle: {}".format(" -> ".join(stack + [path])))
+    stack.append(path)
+    raw = raw_by_path[path]
+    node = raw
+    for _ in range(level):
+        node = node.get("child-binding") if isinstance(node, dict) else None
+        if not isinstance(node, dict):
+            node = {}
+            break
+
+    origins = {}
+    for name, allow, block, child_filter in include_specs(raw):
+        included = fname2path.get(name)
+        if not included:
+            raise RuntimeError("{} includes missing {}".format(path, name))
+        nested_allow, nested_block = allow, block
+        filter_value = child_filter
+        for _ in range(level):
+            if isinstance(filter_value, dict):
+                nested_allow = filter_value.get("property-allowlist")
+                nested_block = filter_value.get("property-blocklist")
+                filter_value = filter_value.get("child-binding")
+            else:
+                nested_allow = nested_block = None
+        inherited = property_origins(included, raw_by_path, fname2path, level, stack)
+        for prop, provenance in inherited.items():
+            if nested_allow is not None and prop not in nested_allow:
+                continue
+            if nested_block is not None and prop in nested_block:
+                continue
+            origins[prop] = {
+                **provenance,
+                "includeChain": [path] + provenance["includeChain"],
+            }
+
+    properties = node.get("properties") if isinstance(node, dict) else None
+    if isinstance(properties, dict):
+        for prop in properties:
+            origins[prop] = {"declaredIn": path, "includeChain": [path]}
+    return origins
+
+
+def compat_from_raw(raw):
+    compatible = raw.get("compatible") if isinstance(raw, dict) else None
+    if isinstance(compatible, str):
+        return [compatible]
+    properties = raw.get("properties") if isinstance(raw, dict) else None
+    compatible_spec = properties.get("compatible") if isinstance(properties, dict) else None
+    if isinstance(compatible_spec, dict):
+        if isinstance(compatible_spec.get("const"), str):
+            return [compatible_spec["const"]]
+        if isinstance(compatible_spec.get("enum"), list):
+            return [item for item in compatible_spec["enum"] if isinstance(item, str)]
+    return []
+
+
+def translate_dt_schema(raw, compatible):
+    translated = {
+        key: copy.deepcopy(value)
+        for key, value in raw.items()
+        if key in {"title", "description", "include", "bus", "on-bus", "examples", "child-binding"}
+        or key.endswith("-cells")
     }
-    for (const entry of entries) {
-      const abs = join(dir, entry.name);
-      const rel = toPosix(relative(root, abs));
-      if (entry.isDirectory()) {
-        if (skipDirs.has(entry.name)) continue;
-        if (skipPrefixes.some((p) => rel === p || rel.startsWith(`${p}/`))) continue;
-        stack.push(abs);
-      } else if (entry.isFile()) {
-        if (skipPrefixes.some((p) => rel.startsWith(`${p}/`))) continue;
-        if (opts.match && !opts.match(entry.name)) continue;
-        yield rel;
-      }
+    translated["compatible"] = compatible
+    required = set(raw.get("required", []))
+    properties = {}
+    for name, value in raw.get("properties", {}).items():
+        if name == "compatible":
+            # The legacy Zephyr binding format carries this at the top level;
+            # base.yaml already supplies the compatible property specification.
+            continue
+        spec = value if isinstance(value, dict) else {}
+        converted = {
+            key: copy.deepcopy(item)
+            for key, item in spec.items()
+            if key in {"description", "type", "enum", "const", "default", "deprecated", "specifier-space"}
+        }
+        if name in required:
+            converted["required"] = True
+        properties[name] = converted
+    translated["properties"] = properties
+    return translated
+
+
+def binding_depth(binding):
+    depth = 0
+    child = binding.child_binding
+    while child is not None:
+        depth += 1
+        child = child.child_binding
+    return depth
+
+
+def main():
+    args = parse_args()
+    zephyr = Path(args.zephyr).resolve()
+    sys.path.insert(0, str(zephyr / "scripts" / "dts" / "python-devicetree" / "src"))
+    from devicetree.edtlib import Binding, EDTError
+
+    roots = []
+    paths = []
+    for index, value in enumerate(args.root):
+        root = Path(value).resolve()
+        roots.append(("" if index == 0 else "modules/{}/".format(root.parent.name), root))
+        candidates = [*root.rglob("*.yaml"), *root.rglob("*.yml")]
+        symbolic = [path for path in candidates if path.is_symlink()]
+        if symbolic:
+            raise RuntimeError(
+                "binding roots contain symbolic links: {}".format(
+                    ", ".join(str(path) for path in sorted(symbolic))
+                )
+            )
+        paths.extend(sorted(str(path.resolve()) for path in candidates))
+    paths = sorted(set(paths))
+
+    names = {}
+    duplicate_names = {}
+    for path in paths:
+        name = os.path.basename(path)
+        if name in names and names[name] != path:
+            duplicate_names.setdefault(name, [names[name]]).append(path)
+        else:
+            names[name] = path
+    if duplicate_names:
+        details = "; ".join("{}: {}".format(name, values) for name, values in duplicate_names.items())
+        raise RuntimeError("ambiguous binding include basenames: {}".format(details))
+
+    raw_by_path = {}
+    errors = []
+    for path in paths:
+        try:
+            with open(path, encoding="utf-8") as stream:
+                raw = yaml.safe_load(stream)
+            if not isinstance(raw, dict):
+                raise RuntimeError("expected a YAML mapping")
+            raw_by_path[path] = raw
+        except Exception as error:
+            errors.append({"path": relative_path(path, roots), "code": "yaml-parse", "message": str(error)})
+
+    bindings = []
+    exclusions = []
+    warnings = []
+    for path in paths:
+        raw = raw_by_path.get(path)
+        if raw is None:
+            continue
+        compatibles = compat_from_raw(raw)
+        if not compatibles:
+            exclusions.append({"path": relative_path(path, roots), "reason": "include-fragment"})
+            # Still instantiate fragments so bad include syntax fails the catalogue build.
+            try:
+                Binding(path, names, raw=copy.deepcopy(raw), require_compatible=False, require_description=False)
+            except Exception as error:
+                errors.append({"path": relative_path(path, roots), "code": "binding-parse", "message": str(error)})
+            continue
+
+        for compatible in compatibles:
+            source = copy.deepcopy(raw)
+            adapter = None
+            if "compatible" not in source:
+                source = translate_dt_schema(source, compatible)
+                adapter = "dt-schema-compatibility"
+                warnings.append(
+                    {
+                        "path": relative_path(path, roots),
+                        "code": adapter,
+                        "message": "Converted properties.compatible form for the edtlib catalogue adapter.",
+                    }
+                )
+            try:
+                resolved = Binding(
+                    path,
+                    names,
+                    raw=source,
+                    require_compatible=True,
+                    require_description=False,
+                )
+                origins_by_level = {}
+                for level in range(binding_depth(resolved) + 1):
+                    origins_by_level[level] = property_origins(path, raw_by_path, names, level)
+
+                def encode(binding, level=0):
+                    origins = origins_by_level.get(level, {})
+                    properties = []
+                    raw_props = binding.raw.get("properties", {})
+                    for name, spec in sorted(binding.prop2specs.items()):
+                        provenance = origins.get(name, {"declaredIn": path, "includeChain": [path]})
+                        original = raw_props.get(name, {}) if isinstance(raw_props, dict) else {}
+                        if adapter and level == 0 and isinstance(raw.get("properties"), dict):
+                            original = raw["properties"].get(name, original)
+                        if not isinstance(original, dict):
+                            original = {}
+                        constraints = {
+                            key: value
+                            for key, value in original.items()
+                            if key not in {
+                                "type", "description", "required", "enum", "const", "default",
+                                "deprecated", "specifier-space"
+                            }
+                        }
+                        properties.append(
+                            {
+                                "name": name,
+                                "type": spec.type,
+                                "required": spec.required,
+                                "description": spec.description,
+                                "default": spec.default,
+                                "enum": spec.enum,
+                                "const": spec.const,
+                                "deprecated": spec.deprecated,
+                                "specifierSpace": spec.specifier_space,
+                                "inheritedFrom": relative_path(provenance["declaredIn"], roots),
+                                "provenance": {
+                                    "declaredIn": relative_path(provenance["declaredIn"], roots),
+                                    "includeChain": [relative_path(item, roots) for item in provenance["includeChain"]],
+                                },
+                                "constraints": constraints,
+                            }
+                        )
+                    child = encode(binding.child_binding, level + 1) if binding.child_binding else None
+                    return {
+                        "path": relative_path(path, roots) + ("#child/{}".format(level) if level else ""),
+                        "compatible": compatible if level == 0 else None,
+                        "description": binding.description,
+                        "title": binding.title,
+                        "bus": binding.bus,
+                        "onBus": binding.on_bus,
+                        "cells": {"{}-cells".format(key): value for key, value in binding.specifier2cells.items()},
+                        "includes": [relative_path(names[name], roots) for name, *_ in include_specs(raw) if name in names],
+                        "properties": properties,
+                        "children": [child] if child else [],
+                        "examples": binding.examples,
+                        "adapter": adapter,
+                    }
+
+                bindings.append(encode(resolved))
+            except (EDTError, RuntimeError, yaml.YAMLError) as error:
+                errors.append({"path": relative_path(path, roots), "code": "binding-resolve", "message": str(error)})
+
+    report = {
+        "discovered": len(paths),
+        "indexed": len(bindings),
+        "intentionallyExcluded": exclusions,
+        "warnings": warnings,
+        "errors": errors,
     }
+    json.dump({"bindings": bindings, "fragments": len(exclusions), "report": report}, sys.stdout, separators=(",", ":"))
+    if errors:
+        sys.exit(2)
+
+
+if __name__ == "__main__":
+    main()
+`;
+
+// src/python.ts
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { delimiter, join, resolve } from "node:path";
+import { spawnSync } from "node:child_process";
+function executableOnPath(name, pathValue) {
+  if (name.includes("/") || name.includes("\\")) return existsSync(name) ? resolve(name) : void 0;
+  for (const directory of (pathValue ?? "").split(delimiter).filter(Boolean)) {
+    const candidate = join(directory, name);
+    if (existsSync(candidate)) return candidate;
+  }
+  return void 0;
+}
+function westInterpreter(env) {
+  const west = executableOnPath("west", env["PATH"]);
+  if (!west) return void 0;
+  try {
+    const firstLine = readFileSync(realpathSync(west), "utf8").split(/\r?\n/, 1)[0] ?? "";
+    const shebang = firstLine.match(/^#!\s*(\S+)(?:\s+(.+))?$/);
+    if (!shebang) return void 0;
+    if (shebang[1]?.endsWith("/env") && shebang[2]) {
+      return executableOnPath(shebang[2].trim().split(/\s+/, 1)[0], env["PATH"]);
+    }
+    return shebang[1] && existsSync(shebang[1]) ? shebang[1] : void 0;
+  } catch {
+    return void 0;
   }
 }
-function toPosix(p) {
-  return sep === "/" ? p : p.split(sep).join("/");
+function interpreterCandidates(env) {
+  return [
+    env["PYTHON_EXECUTABLE"],
+    westInterpreter(env),
+    "python3",
+    "python"
+  ].filter((value, index, all) => Boolean(value) && all.indexOf(value) === index);
+}
+function semanticPython(zephyrRoot, env = process.env) {
+  const kconfigDirectory = join(zephyrRoot, "scripts", "kconfig");
+  const devicetreeDirectory = join(
+    zephyrRoot,
+    "scripts",
+    "dts",
+    "python-devicetree",
+    "src"
+  );
+  const missing = [
+    join(kconfigDirectory, "kconfiglib.py"),
+    join(devicetreeDirectory, "devicetree", "edtlib.py")
+  ].filter((path) => !existsSync(path));
+  if (missing.length > 0) {
+    throw new Error(
+      "The selected Zephyr tree is missing its semantic ingestion libraries (scripts/kconfig/kconfiglib.py and/or scripts/dts/python-devicetree). Use a complete Zephyr checkout and retry."
+    );
+  }
+  const candidates = interpreterCandidates(env);
+  const probe = [
+    "import sys",
+    `sys.path.insert(0, ${JSON.stringify(kconfigDirectory)})`,
+    `sys.path.insert(0, ${JSON.stringify(devicetreeDirectory)})`,
+    "import kconfiglib",
+    "import yaml",
+    "from devicetree import edtlib",
+    "assert sys.version_info >= (3, 10)"
+  ].join("; ");
+  for (const candidate of candidates) {
+    const result = spawnSync(candidate, ["-c", probe], {
+      encoding: "utf8",
+      env: { ...env, PYTHONDONTWRITEBYTECODE: "1" }
+    });
+    if (result.status === 0) return candidate;
+  }
+  throw new Error(
+    "Semantic index creation requires Python 3.10 or newer with PyYAML, plus the Kconfiglib and devicetree libraries shipped by the selected Zephyr tree. Activate the project's west virtual environment or set PYTHON_EXECUTABLE to its Python interpreter, then retry."
+  );
 }
 
 // src/sources/bindings.ts
-function createBindingLoader(roots) {
-  const byName = /* @__PURE__ */ new Map();
-  const absByRel = /* @__PURE__ */ new Map();
-  const files = [];
-  const cache = /* @__PURE__ */ new Map();
-  for (const root of roots) {
-    for (const rel of walk(root, {
-      match: (name) => name.endsWith(".yaml") || name.endsWith(".yml")
-    })) {
-      const abs = join2(root, rel);
-      if (!absByRel.has(rel)) {
-        absByRel.set(rel, abs);
-        files.push({ rel, abs });
-      }
-      const name = basename(rel);
-      if (!byName.has(name)) byName.set(name, rel);
-    }
-  }
-  const loader = {
-    resolve(name) {
-      return byName.get(name) ?? byName.get(basename(name));
-    },
-    load(rel) {
-      if (cache.has(rel)) return cache.get(rel);
-      const abs = absByRel.get(rel);
-      let parsed = null;
-      if (abs) {
-        try {
-          parsed = safeParseYaml(readFileSync(abs, "utf8"));
-        } catch {
-          parsed = null;
-        }
-      }
-      cache.set(rel, parsed);
-      return parsed;
-    }
-  };
-  return { loader, files };
-}
+var CACHE = /* @__PURE__ */ new Map();
 function collectBindings(roots) {
-  const { loader, files } = createBindingLoader(roots);
-  const bindings = [];
-  let fragments = 0;
-  for (const { rel } of files) {
-    const resolved = resolveBinding(rel, loader);
-    if (!resolved) continue;
-    if (resolved.compatible) bindings.push(resolved);
-    else fragments++;
+  const cacheKey = JSON.stringify(roots);
+  const cached = CACHE.get(cacheKey);
+  if (cached) return cached;
+  if (roots.length === 0) throw new Error("At least one devicetree binding root is required.");
+  const zephyrRoot = dirname2(dirname2(roots[0]));
+  const officialLibrary = join2(
+    zephyrRoot,
+    "scripts",
+    "dts",
+    "python-devicetree",
+    "src",
+    "devicetree",
+    "edtlib.py"
+  );
+  if (!existsSync2(officialLibrary)) {
+    throw new Error("The selected Zephyr tree does not provide its Python devicetree tooling.");
   }
-  bindings.sort((a, b) => a.compatible.localeCompare(b.compatible));
-  return { bindings, fragments };
+  const temporary = mkdtempSync(join2(tmpdir(), "zephyr-ai-bindings-"));
+  const exporter = join2(temporary, "binding-export.py");
+  try {
+    writeFileSync(exporter, binding_export_default, { mode: 384 });
+    const args = [exporter, "--zephyr", zephyrRoot];
+    for (const root of roots) args.push("--root", root);
+    const result = spawnSync2(semanticPython(zephyrRoot), args, {
+      encoding: "utf8",
+      maxBuffer: 512 * 1024 * 1024,
+      env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" }
+    });
+    if (result.status !== 0) {
+      let reportDetail = "";
+      try {
+        const failed = JSON.parse(result.stdout);
+        reportDetail = (failed.report?.errors ?? []).slice(0, 12).map((error) => `${error.path ?? "<unknown>"} [${error.code}]: ${error.message}`).join("\n");
+      } catch {
+      }
+      const detail = reportDetail || result.stderr.trim().split("\n").slice(-12).join("\n");
+      throw new Error(`Zephyr devicetree binding export failed.
+${detail}`);
+    }
+    const collected = JSON.parse(result.stdout);
+    CACHE.set(cacheKey, collected);
+    return collected;
+  } finally {
+    rmSync(temporary, { recursive: true, force: true });
+  }
 }
 
 // test/binding.test.ts
 var ZEPHYR = process.env.ZEPHYR_BASE ?? join3(process.cwd(), "..", "..", ".cache", "zephyr");
 var BINDINGS_DIR = join3(ZEPHYR, "dts", "bindings");
-var haveTree = existsSync(BINDINGS_DIR);
+var haveTree = existsSync3(BINDINGS_DIR);
 if (process.env.ZEPHYR_AI_RELEASE_TEST === "1" && !haveTree) {
   throw new Error("Release tests require Zephyr devicetree bindings; run npm run fetch:zephyr.");
 }
@@ -7845,5 +8186,16 @@ describe("against the real Zephyr tree", { skip: !haveTree && "Zephyr tree not f
       esp.properties.some((p) => p.name === "#gpio-cells" || p.name === "gpio-controller"),
       "GPIO controller properties should be inherited"
     );
+  });
+  it("indexes every declared compatible form through the official loader adapter", () => {
+    const { bindings, report } = collectBindings([BINDINGS_DIR]);
+    ok(bindings.some((binding) => binding.compatible === "microchip,mpfs-mailbox"));
+    strictEqual(report.errors.length, 0);
+    strictEqual(report.discovered, report.indexed + report.intentionallyExcluded.length);
+  });
+  it("preserves recursively nested child bindings", () => {
+    const { bindings } = collectBindings([BINDINGS_DIR]);
+    const depth = (binding) => binding.children.length === 0 ? 0 : 1 + Math.max(...binding.children.map(depth));
+    ok(Math.max(...bindings.map(depth)) > 1);
   });
 });

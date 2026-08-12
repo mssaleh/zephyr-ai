@@ -56,7 +56,15 @@ process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 
 if (process.argv.includes('--verify')) {
   const baseline = JSON.parse(readFileSync(baselinePath, 'utf8'));
-  if (JSON.stringify(report) !== JSON.stringify(baseline)) {
+  const measurement = baseline.measurement ?? baseline;
+  if (baseline.measurement && (
+    !Array.isArray(baseline.explanation) ||
+    baseline.explanation.length === 0 ||
+    baseline.explanation.some((entry) => typeof entry !== 'string' || !entry.trim())
+  )) {
+    throw new Error('A wrapped corpus baseline requires a non-empty source-derived explanation.');
+  }
+  if (JSON.stringify(report) !== JSON.stringify(measurement)) {
     process.stderr.write(
       `Corpus baseline differs from ${baselinePath}. Regenerate the report, explain the source-derived change, and update the fixture intentionally.\n`,
     );

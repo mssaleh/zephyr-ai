@@ -9,6 +9,8 @@ metadata:
 
 # STM32 on Zephyr
 
+> Example status: fenced snippets are illustrative unless an immediately preceding `zephyr-ai-example` metadata comment names a verified target and build command.
+
 Zephyr supports STM32 through the `hal_stm32` module, which vendors ST's HAL and
 LL drivers. Zephyr's own drivers sit on top; you rarely call the ST HAL directly,
 and doing so usually means a Zephyr driver was missed.

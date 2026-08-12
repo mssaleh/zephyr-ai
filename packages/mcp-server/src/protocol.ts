@@ -32,6 +32,7 @@ export const ErrorCode = {
 } as const;
 
 type Id = string | number;
+type ResponseId = Id | null;
 
 interface Request {
   jsonrpc: '2.0';
@@ -102,6 +103,84 @@ export interface Prompt extends PromptDefinition {
 /** Thrown by a tool handler to report a user-correctable problem. */
 export class ToolError extends Error {}
 
+type LifecycleState = 'new' | 'initializing' | 'ready' | 'closing' | 'closed';
+
+function describePath(path: string): string {
+  return path === '$' ? 'arguments' : `arguments${path.slice(1)}`;
+}
+
+/** Validate the dependency-free JSON Schema subset used by this server. */
+export function validateSchema(value: unknown, schema: Record<string, unknown>, path = '$'): string[] {
+  const errors: string[] = [];
+  const type = schema['type'];
+  const matchesType =
+    type === undefined ||
+    (type === 'object' && value !== null && typeof value === 'object' && !Array.isArray(value)) ||
+    (type === 'array' && Array.isArray(value)) ||
+    (type === 'string' && typeof value === 'string') ||
+    (type === 'boolean' && typeof value === 'boolean') ||
+    (type === 'integer' && typeof value === 'number' && Number.isInteger(value)) ||
+    (type === 'number' && typeof value === 'number' && Number.isFinite(value));
+  if (!matchesType) return [`${describePath(path)} must be ${String(type)}.`];
+
+  if (Array.isArray(schema['enum']) && !schema['enum'].some((item) => Object.is(item, value))) {
+    errors.push(`${describePath(path)} must be one of: ${schema['enum'].map(String).join(', ')}.`);
+  }
+  if (typeof value === 'number') {
+    if (typeof schema['minimum'] === 'number' && value < schema['minimum']) {
+      errors.push(`${describePath(path)} must be at least ${schema['minimum']}.`);
+    }
+    if (typeof schema['maximum'] === 'number' && value > schema['maximum']) {
+      errors.push(`${describePath(path)} must be at most ${schema['maximum']}.`);
+    }
+  }
+  if (typeof value === 'string') {
+    if (typeof schema['minLength'] === 'number' && value.length < schema['minLength']) {
+      errors.push(`${describePath(path)} must contain at least ${schema['minLength']} characters.`);
+    }
+    if (typeof schema['maxLength'] === 'number' && value.length > schema['maxLength']) {
+      errors.push(`${describePath(path)} must contain at most ${schema['maxLength']} characters.`);
+    }
+  }
+  if (Array.isArray(value)) {
+    if (typeof schema['minItems'] === 'number' && value.length < schema['minItems']) {
+      errors.push(`${describePath(path)} must contain at least ${schema['minItems']} item(s).`);
+    }
+    if (typeof schema['maxItems'] === 'number' && value.length > schema['maxItems']) {
+      errors.push(`${describePath(path)} must contain at most ${schema['maxItems']} item(s).`);
+    }
+    const itemSchema = schema['items'];
+    if (itemSchema && typeof itemSchema === 'object' && !Array.isArray(itemSchema)) {
+      value.forEach((item, index) =>
+        errors.push(...validateSchema(item, itemSchema as Record<string, unknown>, `${path}[${index}]`)),
+      );
+    }
+  }
+  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    const object = value as Record<string, unknown>;
+    const properties =
+      schema['properties'] && typeof schema['properties'] === 'object' && !Array.isArray(schema['properties'])
+        ? (schema['properties'] as Record<string, Record<string, unknown>>)
+        : {};
+    const required = Array.isArray(schema['required']) ? schema['required'] : [];
+    for (const name of required) {
+      if (typeof name === 'string' && !(name in object)) {
+        errors.push(`${describePath(`${path}.${name}`)} is required.`);
+      }
+    }
+    if (schema['additionalProperties'] === false) {
+      for (const name of Object.keys(object)) {
+        if (!(name in properties)) errors.push(`${describePath(`${path}.${name}`)} is not allowed.`);
+      }
+    }
+    for (const [name, child] of Object.entries(object)) {
+      const childSchema = properties[name];
+      if (childSchema) errors.push(...validateSchema(child, childSchema, `${path}.${name}`));
+    }
+  }
+  return errors;
+}
+
 export interface ServerOptions {
   name: string;
   version: string;
@@ -109,6 +188,8 @@ export interface ServerOptions {
   description?: string;
   /** Shown to the model once at connection time; keep it short. */
   instructions?: string;
+  /** Called when a roots-capable client reports a new ordered root list. */
+  rootsChanged?: (roots: string[]) => void;
 }
 
 export class McpServer {
@@ -116,8 +197,13 @@ export class McpServer {
   readonly #resources = new Map<string, Resource>();
   readonly #prompts = new Map<string, Prompt>();
   readonly #options: ServerOptions;
-  #initialized = false;
+  #state: LifecycleState = 'new';
   #negotiatedVersion = LATEST_PROTOCOL_VERSION;
+  #clientSupportsRoots = false;
+  #clientRootsListChanged = false;
+  #outboundSequence = 0;
+  #rootsRequestPending = false;
+  readonly #outbound = new Map<Id, (result: unknown, error?: unknown) => void>();
 
   constructor(options: ServerOptions) {
     this.#options = options;
@@ -147,11 +233,11 @@ export class McpServer {
     process.stdout.write(`${JSON.stringify(message)}\n`);
   }
 
-  #respond(id: Id, result: unknown): void {
+  #respond(id: ResponseId, result: unknown): void {
     this.#send({ jsonrpc: '2.0', id, result });
   }
 
-  #fail(id: Id, code: number, message: string, data?: unknown): void {
+  #fail(id: ResponseId, code: number, message: string, data?: unknown): void {
     this.#send({
       jsonrpc: '2.0',
       id,
@@ -159,14 +245,50 @@ export class McpServer {
     });
   }
 
+  #refreshRoots(): void {
+    if (!this.#clientSupportsRoots || this.#state !== 'ready' || this.#rootsRequestPending) return;
+    const id = `zephyr-roots-${++this.#outboundSequence}`;
+    this.#rootsRequestPending = true;
+    const timeout = setTimeout(() => {
+      if (this.#outbound.delete(id)) {
+        this.#rootsRequestPending = false;
+        McpServer.log('roots/list timed out; continuing with the explicit project environment');
+      }
+    }, 5000);
+    timeout.unref();
+    this.#outbound.set(id, (value, error) => {
+      clearTimeout(timeout);
+      this.#rootsRequestPending = false;
+      if (error) {
+        McpServer.log('the client rejected roots/list; continuing with the explicit project environment');
+        return;
+      }
+      const roots =
+        value && typeof value === 'object' && Array.isArray((value as Record<string, unknown>)['roots'])
+          ? ((value as Record<string, unknown>)['roots'] as unknown[])
+              .flatMap((root) =>
+                root && typeof root === 'object' && typeof (root as Record<string, unknown>)['uri'] === 'string'
+                  ? [String((root as Record<string, unknown>)['uri'])]
+                  : [],
+              )
+          : [];
+      this.#options.rootsChanged?.(roots);
+    });
+    this.#send({ jsonrpc: '2.0', id, method: 'roots/list', params: {} });
+  }
+
   async #dispatch(method: string, params: Record<string, unknown>): Promise<unknown> {
+    if (method === 'initialize') {
+      if (this.#state !== 'new') {
+        throw new RpcError(ErrorCode.InvalidRequest, 'The server has already been initialized.');
+      }
+      return this.#initialize(params);
+    }
+    if (method === 'ping') return {};
+    if (this.#state !== 'ready') {
+      throw new RpcError(ErrorCode.InvalidRequest, 'The MCP initialization lifecycle is not complete.');
+    }
     switch (method) {
-      case 'initialize':
-        return this.#initialize(params);
-
-      case 'ping':
-        return {};
-
       case 'tools/list':
         return {
           tools: [...this.#tools.values()].map(
@@ -227,11 +349,33 @@ export class McpServer {
   }
 
   #initialize(params: Record<string, unknown>): unknown {
+    const clientInfo = params['clientInfo'];
+    if (
+      typeof params['protocolVersion'] !== 'string' ||
+      params['capabilities'] === null ||
+      typeof params['capabilities'] !== 'object' ||
+      Array.isArray(params['capabilities']) ||
+      clientInfo === null ||
+      typeof clientInfo !== 'object' ||
+      Array.isArray(clientInfo) ||
+      typeof (clientInfo as Record<string, unknown>)['name'] !== 'string' ||
+      typeof (clientInfo as Record<string, unknown>)['version'] !== 'string'
+    ) {
+      throw new RpcError(
+        ErrorCode.InvalidParams,
+        'initialize requires protocolVersion, capabilities, and clientInfo with name and version.',
+      );
+    }
     const requested = typeof params['protocolVersion'] === 'string' ? params['protocolVersion'] : '';
     this.#negotiatedVersion = SUPPORTED_PROTOCOL_VERSIONS.includes(requested)
       ? requested
       : LATEST_PROTOCOL_VERSION;
-    this.#initialized = true;
+    this.#state = 'initializing';
+    const clientCapabilities = params['capabilities'] as Record<string, unknown>;
+    const roots = clientCapabilities['roots'];
+    this.#clientSupportsRoots = roots !== null && typeof roots === 'object' && !Array.isArray(roots);
+    this.#clientRootsListChanged =
+      this.#clientSupportsRoots && (roots as Record<string, unknown>)['listChanged'] === true;
 
     // Only advertise what is actually registered: a declared capability the
     // server cannot serve is worse than an absent one.
@@ -262,6 +406,10 @@ export class McpServer {
 
     const args = (params['arguments'] ?? {}) as Record<string, unknown>;
     try {
+      const validation = validateSchema(args, tool.inputSchema);
+      if (validation.length > 0) {
+        throw new ToolError(`Invalid input for ${name}:\n${validation.map((error) => `- ${error}`).join('\n')}`);
+      }
       const result = await tool.handler(args);
       // A tool declaring an output schema must return conforming structured
       // content; mirror it into a text block for clients that ignore it.
@@ -272,11 +420,20 @@ export class McpServer {
     } catch (err) {
       // Bad arguments are the model's to fix, so they come back as a tool
       // error it can read rather than a protocol error it cannot.
-      const message = err instanceof Error ? err.message : String(err);
-      if (!(err instanceof ToolError)) {
-        McpServer.log(`tool ${name} failed: ${message}`);
+      if (err instanceof ToolError) {
+        return { content: [{ type: 'text', text: err.message }], isError: true };
       }
-      return { content: [{ type: 'text', text: message }], isError: true };
+      const detail = err instanceof Error ? (err.stack ?? err.message) : String(err);
+      McpServer.log(`tool ${name} failed: ${detail}`);
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `The ${name} lookup failed because the local index could not be read. Run index_status and rebuild the index if needed.`,
+          },
+        ],
+        isError: true,
+      };
     }
   }
 
@@ -291,21 +448,72 @@ export class McpServer {
       try {
         message = JSON.parse(trimmed) as Request | Notification;
       } catch {
-        this.#fail(0, ErrorCode.ParseError, 'Parse error');
+        this.#fail(null, ErrorCode.ParseError, 'Parse error');
         return;
       }
 
-      if (typeof message !== 'object' || message === null || message.jsonrpc !== '2.0') {
-        this.#fail((message as Request)?.id ?? 0, ErrorCode.InvalidRequest, 'Invalid Request');
+      if (typeof message !== 'object' || message === null || Array.isArray(message)) {
+        this.#fail(null, ErrorCode.InvalidRequest, 'Invalid Request');
         return;
       }
 
-      const id = (message as Request).id;
-      const isRequest = id !== undefined && id !== null;
+      const envelope = message as unknown as Record<string, unknown>;
+      const rawId = envelope['id'];
+      const responseId: ResponseId =
+        typeof rawId === 'string' || (typeof rawId === 'number' && Number.isFinite(rawId)) ? rawId : null;
+
+      // Responses to server-originated requests (currently roots/list) have no
+      // method and must never themselves receive a response.
+      if (
+        !('method' in envelope) &&
+        'id' in envelope &&
+        envelope['jsonrpc'] === '2.0' &&
+        (typeof rawId === 'string' || typeof rawId === 'number') &&
+        this.#outbound.has(rawId)
+      ) {
+        const validId = typeof rawId === 'string' || (typeof rawId === 'number' && Number.isFinite(rawId));
+        const hasResult = 'result' in envelope;
+        const hasError = 'error' in envelope;
+        if (!validId || hasResult === hasError) {
+          McpServer.log('ignored a malformed response to a server-originated request');
+          return;
+        }
+        const resolver = this.#outbound.get(rawId as Id);
+        if (resolver) {
+          this.#outbound.delete(rawId as Id);
+          resolver(envelope['result'], envelope['error']);
+        }
+        return;
+      }
+      if (
+        envelope['jsonrpc'] !== '2.0' ||
+        typeof envelope['method'] !== 'string' ||
+        envelope['method'] === '' ||
+        (rawId !== undefined && rawId !== null && responseId === null) ||
+        ('params' in envelope &&
+          (envelope['params'] === null || typeof envelope['params'] !== 'object' || Array.isArray(envelope['params'])))
+      ) {
+        this.#fail(responseId, ErrorCode.InvalidRequest, 'Invalid Request');
+        return;
+      }
+
+      const id = responseId;
+      // JSON-RPC permits a null request ID (while discouraging it). Presence,
+      // not truthiness, distinguishes a request from a notification.
+      const isRequest = 'id' in envelope;
 
       // Notifications get no response, ever — including for unknown methods.
       if (!isRequest) {
-        if (message.method === 'notifications/initialized') this.#initialized = true;
+        if (message.method === 'notifications/initialized' && this.#state === 'initializing') {
+          this.#state = 'ready';
+          this.#refreshRoots();
+        } else if (
+          message.method === 'notifications/roots/list_changed' &&
+          this.#state === 'ready' &&
+          this.#clientRootsListChanged
+        ) {
+          this.#refreshRoots();
+        }
         return;
       }
 
@@ -316,17 +524,26 @@ export class McpServer {
             this.#fail(id, err.code, err.message);
             return;
           }
-          const detail = err instanceof Error ? err.message : String(err);
+          const detail = err instanceof Error ? (err.stack ?? err.message) : String(err);
           McpServer.log(`internal error handling ${message.method}: ${detail}`);
-          this.#fail(id, ErrorCode.InternalError, detail);
+          this.#fail(id, ErrorCode.InternalError, 'Internal server error');
         });
     });
 
-    rl.on('close', () => process.exit(0));
+    rl.on('close', () => {
+      if (this.#state !== 'closing') this.#state = 'closing';
+      this.#state = 'closed';
+      process.exit(0);
+    });
+
+    process.once('SIGTERM', () => {
+      this.#state = 'closing';
+      rl.close();
+    });
   }
 
   get initialized(): boolean {
-    return this.#initialized;
+    return this.#state === 'ready';
   }
 }
 

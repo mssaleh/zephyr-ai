@@ -9,6 +9,11 @@ metadata:
 
 # Zephyr development
 
+> Example status: fenced snippets are illustrative unless an immediately preceding `zephyr-ai-example` metadata comment names a verified target and build command.
+
+The complete release-gated example is `plugin/examples/kernel-smoke`; its manifest
+declares `native_sim`, STM32, and ESP32 targets and the extended release gate builds all three.
+
 Zephyr is large, version-sensitive, and unforgiving: a misspelled `CONFIG_` assignment
 fails Kconfig processing, an invented devicetree property fails at
 build time with an error that names the wrong file, and an unqualified board name
@@ -19,15 +24,15 @@ things up instead of recalling them.
 
 **Look up, then write.** Before writing a `CONFIG_`, a devicetree property, a
 board target, or an API call, query the `zephyr` MCP server. Its index is built
-from a specific Zephyr release, so what it returns is true for the version in use
-— which is not the same as what is true in general.
+from a specific Zephyr tree. Treat exact results as version-exact only when
+`index_status` confirms the project commit and context match.
 
 | Before you write | Call | Why |
 | --- | --- | --- |
 | A `CONFIG_` line | `search_kconfig`, then `get_kconfig` | Symbols get renamed between releases; unknown assignments fail the build |
 | A devicetree node or property | `get_binding` | Bindings inherit almost everything through `include:`; the binding file itself lists little |
 | A `west build -b` target | `search_boards` | Targets are qualified: `esp32s3_devkitc/esp32s3/procpu`, not `esp32s3_devkitc` |
-| A Zephyr API call | `get_api` | Tells you the exact negative errno values to handle |
+| A Zephyr API call | `get_api` | Shows the indexed return contract and documented errno values; missing prose is uncertainty |
 | Anything unfamiliar | `search_samples` | A sample with explicit Twister platform evidence is a better starting point than assembled prose |
 
 Run `index_status` when answers look wrong for the project — it reports the
@@ -85,7 +90,9 @@ int main(void)
                 return -EIO;
         }
         while (1) {
-                gpio_pin_toggle_dt(&led);
+                if (gpio_pin_toggle_dt(&led) < 0) {
+                        return -EIO;
+                }
                 k_sleep(K_MSEC(500));
         }
         return 0;
@@ -96,8 +103,9 @@ int main(void)
 runtime, and costs a string comparison — use `DEVICE_DT_GET` and the `_dt`
 accessors instead.
 
-Every Zephyr call that can fail returns a negative errno. Check it. `get_api`
-lists the exact set a function documents, and it differs per function.
+Zephyr calls commonly report failure with a negative errno. Check the documented
+contract and the implementation context. `get_api` lists indexed return values when
+the source documents them; an empty list does not prove the call cannot fail.
 
 ## Working style
 
@@ -106,9 +114,10 @@ lists the exact set a function documents, and it differs per function.
    peripheral the board does not expose wastes everything that follows.
 2. **Find a sample that already does it.** `search_samples`, then `get_sample` to
    read its `prj.conf` and overlay. Copy the configuration, then adapt.
-3. **Verify every symbol you write.** The plugin validates `.conf` and `.overlay`
-   edits automatically and will tell you when a symbol or compatible does not
-   exist; fix those immediately rather than at build time.
+3. **Verify every symbol you write.** The plugin validates provable `.conf` and
+   `.overlay` mistakes automatically. Catalogue misses remain advisory unless
+   the active index declares complete coverage, so confirm uncertain names with
+   the lookup tools and the build.
 4. **Build before claiming it works.** `west build -b <target> <app>`. Firmware
    that has not been compiled has not been written.
 

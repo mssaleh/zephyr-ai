@@ -9,6 +9,8 @@ metadata:
 
 # Building and flashing
 
+> Example status: fenced snippets are illustrative unless an immediately preceding `zephyr-ai-example` metadata comment names a verified target and build command.
+
 ## The workspace
 
 Zephyr applications live in a **west workspace** — Zephyr plus its modules,

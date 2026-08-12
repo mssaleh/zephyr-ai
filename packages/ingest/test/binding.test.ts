@@ -183,4 +183,20 @@ describe('against the real Zephyr tree', { skip: !haveTree && 'Zephyr tree not f
       'GPIO controller properties should be inherited',
     );
   });
+
+  it('indexes every declared compatible form through the official loader adapter', () => {
+    const { bindings, report } = collectBindings([BINDINGS_DIR]);
+    ok(bindings.some((binding) => binding.compatible === 'microchip,mpfs-mailbox'));
+    strictEqual(report.errors.length, 0);
+    strictEqual(report.discovered, report.indexed + report.intentionallyExcluded.length);
+  });
+
+  it('preserves recursively nested child bindings', () => {
+    const { bindings } = collectBindings([BINDINGS_DIR]);
+    const depth = (binding: (typeof bindings)[number]): number =>
+      binding.children.length === 0
+        ? 0
+        : 1 + Math.max(...binding.children.map(depth));
+    ok(Math.max(...bindings.map(depth)) > 1);
+  });
 });

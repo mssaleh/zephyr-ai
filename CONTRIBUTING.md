@@ -8,9 +8,19 @@ submitting a change, run `npm run check`; the full gate verifies the pinned tree
 rebuilds the index, runs real-tree and stdio tests with required inputs, applies corpus
 quality checks, and validates both plugin manifests.
 
+Before a public artifact, run `npm run check:release` with Doxygen and the Zephyr SDK.
+It consumes semantic Doxygen XML, compiles the declared generic/STM32/ESP32 example
+matrix, and tests a copied marketplace layout from empty plugin data. See
+[docs/RELEASING.md](docs/RELEASING.md).
+
 Parser or schema changes require a schema-version bump, a complete index rebuild, and
 an intentional update to generated corpus baselines with a source-derived explanation.
 MCP runtime code must remain dependency-free. Generated bundles under `plugin/mcp/`
 must be rebuilt and committed with their sources.
+
+Do not weaken a semantic threshold to accommodate drift. Add a source-backed exclusion
+only when the corpus rule cannot include the record by design. Regenerate the Kconfig
+recall evidence with `npm run quality:kconfig-allowlist`; review its paths and reasons
+before committing it.
 
 Contributions are licensed under Apache-2.0 as described in [LICENSE](LICENSE).

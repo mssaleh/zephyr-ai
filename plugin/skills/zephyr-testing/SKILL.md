@@ -9,6 +9,8 @@ metadata:
 
 # Testing
 
+> Example status: fenced snippets are illustrative unless an immediately preceding `zephyr-ai-example` metadata comment names a verified target and build command.
+
 Most firmware logic can be tested without hardware. `native_sim` compiles the
 application for the host, so tests run in milliseconds, under a debugger, and in
 CI without a board attached. Reserve hardware runs for what genuinely needs it.
@@ -40,34 +42,37 @@ CONFIG_ZTEST=y
 #include "my_feature.h"
 
 /* Per-suite fixture; NULL if the suite needs no state. */
+struct my_feature_fixture {
+        struct my_ctx ctx;
+};
+
+static struct my_feature_fixture test_fixture;
+
 static void *setup(void)
 {
-        static struct my_ctx ctx;
-        my_feature_init(&ctx);
-        return &ctx;
+        my_feature_init(&test_fixture.ctx);
+        return &test_fixture;
 }
 
 static void before_each(void *fixture)
 {
-        struct my_ctx *ctx = fixture;
-        my_feature_reset(ctx);
+        struct my_feature_fixture *state = fixture;
+        my_feature_reset(&state->ctx);
 }
 
 ZTEST_SUITE(my_feature, NULL, setup, before_each, NULL, NULL);
 
-ZTEST(my_feature, test_rejects_out_of_range)
+ZTEST_F(my_feature, test_rejects_out_of_range)
 {
-        struct my_ctx *ctx = my_feature_fixture();
-
-        zassert_equal(-EINVAL, my_feature_set(ctx, 9999),
+        zassert_equal(-EINVAL, my_feature_set(&fixture->ctx, 9999),
                       "out-of-range value should be rejected");
 }
 
 ZTEST_F(my_feature, test_accumulates)
 {
         /* ZTEST_F gives the fixture as `fixture` */
-        zassert_ok(my_feature_add(fixture, 5));
-        zassert_equal(5, my_feature_total(fixture));
+        zassert_ok(my_feature_add(&fixture->ctx, 5));
+        zassert_equal(5, my_feature_total(&fixture->ctx));
 }
 ```
 

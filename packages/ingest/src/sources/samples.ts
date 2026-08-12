@@ -26,6 +26,7 @@ export interface SampleRecord {
    * exact Kconfig and devicetree changes a feature needs.
    */
   contents: { path: string; text: string }[];
+  exclusions: { path: string; reason: string }[];
   docPath?: string;
 }
 
@@ -34,31 +35,39 @@ const MAX_FILE_BYTES = 64 * 1024;
 const MAX_SAMPLE_BYTES = 160 * 1024;
 
 function shouldStore(rel: string): boolean {
-  if (/^(prj.*\.conf|sysbuild\.conf|CMakeLists\.txt|Kconfig|sample\.yaml)$/.test(rel)) return true;
-  if (/^boards\/.*\.(overlay|conf|dts|dtsi)$/.test(rel)) return true;
-  if (/^snippets\/.*\.(overlay|conf|yml|yaml)$/.test(rel)) return true;
-  if (/^src\/.*\.(c|h|cpp|hpp)$/.test(rel)) return true;
-  return false;
+  if (/^(prj.*\.conf|sysbuild\.conf|CMakeLists\.txt|Kconfig|sample\.yaml|README\.rst)$/.test(rel)) return true;
+  return /\.(overlay|conf|dts|dtsi|c|h|cpp|hpp|yml|yaml)$/.test(rel) &&
+    /^(boards|snippets|src)\//.test(rel);
 }
 
-function readContents(sampleDir: string, files: string[]): { path: string; text: string }[] {
+function readContents(
+  sampleDir: string,
+  files: string[],
+): { contents: { path: string; text: string }[]; exclusions: { path: string; reason: string }[] } {
   const out: { path: string; text: string }[] = [];
+  const exclusions: { path: string; reason: string }[] = [];
   let budget = MAX_SAMPLE_BYTES;
 
   for (const rel of files) {
     if (!shouldStore(rel)) continue;
     const abs = join(sampleDir, rel);
     try {
-      if (statSync(abs).size > MAX_FILE_BYTES) continue;
+      if (statSync(abs).size > MAX_FILE_BYTES) {
+        exclusions.push({ path: rel, reason: 'file-size-limit' });
+        continue;
+      }
       const text = readFileSync(abs, 'utf8');
-      if (text.length > budget) continue;
-      budget -= text.length;
+      if (Buffer.byteLength(text) > budget) {
+        exclusions.push({ path: rel, reason: 'sample-size-budget' });
+        continue;
+      }
+      budget -= Buffer.byteLength(text);
       out.push({ path: rel, text });
-    } catch {
-      /* unreadable file */
+    } catch (error) {
+      throw new Error(`Failed to capture sample file ${abs}: ${(error as Error).message}`);
     }
   }
-  return out;
+  return { contents: out, exclusions };
 }
 
 function asArray(v: unknown): unknown[] {
@@ -84,7 +93,7 @@ function interestingFiles(sampleDir: string): string[] {
   const push = (rel: string) => {
     if (existsSync(join(sampleDir, rel))) out.push(rel);
   };
-  for (const f of ['prj.conf', 'CMakeLists.txt', 'Kconfig', 'sysbuild.conf', 'README.rst']) {
+  for (const f of ['sample.yaml', 'prj.conf', 'CMakeLists.txt', 'Kconfig', 'sysbuild.conf', 'README.rst']) {
     push(f);
   }
 
@@ -92,9 +101,11 @@ function interestingFiles(sampleDir: string): string[] {
     const abs = join(sampleDir, dir);
     if (!existsSync(abs)) continue;
     try {
-      for (const entry of readdirSync(abs, { withFileTypes: true })) {
-        if (entry.isFile()) out.push(`${dir}/${entry.name}`);
-      }
+      out.push(
+        ...[...walk(abs, { match: (name) => shouldStore(`${dir}/${name}`) })].map(
+          (path) => `${dir}/${path}`,
+        ),
+      );
     } catch {
       /* unreadable directory */
     }
@@ -116,11 +127,13 @@ export function collectSamples(root: string): SampleRecord[] {
       let doc: Record<string, unknown> | null = null;
       try {
         const parsed = parseYaml(readFileSync(abs, 'utf8'), { logLevel: 'silent' });
-        doc = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
-      } catch {
-        continue;
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          throw new Error('expected a YAML mapping');
+        }
+        doc = parsed as Record<string, unknown>;
+      } catch (error) {
+        throw new Error(`Failed to parse sample metadata ${rel}: ${(error as Error).message}`);
       }
-      if (!doc) continue;
 
       const sampleDir = dirname(abs);
       const relDir = toPosix(join(subdir, dirname(rel)));
@@ -137,25 +150,33 @@ export function collectSamples(root: string): SampleRecord[] {
         doc['tests'] && typeof doc['tests'] === 'object'
           ? (doc['tests'] as Record<string, unknown>)
           : {};
+      const common =
+        doc['common'] && typeof doc['common'] === 'object' && !Array.isArray(doc['common'])
+          ? (doc['common'] as Record<string, unknown>)
+          : {};
       const tags = new Set<string>();
       const dependsOn = new Set<string>();
       const integration = new Set<string>();
       const platformAllow = new Set<string>();
 
-      for (const value of Object.values(tests)) {
-        if (!value || typeof value !== 'object') continue;
-        const t = value as Record<string, unknown>;
+      const addMetadata = (t: Record<string, unknown>): void => {
         for (const x of asStrings(t['tags'])) tags.add(x);
-        // `tags` is sometimes a space-separated scalar rather than a list.
         if (typeof t['tags'] === 'string') {
           for (const x of t['tags'].split(/\s+/).filter(Boolean)) tags.add(x);
         }
         for (const x of asStrings(t['depends_on'])) dependsOn.add(x);
         for (const x of asStrings(t['integration_platforms'])) integration.add(x);
         for (const x of asStrings(t['platform_allow'])) platformAllow.add(x);
+      };
+      addMetadata(common);
+      for (const value of Object.values(tests)) {
+        if (!value || typeof value !== 'object') continue;
+        addMetadata({ ...common, ...(value as Record<string, unknown>) });
       }
 
-      const files = interestingFiles(sampleDir);
+      const eligibleFiles = interestingFiles(sampleDir);
+      const { contents, exclusions } = readContents(sampleDir, eligibleFiles);
+      const files = contents.map((file) => file.path);
       const record: SampleRecord = {
         path: relDir,
         name: typeof meta['name'] === 'string' ? meta['name'] : relDir.split('/').pop()!,
@@ -164,7 +185,8 @@ export function collectSamples(root: string): SampleRecord[] {
         integrationPlatforms: [...integration].sort(),
         platformAllow: [...platformAllow].sort(),
         files,
-        contents: readContents(sampleDir, files),
+        contents,
+        exclusions,
       };
       if (typeof meta['description'] === 'string') record.description = meta['description'];
       if (existsSync(join(sampleDir, 'README.rst'))) record.docPath = `${relDir}/README.rst`;

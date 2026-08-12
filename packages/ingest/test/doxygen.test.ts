@@ -1,5 +1,6 @@
 import { deepStrictEqual, ok, strictEqual } from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
@@ -10,6 +11,7 @@ import {
   parseDocComment,
   parseHeader,
 } from '../src/parsers/doxygen.ts';
+import { collectApi } from '../src/sources/api.ts';
 
 const ZEPHYR = process.env.ZEPHYR_BASE ?? join(process.cwd(), '..', '..', '.cache', 'zephyr');
 const GPIO_H = join(ZEPHYR, 'include', 'zephyr', 'drivers', 'gpio.h');
@@ -124,6 +126,7 @@ describe('parseDeclaration', () => {
     strictEqual(d.kind, 'typedef');
     strictEqual(d.name, 'gpio_callback_handler_t');
   });
+
 });
 
 describe('parseHeader', () => {
@@ -161,6 +164,84 @@ describe('parseHeader', () => {
       'h.h',
     );
     strictEqual(symbols[0]!.name, 'thing');
+  });
+});
+
+describe('Doxygen XML adapter', () => {
+  it('preserves structured functions, enum values, IDs, and documentation anchors', () => {
+    const temporary = mkdtempSync(join(tmpdir(), 'zephyr-ai-doxygen-test-'));
+    try {
+      mkdirSync(join(temporary, 'xml'));
+      writeFileSync(
+        join(temporary, 'xml', 'index.xml'),
+        '<doxygenindex><compound refid="group__gpio" kind="group"><name>GPIO</name></compound></doxygenindex>',
+      );
+      writeFileSync(
+        join(temporary, 'xml', 'group__gpio.xml'),
+        `<doxygen><compounddef id="group__gpio" kind="group">
+          <compoundname>gpio_interface</compoundname><title>GPIO</title>
+          <sectiondef>
+            <memberdef kind="function" id="group__gpio_1a_fn">
+              <type>int</type><definition>int gpio_demo</definition><argsstring>(const struct device * dev)</argsstring>
+              <name>gpio_demo</name><briefdescription><para>Configure GPIO.</para></briefdescription>
+              <detaileddescription><para>Detailed contract.</para><parameterlist kind="param"><parameteritem>
+                <parameternamelist><parametername direction="in">dev</parametername></parameternamelist>
+                <parameterdescription><para>GPIO device.</para></parameterdescription>
+              </parameteritem></parameterlist><simplesect kind="return"><para>Zero on success.</para></simplesect></detaileddescription>
+              <param><type>const struct device *</type><declname>dev</declname></param>
+              <location file="include/zephyr/drivers/gpio.h" line="42"/>
+            </memberdef>
+            <memberdef kind="enum" id="group__gpio_1a_enum"><name>gpio_mode</name>
+              <definition>enum gpio_mode</definition><location file="include/zephyr/drivers/gpio.h" line="50"/>
+              <enumvalue id="group__gpio_1a_value"><name>GPIO_DEMO</name><initializer>= 1</initializer></enumvalue>
+            </memberdef>
+          </sectiondef><location file="include/zephyr/drivers/gpio.h"/>
+        </compounddef></doxygen>`,
+      );
+      const api = collectApi(temporary, join(temporary, 'xml'));
+      strictEqual(api.mode, 'doxygen-xml');
+      const fn = api.symbols.find((symbol) => symbol.name === 'gpio_demo')!;
+      strictEqual(fn.signature, 'int gpio_demo (const struct device * dev)');
+      deepStrictEqual(fn.params[0], {
+        name: 'dev',
+        description: 'GPIO device.',
+        direction: 'in',
+        type: 'const struct device *',
+      });
+      strictEqual(fn.doxygenId, 'group__gpio_1a_fn');
+      strictEqual(fn.docAnchor, 'group__gpio.html#group__gpio_1a_fn');
+      ok(api.symbols.some((symbol) => symbol.name === 'GPIO_DEMO' && symbol.kind === 'enumvalue'));
+      strictEqual(
+        api.report.discovered,
+        api.report.indexed + api.report.intentionallyExcluded.length + api.report.errors.length,
+      );
+    } finally {
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('public-header fallback', () => {
+  it('reason-codes array declarators instead of exposing their bound macro as a function', () => {
+    const temporary = mkdtempSync(join(tmpdir(), 'zephyr-ai-header-test-'));
+    try {
+      mkdirSync(join(temporary, 'include', 'zephyr'), { recursive: true });
+      writeFileSync(
+        join(temporary, 'include', 'zephyr', 'fixture.h'),
+        '/** @brief Fixed storage. */\nuint8_t bits[BIT(3)];\n',
+      );
+      const api = collectApi(temporary);
+      ok(!api.symbols.some((symbol) => symbol.name === 'BIT'));
+      ok(api.report.intentionallyExcluded.some(
+        (entry) => entry.reason === 'fallback-array-declarator-artifact',
+      ));
+      strictEqual(
+        api.report.discovered,
+        api.report.indexed + api.report.intentionallyExcluded.length + api.report.errors.length,
+      );
+    } finally {
+      rmSync(temporary, { recursive: true, force: true });
+    }
   });
 });
 
