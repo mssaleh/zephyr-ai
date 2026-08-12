@@ -15,6 +15,7 @@ jobs:
           node-version: "24"
           cache: npm
       - run: npm ci
+      - run: npm install -g @anthropic-ai/claude-code
       - run: npm run check:quick
 
   full-corpus:
@@ -32,6 +33,7 @@ jobs:
           path: .cache/zephyr
           key: zephyr-${{ runner.os }}-node-24-schema-5-${{ hashFiles('zephyr.lock.json', 'package-lock.json') }}
       - run: npm ci
+      - run: npm install -g @anthropic-ai/claude-code
       - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
@@ -81,4 +83,5 @@ jobs:
           echo "ZEPHYR_TOOLCHAIN_VARIANT=zephyr" >> "$GITHUB_ENV"
           echo "ZEPHYR_SDK_INSTALL_DIR=$RUNNER_TEMP/zephyr-sdk-${SDK_VERSION}" >> "$GITHUB_ENV"
       - run: npm ci
+      - run: npm install -g @anthropic-ai/claude-code
       - run: npm run check:release

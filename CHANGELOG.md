@@ -50,6 +50,13 @@ First public release. Indexed against Zephyr v4.4.2, commit
 
 ### Fixed
 
+- The gate can no longer pass locally and fail in CI on a missing tool. `validate:plugin`
+  shells out to `claude`, which was present on the author's machine and on no runner, so
+  the first push exited 127 after a green local run. Every external binary a gate needs
+  is now declared in `scripts/toolchain.json`; `scripts/preflight.mjs` verifies it before
+  any gate runs, and `test/toolchain.test.mjs` fails when a declared tool is not
+  provisioned by the CI job that runs its tier — so the divergence breaks the
+  contributor's build first.
 - Doxygen XML generation is reproducible. The pinned template leaves
   `NUM_PROC_THREADS` at one thread per core, and successive runs over the same tree
   produced 84,934 and then 84,935 API symbols. Parsing is now pinned to one thread.

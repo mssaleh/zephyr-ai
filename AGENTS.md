@@ -48,6 +48,32 @@ stops earning it.
 When one of these conflicts with something already in the repository, this
 section wins and the older thing goes.
 
+## The local gate is the CI gate
+
+**A gate that passes locally and fails in GitHub Actions is a defect in the gate,
+never a quirk of CI.** This is the one failure this project does not tolerate. It
+means the gate was measuring the developer's machine instead of the product, and
+every green run before it proved nothing. It has happened once: `validate:plugin`
+shelled out to `claude`, which was on the author's machine and on no runner, so
+the gate was green locally and exited 127 on the first push.
+
+It is prevented by construction, not by remembering:
+
+- Every external binary any gate needs is declared once in
+  `scripts/toolchain.json`, with its minimum version, the tier that needs it, and
+  how CI installs it.
+- `scripts/preflight.mjs` verifies that contract before any `check*` script runs.
+  Local and CI hit the same wall at the same point, with the same install command.
+- `test/toolchain.test.mjs` fails the gate when a declared tool is not provisioned
+  by the workflow job that runs its tier. **You cannot add a dependency on
+  something only your machine has — the gate breaks on your machine first.**
+- No check is ever conditional on a tool being present. Skipping when something is
+  missing is exactly how this divergence gets in, and a skipped check that reports
+  success is worse than no check at all.
+
+When CI fails on something that passed locally, reproduce it by taking away what
+your machine has. Never by relaxing the CI job.
+
 ## Commands
 
 ```bash
