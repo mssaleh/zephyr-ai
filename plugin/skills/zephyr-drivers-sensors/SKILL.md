@@ -4,7 +4,7 @@ description: Use and write Zephyr device drivers. Use when reading sensors, driv
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.4.0"
+  version: "0.5.0"
 ---
 
 # Drivers and sensors

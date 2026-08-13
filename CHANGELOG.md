@@ -3,6 +3,41 @@
 All notable user-visible changes are recorded here. The format follows Keep a
 Changelog, and releases use semantic versioning.
 
+## [0.5.0] - 2026-08-13
+
+Indexes built by earlier versions are not readable by this one: the index schema is
+now 9. Rebuild with the `zephyr-index` skill after upgrading.
+
+### Added
+
+- **The sysbuild Kconfig namespace is indexed.** A Zephyr tree defines two Kconfig
+  graphs — the application tree written `CONFIG_`, and sysbuild, rooted at
+  `share/sysbuild/Kconfig` and written `SB_CONFIG_`. Only the first was indexed, so
+  `SB_CONFIG_BOOTLOADER_MCUBOOT` and `MCUBOOT_MODE_SWAP_USING_MOVE` were misses and
+  no sysbuild option could be checked at all. Both are now stored under their own
+  scope, and the prefix selects the namespace.
+- `search_kconfig` takes a `scope`, and reads `SB_CONFIG_` in a query as naming it.
+- `check_config` reads `sysbuild.conf` in the sysbuild namespace, and the write
+  hook does the same.
+
+### Fixed
+
+- **A symbol name was treated as an identity across two namespaces, and it is
+  not.** `BOOTLOADER_MCUBOOT` exists in both trees with opposite meanings: under
+  `SB_CONFIG_` it includes MCUboot in the build, under `CONFIG_` it marks the image
+  as chain-loaded by one. `get_kconfig` returned the application symbol to a
+  sysbuild question with no indication anything was wrong. Answers now come from
+  the namespace the prefix names, and where a name means something else in the
+  other namespace the answer says so — which is ten names in this tree, separated
+  from the 2866 that are one symbol reached through both roots by whether the two
+  share a declaring file.
+- A symbol that exists only in the other namespace is now named directly instead of
+  being answered with a list of unrelated near spellings.
+- A plain `CONFIG_` line in `sysbuild.conf`, and an `SB_CONFIG_` line in a
+  `prj.conf`, are reported. The build ignores both rather than rejecting them, so
+  nothing surfaced until the option silently failed to take effect. The counterpart
+  symbol is named only where it exists.
+
 ## [0.4.0] - 2026-08-13
 
 Indexes built by earlier versions are not readable by this one: the index schema is

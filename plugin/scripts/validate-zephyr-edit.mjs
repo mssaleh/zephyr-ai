@@ -36,7 +36,7 @@ import {
   validIndexDescriptor,
 } from './index-paths.mjs';
 
-const EXPECTED_SCHEMA = 8;
+const EXPECTED_SCHEMA = 9;
 const EXPECTED_DESCRIPTOR = 2;
 const MAX_REPORTED = 12;
 
@@ -173,31 +173,56 @@ function logicalLines(text) {
   return out;
 }
 
-function extractConfigs(text) {
+/**
+ * Read the assignments in a configuration fragment.
+ *
+ * `prefix` is the namespace the file is written in. A line carrying the other
+ * prefix is collected separately: the build ignores it rather than rejecting it,
+ * so nothing surfaces until the setting silently fails to take effect. This
+ * mirrors the server's extractConfigs, and the differential test holds them
+ * together.
+ */
+function extractConfigs(text, prefix = 'CONFIG_') {
   const assignments = [];
   const malformed = [];
+  const foreign = [];
+  // SB_CONFIG_ ends with CONFIG_, so the longer alternative is tested first and
+  // the captured prefix decides the namespace.
+  const shape = /^\s*(#\s*)?(SB_CONFIG_|CONFIG_)([A-Za-z0-9_]+)\s*(.*)$/;
   for (const logical of logicalLines(text)) {
     const line = logical.text;
     if (/^\s*$/.test(line)) continue;
-    const unset = line.match(/^\s*#\s*CONFIG_([A-Za-z0-9_]+)\s+is\s+not\s+set\s*$/);
-    if (unset) {
-      assignments.push({ name: unset[1], value: 'n', line: logical.line, unset: true });
+    const match = line.match(shape);
+
+    if (match && match[2] !== prefix) {
+      foreign.push({ name: match[3], line: logical.line, text: line.trim() });
       continue;
     }
-    if (/^\s*#/.test(line)) {
-      if (/^\s*#\s*CONFIG_.*\bis\s+not\b/.test(line)) {
+    if (match && match[1]) {
+      if (/^is\s+not\s+set$/.test((match[4] ?? '').trim())) {
+        assignments.push({ name: match[3], value: 'n', line: logical.line, unset: true });
+      } else if (/\bis\s+not\b/.test(line)) {
         malformed.push({ line: logical.line, text: line.trim() });
       }
       continue;
     }
-    const assignment = line.match(/^\s*CONFIG_([A-Za-z0-9_]+)\s*=\s*(.*?)\s*$/);
-    if (assignment && assignment[2] !== '') {
-      assignments.push({ name: assignment[1], value: assignment[2], line: logical.line, unset: false });
-    } else if (/^\s*CONFIG_/.test(line)) {
-      malformed.push({ line: logical.line, text: line.trim() });
+    if (/^\s*#/.test(line)) continue;
+    if (match) {
+      const rest = (match[4] ?? '').trim();
+      const value = rest.startsWith('=') ? rest.slice(1).trim() : '';
+      if (rest.startsWith('=') && value !== '') {
+        assignments.push({ name: match[3], value, line: logical.line, unset: false });
+      } else {
+        malformed.push({ line: logical.line, text: line.trim() });
+      }
     }
   }
-  return { assignments, malformed };
+  return { assignments, malformed, foreign };
+}
+
+/** Only sysbuild.conf is sysbuild configuration; content never decides. */
+function kconfigPrefix(path) {
+  return /(^|\/)sysbuild\.conf$/.test(path) ? 'SB_CONFIG_' : 'CONFIG_';
 }
 
 function openValidatedIndex(path) {
@@ -321,10 +346,24 @@ async function main() {
       }
       return outcome.code;
     }
-    const parsed = extractConfigs(file.text);
-    checked = parsed.assignments.length + parsed.malformed.length;
+    const prefix = kconfigPrefix(file.path);
+    const scope = prefix === 'SB_CONFIG_' ? 'sysbuild' : 'zephyr';
+    const parsed = extractConfigs(file.text, prefix);
+    checked = parsed.assignments.length + parsed.malformed.length + parsed.foreign.length;
     for (const entry of parsed.malformed) {
       problems.push(`  line ${entry.line}: malformed Kconfig assignment: ${entry.text}`);
+    }
+    const counterpart = db.prepare('SELECT 1 FROM kconfig WHERE name = ? AND scope = ?');
+    for (const entry of parsed.foreign) {
+      const wrong = prefix === 'SB_CONFIG_' ? 'CONFIG_' : 'SB_CONFIG_';
+      const suggestion = entry.name && counterpart.get(entry.name, scope)
+        ? ` ${prefix}${entry.name} exists and may be what was meant.`
+        : '';
+      problems.push(
+        `  line ${entry.line}: ${entry.text} is a ${wrong} line in a ` +
+          `${prefix === 'SB_CONFIG_' ? 'sysbuild.conf' : 'prj.conf'}-style file, where only ` +
+          `${prefix} settings apply. The build ignores it silently.${suggestion}`,
+      );
     }
     // Zephyr's own build refuses an assignment to a promptless symbol, and it
     // decides promptlessness across *every* definition. This catalogue holds
@@ -345,23 +384,23 @@ async function main() {
                AND d.file LIKE 'modules/%') AS module_defs,
              (SELECT COUNT(*) FROM kconfig_definition d WHERE d.symbol_id = k.id
                AND d.file LIKE '%Kconfig.defconfig%') AS defconfig_defs
-        FROM kconfig k WHERE k.name = ?`);
+        FROM kconfig k WHERE k.name = ? AND k.scope = ?`);
     const promptStatusIsKnown = (row) =>
       row.type !== null && Number(row.defs) > 0 && Number(row.module_defs) === 0 &&
       Number(row.defconfig_defs) < Number(row.defs);
     for (const entry of parsed.assignments) {
-      const row = stmt.get(entry.name);
+      const row = stmt.get(entry.name, scope);
       // A miss is not evidence of absence: generated, application-local, and
       // out-of-tree module symbols are outside this catalogue by construction.
       if (!row) continue;
       if (!file.path.endsWith('_defconfig') && Number(row.has_prompt) === 0 && promptStatusIsKnown(row)) {
         problems.push(
-          `  line ${entry.line}: CONFIG_${entry.name} has no prompt and cannot be assigned from an application configuration. Enable the symbol that selects it instead.`,
+          `  line ${entry.line}: ${prefix}${entry.name} has no prompt and cannot be assigned from an application configuration. Enable the symbol that selects it instead.`,
         );
         continue;
       }
       const mismatch = valueProblem(String(row.type ?? ''), entry.value);
-      if (mismatch) problems.push(`  line ${entry.line}: CONFIG_${entry.name} ${mismatch}.`);
+      if (mismatch) problems.push(`  line ${entry.line}: ${prefix}${entry.name} ${mismatch}.`);
     }
   } finally {
     db.close();

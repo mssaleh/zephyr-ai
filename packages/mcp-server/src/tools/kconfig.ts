@@ -10,6 +10,7 @@ import {
   joinSections,
   limitSchema,
   noResults,
+  optionalString,
   oneOrMany,
   prefixCandidates,
   requireString,
@@ -40,9 +41,73 @@ interface DefinitionDetail {
 /** Upper bound on rendered definition contexts; see the query in `get_kconfig`. */
 const MAX_DEFINITIONS = 12;
 
-/** Kconfig symbols are stored without the `CONFIG_` prefix that appears in .conf files. */
-function normaliseName(name: string): string {
-  return name.trim().replace(/^CONFIG_/, '').toUpperCase();
+export type KconfigScope = 'zephyr' | 'sysbuild';
+
+interface ScopedName {
+  name: string;
+  scope: KconfigScope;
+  /** The prefix this symbol is written with in a configuration file. */
+  prefix: string;
+}
+
+/**
+ * Split a requested symbol into its namespace and bare name.
+ *
+ * A Zephyr tree defines two Kconfig graphs. The application tree is written
+ * `CONFIG_`; sysbuild is written `SB_CONFIG_`, and the prefix is the only thing
+ * in the request that distinguishes them — the stored names carry neither. The
+ * order matters: `SB_CONFIG_` has to be tested first, because stripping
+ * `CONFIG_` from it would leave a name in the wrong namespace.
+ */
+function normaliseName(name: string): ScopedName {
+  const trimmed = name.trim().toUpperCase();
+  if (trimmed.startsWith('SB_CONFIG_')) {
+    return { name: trimmed.slice('SB_CONFIG_'.length), scope: 'sysbuild', prefix: 'SB_CONFIG_' };
+  }
+  return { name: trimmed.replace(/^CONFIG_/, ''), scope: 'zephyr', prefix: 'CONFIG_' };
+}
+
+const SCOPE_PREFIX: Record<KconfigScope, string> = {
+  zephyr: 'CONFIG_',
+  sysbuild: 'SB_CONFIG_',
+};
+
+/**
+ * A note when the same name means something else in the other namespace.
+ *
+ * Only ten symbol names in this tree are genuinely different symbols across the
+ * two graphs; the other 2866 shared names are one symbol reached through both
+ * roots, because share/sysbuild/Kconfig sources the whole board and SoC tree.
+ * Sharing a declaring file is what separates the two cases, so the note fires
+ * where the answer would otherwise be confidently wrong and stays silent
+ * everywhere else.
+ */
+function otherNamespaceNote(idx: Index, name: string, scope: KconfigScope): string | undefined {
+  const other: KconfigScope = scope === 'zephyr' ? 'sysbuild' : 'zephyr';
+  const row = idx.get(
+    'SELECT prompt, defined_in FROM kconfig WHERE name = ? AND scope = ?',
+    name,
+    other,
+  );
+  if (!row) return undefined;
+  const mine = idx.get(
+    'SELECT defined_in FROM kconfig WHERE name = ? AND scope = ?',
+    name,
+    scope,
+  );
+  const files = (value: unknown): string[] =>
+    json<Array<string | { file?: string }>>(value, []).map((entry) =>
+      typeof entry === 'string' ? entry : (entry.file ?? ''),
+    );
+  const ours = new Set(files(mine?.['defined_in']));
+  if (files(row['defined_in']).some((file) => ours.has(file))) return undefined;
+  const prompt = String(row['prompt'] ?? '').trim();
+  return (
+    `> **A different symbol shares this name.** \`${SCOPE_PREFIX[other]}${name}\` exists in the ` +
+    `${other === 'sysbuild' ? 'sysbuild' : 'application'} namespace and is declared elsewhere` +
+    `${prompt ? `: "${prompt}"` : ''}. ` +
+    `${other === 'sysbuild' ? '`sysbuild.conf`' : '`prj.conf`'} takes that one.`
+  );
 }
 
 function renderConditionals(items: Conditional[]): string[] {
@@ -58,13 +123,21 @@ export const searchKconfig: ToolFactory = (index) => ({
     'Zephyr releases and are the single most common thing to get wrong. Accepts names with or ' +
     'without the CONFIG_ prefix, and plain-language queries such as "bluetooth peripheral role" ' +
     'or "spi dma". Returns each symbol with its type and prompt; follow up with get_kconfig for ' +
-    'defaults and dependencies.',
+    'defaults and dependencies. A Zephyr tree has two Kconfig namespaces: pass scope="sysbuild" ' +
+    '(or write SB_CONFIG_) to search the sysbuild.conf options instead of the application ones.',
   inputSchema: {
     type: 'object',
     properties: {
       query: {
         type: 'string',
         description: 'Symbol name fragment or plain-language description of the option.',
+      },
+      scope: {
+        type: 'string',
+        enum: ['zephyr', 'sysbuild'],
+        description:
+          'Which Kconfig namespace to search. "zephyr" is prj.conf and CONFIG_ (the default); ' +
+          '"sysbuild" is sysbuild.conf and SB_CONFIG_.',
       },
       limit: limitSchema(15),
     },
@@ -75,16 +148,22 @@ export const searchKconfig: ToolFactory = (index) => ({
   handler: (args) => {
     const raw = requireString(args, 'query');
     const limit = clampLimit(args['limit'], 15);
-    const query = raw.replace(/\bCONFIG_/g, '');
+    // A query written as SB_CONFIG_FOO names its own namespace; strip the longer
+    // prefix first so the shorter one does not leave SB_ behind on the term.
+    const requestedScope = optionalString(args, 'scope');
+    const scope: KconfigScope =
+      requestedScope === 'sysbuild' || /\bSB_CONFIG_/.test(raw) ? 'sysbuild' : 'zephyr';
+    const prefix = SCOPE_PREFIX[scope];
+    const query = raw.replace(/\bSB_CONFIG_/g, '').replace(/\bCONFIG_/g, '');
 
     const rows = index().search(
       `SELECT k.name, k.type, k.prompt, k.help, k.menu_path
          FROM kconfig_fts f JOIN kconfig k ON k.id = f.rowid
-        WHERE kconfig_fts MATCH ?
+        WHERE kconfig_fts MATCH ? AND k.scope = ?
         ORDER BY bm25(kconfig_fts, 12.0, 4.0, 1.0)
         LIMIT ?`,
       query,
-      [limit],
+      [scope, limit],
       limit,
     );
 
@@ -98,7 +177,7 @@ export const searchKconfig: ToolFactory = (index) => ({
     }
 
     const results = rows.map((r) => ({
-      name: `CONFIG_${String(r['name'])}`,
+      name: `${prefix}${String(r['name'])}`,
       type: (r['type'] as string) ?? 'unknown',
       prompt: (r['prompt'] as string) ?? '',
       summary: snippet(String(r['help'] ?? '').split('\n\n')[0] ?? '', 220),
@@ -107,7 +186,7 @@ export const searchKconfig: ToolFactory = (index) => ({
 
     const text = results
       .map((r) => {
-        const head = `### CONFIG_${r.name.replace(/^CONFIG_/, '')}  \`${r.type}\``;
+        const head = `### ${r.name}  \`${r.type}\``;
         const prompt = r.prompt ? `\n${r.prompt}` : '';
         const help = r.summary ? `\n\n${r.summary}` : '';
         return `${head}${prompt}${help}`;
@@ -129,26 +208,38 @@ export const searchKconfig: ToolFactory = (index) => ({
  * separate terms so BT_PERIPHERAL_MODE can still reach BT_PERIPHERAL; as one
  * token it matches nothing and the user gets no help at all.
  */
-function kconfigMissText(idx: Index, name: string): string {
+function kconfigMissText(idx: Index, name: string, scope: KconfigScope): string {
+  // Before offering spelling matches, check whether the symbol simply lives in
+  // the other namespace. A user who drops the SB_ from a sysbuild option gets a
+  // near-miss list of unrelated names otherwise, when the exact symbol exists.
+  const other: KconfigScope = scope === 'zephyr' ? 'sysbuild' : 'zephyr';
+  if (idx.get('SELECT 1 FROM kconfig WHERE name = ? AND scope = ?', name, other)) {
+    return (
+      `Kconfig symbol \`${SCOPE_PREFIX[scope]}${name}\` is not in the ` +
+      `${scope === 'sysbuild' ? 'sysbuild' : 'application'} namespace of the indexed Zephyr ` +
+      `${idx.meta['zephyr_version'] ?? 'unknown'} catalogue, but \`${SCOPE_PREFIX[other]}${name}\` ` +
+      `is. ${other === 'sysbuild' ? '`sysbuild.conf` is where that one is set.' : '`prj.conf` is where that one is set.'}`
+    );
+  }
   const near = idx.search(
     `SELECT k.name FROM kconfig_fts f JOIN kconfig k ON k.id = f.rowid
-      WHERE kconfig_fts MATCH ? ORDER BY bm25(kconfig_fts, 12.0, 4.0, 1.0) LIMIT 8`,
+      WHERE kconfig_fts MATCH ? AND k.scope = ? ORDER BY bm25(kconfig_fts, 12.0, 4.0, 1.0) LIMIT 8`,
     name.replace(/_/g, ' '),
-    [],
+    [scope],
     8,
   );
   const byPrefix = prefixCandidates(
     (sql, ...params) => idx.all(sql, ...params),
-    "SELECT name FROM kconfig WHERE name LIKE ? ESCAPE '\\' ORDER BY LENGTH(name) LIMIT 40",
+    "SELECT name FROM kconfig WHERE name LIKE ? ESCAPE '\\' AND scope = '" + scope + "' ORDER BY LENGTH(name) LIMIT 40",
     name,
     'name',
   );
   const candidates = [...new Set([...near.map((r) => String(r['name'])), ...byPrefix])];
   return catalogueMissText(
     'Kconfig symbol',
-    `CONFIG_${name}`,
+    `${SCOPE_PREFIX[scope]}${name}`,
     idx.meta['zephyr_version'] ?? 'unknown',
-    candidates.map((value) => `CONFIG_${value}`),
+    candidates.map((value) => `${SCOPE_PREFIX[scope]}${value}`),
     'Generated, application-local, board/SoC-derived, and external-module symbols may not be covered.',
   );
 }
@@ -163,17 +254,18 @@ function kconfigMissText(idx: Index, name: string): string {
  * answer the per-symbol cap already exists to prevent.
  */
 function kconfigSummary(idx: Index, requested: string): BatchEntry {
-  const name = normaliseName(requested);
-  const key = `CONFIG_${name}`;
+  const { name, scope, prefix } = normaliseName(requested);
+  const key = `${prefix}${name}`;
   const row = idx.get(
-    'SELECT id, name, type, prompt, has_prompt, choice, n_defs FROM kconfig WHERE name = ?',
+    'SELECT id, name, type, prompt, has_prompt, choice, n_defs FROM kconfig WHERE name = ? AND scope = ?',
     name,
+    scope,
   );
   if (!row) {
     return {
       key,
-      text: `### ${key}\n\n${kconfigMissText(idx, name)}`,
-      structured: { name: key, found: false },
+      text: `### ${key}\n\n${kconfigMissText(idx, name, scope)}`,
+      structured: { name: key, found: false, scope },
     };
   }
 
@@ -209,17 +301,19 @@ function kconfigSummary(idx: Index, requested: string): BatchEntry {
          JOIN kconfig_choice_member m2 ON m2.choice_id = m1.choice_id
          JOIN kconfig k1 ON k1.id = m1.symbol_id
          JOIN kconfig k2 ON k2.id = m2.symbol_id
-        WHERE k1.name = ? AND k2.name <> k1.name ORDER BY k2.name`,
+        WHERE k1.name = ? AND k1.scope = ? AND k2.name <> k1.name ORDER BY k2.name`,
       name,
+      scope,
     )
-    .map((r) => `CONFIG_${String(r['name'])}`);
+    .map((r) => `${prefix}${String(r['name'])}`);
   const selectedBy = idx
     .all(
-      'SELECT DISTINCT from_sym FROM kconfig_edge WHERE to_sym = ? AND kind = ? ORDER BY from_sym LIMIT 8',
+      'SELECT DISTINCT from_sym FROM kconfig_edge WHERE to_sym = ? AND kind = ? AND scope = ? ORDER BY from_sym LIMIT 8',
       name,
       'select',
+      scope,
     )
-    .map((r) => `CONFIG_${String(r['from_sym'])}`);
+    .map((r) => `${prefix}${String(r['from_sym'])}`);
 
   const type = (row['type'] as string) ?? 'unknown';
   const hasPrompt = Number(row['has_prompt']) === 1;
@@ -229,6 +323,7 @@ function kconfigSummary(idx: Index, requested: string): BatchEntry {
   const text = joinSections([
     `### ${key}`,
     `\`${type}\`${row['prompt'] ? ` — ${String(row['prompt'])}` : ''}`,
+    otherNamespaceNote(idx, name, scope),
     condition !== 'y' ? `**Depends on:** \`${condition}\`` : undefined,
     defaults.length > 0 ? `**Defaults:** ${defaults.join(', ')}` : undefined,
     hasPrompt
@@ -273,13 +368,17 @@ export const getKconfig: ToolFactory = (index) => ({
     'ignored. Pass "names" to check many symbols in one call — checking a whole prj.conf should ' +
     'cost one call, not one per line — which returns type, prompt, dependencies, defaults and ' +
     'choice alternatives for each. The tool shows catalogue-level dependency information; use the ' +
-    'resolved build configuration to determine whether a setting is visible and effective.',
+    'resolved build configuration to determine whether a setting is visible and effective. ' +
+    'Prefixes select the namespace: CONFIG_ is prj.conf, SB_CONFIG_ is sysbuild.conf. Ten symbol ' +
+    'names exist in both and mean different things, so pass the prefix the file actually uses.',
   inputSchema: {
     type: 'object',
     properties: {
       name: {
         type: 'string',
-        description: 'Symbol name, with or without the CONFIG_ prefix (e.g. CONFIG_BT_PERIPHERAL).',
+        description:
+          'Symbol name, with or without a prefix (e.g. CONFIG_BT_PERIPHERAL). An SB_CONFIG_ ' +
+          'prefix selects the sysbuild namespace.',
       },
       names: batchSchema(
         'Several symbols in one call, e.g. ["BT_PERIPHERAL", "NVS", "SETTINGS_NVS"]. Returns a ' +
@@ -301,15 +400,16 @@ export const getKconfig: ToolFactory = (index) => ({
       );
     }
 
-    const name = normaliseName(values[0]!);
+    const { name, scope, prefix } = normaliseName(values[0]!);
 
     const row = idx.get(
       `SELECT id, name, type, prompt, help, has_prompt, choice, n_defs
-         FROM kconfig WHERE name = ?`,
+         FROM kconfig WHERE name = ? AND scope = ?`,
       name,
+      scope,
     );
 
-    if (!row) throw new ToolError(kconfigMissText(idx, name));
+    if (!row) throw new ToolError(kconfigMissText(idx, name, scope));
 
     // Board and SoC defconfigs make definition counts wildly uneven: NUM_IRQS has
     // 730 alternatives and SOC 719. Rendering every one produced a quarter-megabyte
@@ -385,10 +485,10 @@ export const getKconfig: ToolFactory = (index) => ({
     });
 
     const selectedBy = idx
-      .all('SELECT DISTINCT from_sym FROM kconfig_edge WHERE to_sym = ? AND kind = ? ORDER BY from_sym LIMIT 40', name, 'select')
+      .all('SELECT DISTINCT from_sym FROM kconfig_edge WHERE to_sym = ? AND kind = ? AND scope = ? ORDER BY from_sym LIMIT 40', name, 'select', scope)
       .map((r) => String(r['from_sym']));
     const impliedBy = idx
-      .all('SELECT DISTINCT from_sym FROM kconfig_edge WHERE to_sym = ? AND kind = ? ORDER BY from_sym LIMIT 20', name, 'imply')
+      .all('SELECT DISTINCT from_sym FROM kconfig_edge WHERE to_sym = ? AND kind = ? AND scope = ? ORDER BY from_sym LIMIT 20', name, 'imply', scope)
       .map((r) => String(r['from_sym']));
 
     // Naming the choice without its members answers "this is exclusive" but not
@@ -408,15 +508,17 @@ export const getKconfig: ToolFactory = (index) => ({
         name,
       )
       .map((r) => ({
-        name: `CONFIG_${String(r['name'])}`,
+        name: `${prefix}${String(r['name'])}`,
         prompt: (r['prompt'] as string) ?? null,
       }));
 
     const type = (row['type'] as string) ?? 'unknown';
-    const header = `# CONFIG_${name}\n\n\`${type}\`${row['prompt'] ? ` — ${String(row['prompt'])}` : ''}`;
+    const header = `# ${prefix}${name}\n\n\`${type}\`${row['prompt'] ? ` — ${String(row['prompt'])}` : ''}`;
+    const namespaceNote = otherNamespaceNote(idx, name, scope);
 
     const text = joinSections([
       header,
+      namespaceNote,
       row['help'] ? String(row['help']) : undefined,
       definitions.length > 0
         ? `## Definition contexts (${definitions.length} of ${definitionTotal}${omitted > 0 ? ', prompted contexts first' : ''})\n\n` +
@@ -446,9 +548,9 @@ export const getKconfig: ToolFactory = (index) => ({
         : undefined,
       section(
         'Selected by (enabling any of these forces it on)',
-        selectedBy.map((s) => `CONFIG_${s}`),
+        selectedBy.map((s) => `${prefix}${s}`),
       ),
-      section('Implied by', impliedBy.map((s) => `CONFIG_${s}`)),
+      section('Implied by', impliedBy.map((s) => `${prefix}${s}`)),
       row['choice'] ? `**Part of choice** \`${String(row['choice'])}\` — options are mutually exclusive.` : undefined,
       section(
         'Alternatives in this choice (selecting one deselects the rest)',
@@ -460,7 +562,7 @@ export const getKconfig: ToolFactory = (index) => ({
     ]);
 
     return result(text, {
-      name: `CONFIG_${name}`,
+      name: `${prefix}${name}`,
       found: true,
       type,
       prompt: row['prompt'] ?? '',
@@ -469,8 +571,8 @@ export const getKconfig: ToolFactory = (index) => ({
       definitions,
       definitionCount: definitionTotal,
       definitionsTruncated: omitted > 0,
-      selectedBy: selectedBy.map((s) => `CONFIG_${s}`),
-      impliedBy: impliedBy.map((s) => `CONFIG_${s}`),
+      selectedBy: selectedBy.map((s) => `${prefix}${s}`),
+      impliedBy: impliedBy.map((s) => `${prefix}${s}`),
       choice: row['choice'] ?? null,
       choiceMembers,
       knowledgeLevel: 'catalogue',

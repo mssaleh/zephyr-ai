@@ -139,7 +139,7 @@ export function buildIndexDescriptor(options: IdentityOptions): IndexDescriptor 
     ...(options.buildDirectory ? { buildDirectory: realpathSync(options.buildDirectory) } : {}),
     coverage: {
       docs: { complete: options.modules.length === 0, note: options.modules.length ? 'Module documentation is not indexed.' : undefined },
-      kconfig: { complete: false, note: 'Catalogue index; generated and application-local symbols require resolved context.' },
+      kconfig: { complete: false, note: 'Catalogue index covering the application and sysbuild namespaces; generated and application-local symbols require resolved context.' },
       bindings: {
         complete: options.modules.length === 0 && !projectRoot && !options.applicationRoot,
         note: options.modules.length || projectRoot || options.applicationRoot

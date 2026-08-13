@@ -407,6 +407,64 @@ describe('MCP server', { skip: !ready && 'run `npm run build` and build the inde
     });
   });
 
+  describe('the sysbuild Kconfig namespace', () => {
+    it('answers SB_CONFIG_ from the sysbuild tree, not the application tree', async () => {
+      const res = await client.call('get_kconfig', { name: 'SB_CONFIG_BOOTLOADER_MCUBOOT' });
+      strictEqual(res.structured['found'], true);
+      strictEqual(res.structured['name'], 'SB_CONFIG_BOOTLOADER_MCUBOOT');
+      // The two declarations mean opposite things: one includes MCUboot in the
+      // build, the other marks this image as chain-loaded by it.
+      strictEqual(res.structured['prompt'], 'MCUboot');
+      ok(String(res.structured['help']).includes('Include MCUboot'));
+    });
+
+    it('warns when a name means something else in the other namespace', async () => {
+      const app = await client.call('get_kconfig', { name: 'CONFIG_BOOTLOADER_MCUBOOT' });
+      strictEqual(app.structured['prompt'], 'MCUboot bootloader support');
+      ok(app.text.includes('A different symbol shares this name'));
+      ok(app.text.includes('SB_CONFIG_BOOTLOADER_MCUBOOT'));
+    });
+
+    it('stays silent when the same name is the same symbol', async () => {
+      // 2866 of the 2876 shared names are one symbol reached through both roots,
+      // because share/sysbuild/Kconfig sources the whole board and SoC tree. A
+      // warning on those would be noise on almost every board symbol.
+      const shared = await client.call('get_kconfig', { name: 'CONFIG_BT' });
+      ok(!shared.text.includes('A different symbol shares this name'));
+    });
+
+    it('redirects a sysbuild-only symbol instead of offering near misses', async () => {
+      const res = await client.call('get_kconfig', { name: 'MCUBOOT_MODE_SWAP_USING_MOVE' });
+      ok(res.isError);
+      ok(res.text.includes('SB_CONFIG_MCUBOOT_MODE_SWAP_USING_MOVE'));
+      ok(res.text.includes('sysbuild.conf'));
+      ok(!res.text.includes('Close spelling matches'), 'the exact symbol exists; do not guess');
+    });
+
+    it('searches one namespace at a time', async () => {
+      const sys = await client.call('search_kconfig', { query: 'mcuboot mode', scope: 'sysbuild' });
+      const names = (sys.structured['results'] as { name: string }[]).map((r) => r.name);
+      ok(names.length > 0);
+      ok(names.every((n) => n.startsWith('SB_CONFIG_')), `got ${names.join(', ')}`);
+      ok(names.some((n) => n.includes('MCUBOOT_MODE')));
+
+      const app = await client.call('search_kconfig', { query: 'bluetooth peripheral' });
+      const appNames = (app.structured['results'] as { name: string }[]).map((r) => r.name);
+      ok(appNames.every((n) => n.startsWith('CONFIG_')), `got ${appNames.join(', ')}`);
+    });
+
+    it('reports a CONFIG_ line in sysbuild.conf as ignored by the build', async () => {
+      const res = await client.call('check_config', {
+        path: 'sysbuild.conf',
+        text: 'SB_CONFIG_BOOTLOADER_MCUBOOT=y\nCONFIG_BOOTLOADER_MCUBOOT=y\nCONFIG_BT=y\n',
+      });
+      ok(res.text.includes('The build ignores it silently'));
+      // Named only where the counterpart exists; SB_CONFIG_BT does not.
+      ok(res.text.includes('`SB_CONFIG_BOOTLOADER_MCUBOOT` exists'));
+      ok(!res.text.includes('`SB_CONFIG_BT` exists'));
+    });
+  });
+
   describe('check_environment', () => {
     it('separates the interpreter a build uses from the one the indexer used', async () => {
       const res = await client.call('check_environment');

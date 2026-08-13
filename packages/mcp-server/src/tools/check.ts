@@ -14,6 +14,7 @@ import {
 const MAX_LINES = 200;
 
 type Kind = 'kconfig' | 'devicetree';
+type Prefix = 'CONFIG_' | 'SB_CONFIG_';
 
 interface Verdict {
   line: number;
@@ -49,38 +50,58 @@ interface Assignment {
   raw: string;
 }
 
-function extractConfigs(text: string): { assignments: Assignment[]; malformed: Assignment[] } {
+/**
+ * Read the assignments in a configuration fragment.
+ *
+ * `prefix` is the namespace the file is written in: `CONFIG_` for prj.conf and
+ * defconfigs, `SB_CONFIG_` for sysbuild.conf. Lines carrying the *other* prefix
+ * are collected separately, because the build does not reject them — it ignores
+ * them silently, which is why they cost so much to find by hand.
+ */
+function extractConfigs(
+  text: string,
+  prefix: Prefix = 'CONFIG_',
+): { assignments: Assignment[]; malformed: Assignment[]; foreign: Assignment[] } {
   const assignments: Assignment[] = [];
   const malformed: Assignment[] = [];
+  const foreign: Assignment[] = [];
+  // SB_CONFIG_ ends with CONFIG_, so the longer alternative is tested first and
+  // the captured prefix, not a substring test, decides which namespace a line is in.
+  const shape = /^\s*(#\s*)?(SB_CONFIG_|CONFIG_)([A-Za-z0-9_]+)\s*(.*)$/;
+
   for (const logical of logicalLines(text)) {
     const line = logical.text;
     if (/^\s*$/.test(line)) continue;
-    const unset = line.match(/^\s*#\s*CONFIG_([A-Za-z0-9_]+)\s+is\s+not\s+set\s*$/);
-    if (unset) {
-      assignments.push({ name: unset[1]!, value: 'n', line: logical.line, raw: line.trim() });
+    const match = line.match(shape);
+
+    if (match && match[2] !== prefix) {
+      foreign.push({ name: match[3]!, value: '', line: logical.line, raw: line.trim() });
       continue;
     }
-    if (/^\s*#/.test(line)) {
-      // Only the canonical unset form is legal in a comment; anything else that
-      // looks like one is a setting the author believes is being applied.
-      if (/^\s*#\s*CONFIG_.*\bis\s+not\b/.test(line)) {
+
+    if (match?.[1]) {
+      // Commented: only the canonical unset form is a real setting. Anything else
+      // that looks like one is a line the author believes is being applied.
+      if (/^is\s+not\s+set$/.test((match[4] ?? '').trim())) {
+        assignments.push({ name: match[3]!, value: 'n', line: logical.line, raw: line.trim() });
+      } else if (/\bis\s+not\b/.test(line)) {
         malformed.push({ name: '', value: '', line: logical.line, raw: line.trim() });
       }
       continue;
     }
-    const assignment = line.match(/^\s*CONFIG_([A-Za-z0-9_]+)\s*=\s*(.*?)\s*$/);
-    if (assignment && assignment[2] !== '') {
-      assignments.push({
-        name: assignment[1]!,
-        value: assignment[2]!,
-        line: logical.line,
-        raw: line.trim(),
-      });
-    } else if (/^\s*CONFIG_/.test(line)) {
-      malformed.push({ name: '', value: '', line: logical.line, raw: line.trim() });
+    if (/^\s*#/.test(line)) continue;
+
+    if (match) {
+      const rest = (match[4] ?? '').trim();
+      const value = rest.startsWith('=') ? rest.slice(1).trim() : '';
+      if (rest.startsWith('=') && value !== '') {
+        assignments.push({ name: match[3]!, value, line: logical.line, raw: line.trim() });
+      } else {
+        malformed.push({ name: '', value: '', line: logical.line, raw: line.trim() });
+      }
     }
   }
-  return { assignments, malformed };
+  return { assignments, malformed, foreign };
 }
 
 function valueProblem(type: string, value: string): string | null {
@@ -163,6 +184,17 @@ function nearestCompatible(value: string, candidates: string[]): { name: string;
 }
 
 /**
+ * Which Kconfig namespace a configuration file is written in.
+ *
+ * sysbuild.conf is the only file the build treats as sysbuild configuration, so
+ * the name decides. Content cannot: an SB_CONFIG_ line in a prj.conf is a
+ * mistake to report, not a signal to switch namespace.
+ */
+function inferPrefix(path: string | undefined): Prefix {
+  return path && /(^|\/)sysbuild\.conf$/.test(path) ? 'SB_CONFIG_' : 'CONFIG_';
+}
+
+/**
  * Which catalogue a body should be checked against.
  *
  * The path decides when there is one, because an author naming the file is
@@ -175,16 +207,43 @@ function inferKind(path: string | undefined, text: string): Kind {
     if (/(\.conf|_defconfig)$/.test(path)) return 'kconfig';
   }
   if (/(^|[\s;{}])compatible\s*=/.test(text)) return 'devicetree';
-  if (/^\s*(?:#\s*)?CONFIG_[A-Za-z0-9_]+\s*[=\s]/m.test(text)) return 'kconfig';
+  if (/^\s*(?:#\s*)?(?:SB_)?CONFIG_[A-Za-z0-9_]+\s*[=\s]/m.test(text)) return 'kconfig';
   throw new ToolError(
     'Could not tell whether this is a Kconfig fragment or devicetree source. ' +
       'Pass "kind" as "kconfig" or "devicetree", or pass "path" so the extension can decide.',
   );
 }
 
-function checkKconfig(idx: Index, text: string, isDefconfig: boolean): Verdict[] {
-  const parsed = extractConfigs(text);
+function checkKconfig(
+  idx: Index,
+  text: string,
+  isDefconfig: boolean,
+  prefix: Prefix = 'CONFIG_',
+): Verdict[] {
+  const scope = prefix === 'SB_CONFIG_' ? 'sysbuild' : 'zephyr';
+  const parsed = extractConfigs(text, prefix);
   const verdicts: Verdict[] = [];
+
+  // The build ignores a line from the other namespace rather than rejecting it,
+  // so nothing surfaces until the option silently fails to take effect.
+  for (const entry of parsed.foreign) {
+    const wrong = prefix === 'SB_CONFIG_' ? 'CONFIG_' : 'SB_CONFIG_';
+    // Only name the counterpart when it exists. Offering one that does not is the
+    // same confident-but-wrong answer the line itself is being reported for.
+    const counterpart =
+      entry.name &&
+      idx.get('SELECT 1 FROM kconfig WHERE name = ? AND scope = ?', entry.name, scope)
+        ? `; \`${prefix}${entry.name}\` exists and may be what was meant`
+        : '';
+    verdicts.push({
+      line: entry.line,
+      subject: entry.raw,
+      problem:
+        `is a ${wrong} line in a ${prefix === 'SB_CONFIG_' ? 'sysbuild.conf' : 'prj.conf'}-style ` +
+        `file, where only ${prefix} settings apply. The build ignores it silently${counterpart}`,
+      note: '',
+    });
+  }
 
   for (const entry of parsed.malformed) {
     verdicts.push({
@@ -208,21 +267,22 @@ function checkKconfig(idx: Index, text: string, isDefconfig: boolean): Verdict[]
              AND d.file LIKE 'modules/%') AS module_defs,
            (SELECT COUNT(*) FROM kconfig_definition d WHERE d.symbol_id = k.id
              AND d.file LIKE '%Kconfig.defconfig%') AS defconfig_defs
-      FROM kconfig k WHERE k.name = ?`);
+      FROM kconfig k WHERE k.name = ? AND k.scope = ?`);
   const promptStatusIsKnown = (row: Record<string, unknown>): boolean =>
     row['type'] !== null &&
     Number(row['defs']) > 0 &&
     Number(row['module_defs']) === 0 &&
     Number(row['defconfig_defs']) < Number(row['defs']);
   for (const entry of parsed.assignments) {
-    const row = symbol.get(entry.name) as Record<string, unknown> | undefined;
+    const row = symbol.get(entry.name, scope) as Record<string, unknown> | undefined;
     if (!row) {
       // A miss is not evidence of absence: generated, application-local, and
       // out-of-tree module symbols are outside this catalogue by construction.
       const near = idx.all(
-        "SELECT name FROM kconfig WHERE name LIKE ? ESCAPE '\\' ORDER BY LENGTH(name) LIMIT 4",
+        "SELECT name FROM kconfig WHERE name LIKE ? ESCAPE '\\' AND scope = ? ORDER BY LENGTH(name) LIMIT 4",
         `${entry.name.slice(0, Math.max(4, entry.name.length - 4)).replace(/[%_]/g, '\\$&')}%`,
-      ).map((r) => `CONFIG_${String(r['name'])}`);
+        scope,
+      ).map((r) => `${prefix}${String(r['name'])}`);
       verdicts.push({
         line: entry.line,
         subject: entry.raw,
@@ -240,11 +300,12 @@ function checkKconfig(idx: Index, text: string, isDefconfig: boolean): Verdict[]
     if (!isDefconfig && Number(row['has_prompt']) === 0 && promptStatusIsKnown(row)) {
       const selectedBy = idx
         .all(
-          'SELECT DISTINCT from_sym FROM kconfig_edge WHERE to_sym = ? AND kind = ? ORDER BY from_sym LIMIT 4',
+          'SELECT DISTINCT from_sym FROM kconfig_edge WHERE to_sym = ? AND kind = ? AND scope = ? ORDER BY from_sym LIMIT 4',
           entry.name,
           'select',
+          scope,
         )
-        .map((r) => `CONFIG_${String(r['from_sym'])}`);
+        .map((r) => `${prefix}${String(r['from_sym'])}`);
       verdicts.push({
         line: entry.line,
         subject: entry.raw,
@@ -339,7 +400,7 @@ export const checkConfig: ToolFactory = (index) => ({
   name: 'check_config',
   title: 'Check a configuration file against the index',
   description:
-    'Check a whole prj.conf, board .conf, defconfig, .overlay, .dts or .dtsi against the indexed ' +
+    'Check a whole prj.conf, board .conf, defconfig, sysbuild.conf, .overlay, .dts or .dtsi against the indexed ' +
     'Zephyr version and get a verdict for every line, in one call. Use it before writing a ' +
     'configuration file and again after, instead of looking symbols up one at a time or grepping ' +
     'the tree — a shell loop proves only that a name appears somewhere, while this reports each ' +
@@ -369,6 +430,13 @@ export const checkConfig: ToolFactory = (index) => ({
         enum: ['kconfig', 'devicetree'],
         description: 'Override the file kind when the path does not state it.',
       },
+      namespace: {
+        type: 'string',
+        enum: ['CONFIG_', 'SB_CONFIG_'],
+        description:
+          'Which Kconfig namespace the file is written in. Inferred from the path — only ' +
+          'sysbuild.conf is SB_CONFIG_ — so pass this only for an unnamed sysbuild fragment.',
+      },
     },
     required: ['text'],
     additionalProperties: false,
@@ -381,9 +449,10 @@ export const checkConfig: ToolFactory = (index) => ({
     const idx = index();
     const version = idx.meta['zephyr_version'] ?? 'unknown';
 
+    const prefix = (optionalString(args, 'namespace') as Prefix | undefined) ?? inferPrefix(path);
     const verdicts =
       kind === 'kconfig'
-        ? checkKconfig(idx, text, Boolean(path?.endsWith('_defconfig')))
+        ? checkKconfig(idx, text, Boolean(path?.endsWith('_defconfig')), prefix)
         : checkDevicetree(idx, text);
     const problems = verdicts.filter((v) => v.problem !== null);
     const subject = kind === 'kconfig' ? 'Kconfig assignment' : 'compatible declaration';

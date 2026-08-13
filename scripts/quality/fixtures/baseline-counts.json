@@ -1,11 +1,11 @@
 {
-  "schemaVersion": 8,
+  "schemaVersion": 9,
   "zephyrVersion": "4.4.2",
   "zephyrCommit": "dccb09599635bdff17633fa7e9dab014b91dce90",
   "counts": {
     "doc": 2115,
     "doc_chunk": 16664,
-    "kconfig": 20973,
+    "kconfig": 23882,
     "dt_binding": 3443,
     "dt_property": 120569,
     "board": 1014,

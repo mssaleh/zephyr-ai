@@ -78,9 +78,30 @@ export interface CollectedKconfig {
 
 const CACHE = new Map<string, CollectedKconfig>();
 
+/**
+ * The Kconfig namespaces a Zephyr tree defines.
+ *
+ * `zephyr` is the application tree written as `CONFIG_`. `sysbuild` is rooted at
+ * `share/sysbuild/Kconfig` and written as `SB_CONFIG_`, the prefix set by
+ * `share/sysbuild/cmake/modules/sysbuild_kconfig.cmake`. They are separate
+ * namespaces that share most of their symbol names and not their meanings:
+ * `BOOTLOADER_MCUBOOT` marks an image as chain-loaded in one and selects MCUboot
+ * as the bootloader to build in the other.
+ */
+export const KCONFIG_SCOPES = {
+  zephyr: 'Kconfig',
+  sysbuild: 'share/sysbuild/Kconfig',
+} as const;
+
+export type KconfigScope = keyof typeof KCONFIG_SCOPES;
+
 /** Evaluate the canonical source graph through Zephyr's own Kconfiglib. */
-export function collectKconfig(root: string, moduleRoots: string[] = []): CollectedKconfig {
-  const cacheKey = JSON.stringify([root, [...moduleRoots].sort()]);
+export function collectKconfig(
+  root: string,
+  moduleRoots: string[] = [],
+  scope: KconfigScope = 'zephyr',
+): CollectedKconfig {
+  const cacheKey = JSON.stringify([root, [...moduleRoots].sort(), scope]);
   const cached = CACHE.get(cacheKey);
   if (cached) return cached;
   const library = join(root, 'scripts', 'kconfig', 'kconfiglib.py');
@@ -93,7 +114,7 @@ export function collectKconfig(root: string, moduleRoots: string[] = []): Collec
   const buildDir = join(temporary, 'generated');
   try {
     writeFileSync(exporter, KCONFIG_EXPORTER, { mode: 0o600 });
-    const args = [exporter, '--zephyr', root, '--build-dir', buildDir];
+    const args = [exporter, '--zephyr', root, '--build-dir', buildDir, '--root', KCONFIG_SCOPES[scope]];
     for (const moduleRoot of moduleRoots) args.push('--module', moduleRoot);
     const result = spawnSync(semanticPython(root), args, {
       // Kconfiglib resolves `source "Kconfig.zephyr"` against the process

@@ -15,6 +15,11 @@ def parse_args():
     parser.add_argument("--zephyr", required=True)
     parser.add_argument("--build-dir", required=True)
     parser.add_argument("--module", action="append", default=[])
+    # The tree carries two independent Kconfig namespaces. share/sysbuild/Kconfig is
+    # the root of the one written as SB_CONFIG_ in sysbuild.conf, and it declares
+    # symbols that collide by name with the application tree while meaning something
+    # else, so it is exported as its own run rather than merged.
+    parser.add_argument("--root", default="Kconfig")
     return parser.parse_args()
 
 
@@ -65,6 +70,10 @@ def prepare_environment(args):
         Path(build, "Kconfig.modules"),
         [path for path in (module_kconfig(root) for root in args.module) if path],
     )
+    # modules/Kconfig.sysbuild sources this unconditionally, and CMake writes it
+    # during a real sysbuild. Nothing sources module sysbuild Kconfig here because
+    # --module roots extend the application namespace, not this one.
+    write_sources(Path(build, "Kconfig.sysbuild.modules"), [])
 
     os.environ.update(
         srctree=zephyr,
@@ -94,7 +103,7 @@ def main():
     import kconfiglib as kc
 
     kconf = kc.Kconfig(
-        str(Path(zephyr, "Kconfig")), warn_to_stderr=False, suppress_traceback=True
+        str(Path(zephyr, args.root)), warn_to_stderr=False, suppress_traceback=True
     )
 
     allowed_source_roots = [Path(zephyr).resolve(), Path(args.build_dir).resolve()]

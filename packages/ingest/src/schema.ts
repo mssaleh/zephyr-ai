@@ -79,9 +79,13 @@ CREATE VIRTUAL TABLE doc_fts USING fts5(
 );
 
 -- ------------------------------------------------------------- kconfig -----
+-- A symbol is identified by name *and* namespace. The application tree and the
+-- sysbuild tree share 2876 of their 2909 symbol names while meaning different
+-- things by some of them, so a bare name is not an identity here.
 CREATE TABLE kconfig (
   id         INTEGER PRIMARY KEY,
-  name       TEXT NOT NULL UNIQUE,
+  name       TEXT NOT NULL,
+  scope      TEXT NOT NULL DEFAULT 'zephyr' CHECK(scope IN ('zephyr', 'sysbuild')),
   type       TEXT,
   prompt     TEXT NOT NULL DEFAULT '',
   help       TEXT NOT NULL DEFAULT '',
@@ -95,8 +99,10 @@ CREATE TABLE kconfig (
   is_choice  INTEGER NOT NULL DEFAULT 0,
   choice     TEXT,
   n_defs     INTEGER NOT NULL DEFAULT 1,
-  has_prompt INTEGER NOT NULL DEFAULT 0
+  has_prompt INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(name, scope)
 );
+CREATE INDEX kconfig_scope_idx ON kconfig(scope);
 
 -- Semantic Kconfig graph exported by the target tree's own Kconfiglib. The
 -- legacy JSON columns above are a denormalised search/read projection only.
@@ -154,10 +160,14 @@ CREATE TABLE kconfig_range (
 
 CREATE TABLE kconfig_choice (
   id                INTEGER PRIMARY KEY,
-  stable_id         TEXT NOT NULL UNIQUE,
+  stable_id         TEXT NOT NULL,
+  scope             TEXT NOT NULL DEFAULT 'zephyr' CHECK(scope IN ('zephyr', 'sysbuild')),
   name              TEXT,
   type              TEXT,
-  definitions       TEXT NOT NULL DEFAULT '[]'
+  definitions       TEXT NOT NULL DEFAULT '[]',
+  -- A named choice yields its own name as the stable id, and BOOTLOADER exists
+  -- in both trees, so the namespace is part of the identity here too.
+  UNIQUE(stable_id, scope)
 );
 
 CREATE TABLE kconfig_choice_member (
@@ -171,10 +181,12 @@ CREATE TABLE kconfig_choice_member (
 CREATE TABLE kconfig_edge (
   from_sym TEXT NOT NULL,
   to_sym   TEXT NOT NULL,
-  kind     TEXT NOT NULL
+  kind     TEXT NOT NULL,
+  -- Edges join symbols by name, so they must not cross a namespace boundary.
+  scope    TEXT NOT NULL DEFAULT 'zephyr' CHECK(scope IN ('zephyr', 'sysbuild'))
 );
-CREATE INDEX kconfig_edge_to_idx ON kconfig_edge(to_sym, kind);
-CREATE INDEX kconfig_edge_from_idx ON kconfig_edge(from_sym, kind);
+CREATE INDEX kconfig_edge_to_idx ON kconfig_edge(to_sym, kind, scope);
+CREATE INDEX kconfig_edge_from_idx ON kconfig_edge(from_sym, kind, scope);
 
 CREATE VIRTUAL TABLE kconfig_fts USING fts5(
   name, prompt, help,

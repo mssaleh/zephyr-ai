@@ -35,7 +35,7 @@ import { collectApi, discoverDoxygenXml } from './sources/api.ts';
 import { collectBindings } from './sources/bindings.ts';
 import { collectBoards, collectSocs } from './sources/boards.ts';
 import { collectDocs } from './sources/docs.ts';
-import { collectKconfig } from './sources/kconfig.ts';
+import { collectKconfig, type CollectedKconfig, type KconfigScope } from './sources/kconfig.ts';
 import { collectSamples } from './sources/samples.ts';
 import { collectBoardRunners, collectRunners, collectWestCommands } from './sources/west.ts';
 import type { KconfigExpr } from './sources/kconfig.ts';
@@ -332,9 +332,17 @@ function main(): void {
   log(`  docs      ${docs.length} pages, ${chunkCount} sections (${Date.now() - t0} ms)`);
 
   const t1 = Date.now();
-  const kconfig = collectKconfig(opts.zephyr, opts.modules);
+  // Both namespaces the tree defines. Modules extend the application namespace
+  // only: a module contributes sysbuild Kconfig through a separate manifest key
+  // that a catalogue build has no CMake run to generate.
+  const kconfigByScope = new Map<KconfigScope, CollectedKconfig>([
+    ['zephyr', collectKconfig(opts.zephyr, opts.modules, 'zephyr')],
+    ['sysbuild', collectKconfig(opts.zephyr, [], 'sysbuild')],
+  ]);
+  const kconfig = kconfigByScope.get('zephyr')!;
   log(
-    `  kconfig   ${kconfig.symbols.length} symbols from ${kconfig.filesScanned} files (${Date.now() - t1} ms)`,
+    `  kconfig   ${kconfig.symbols.length} symbols from ${kconfig.filesScanned} files, ` +
+      `${kconfigByScope.get('sysbuild')!.symbols.length} sysbuild (${Date.now() - t1} ms)`,
   );
 
   const t2 = Date.now();
@@ -437,182 +445,188 @@ function main(): void {
     }
   }
 
-  // kconfig
-  const insSym = db.prepare(
-    `INSERT INTO kconfig
-       (name, type, prompt, help, defaults, depends, selects, implies, ranges,
-        defined_in, menu_path, is_choice, choice, n_defs, has_prompt)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  );
-  const insEdge = db.prepare(
-    'INSERT INTO kconfig_edge (from_sym, to_sym, kind) VALUES (?, ?, ?)',
-  );
-  const symbolIds = new Map<string, number>();
-  for (const sym of kconfig.symbols) {
-    const defaults = sym.definitions.flatMap((definition) =>
-      definition.defaults.map((item) => ({
-        value: item.value.display,
-        ...(item.condition.display !== 'y' ? { cond: item.condition.display } : {}),
-      })),
+  // kconfig, once per namespace. The application tree and the sysbuild tree are
+  // separate Kconfig graphs that share most symbol names, so each is written under
+  // its own scope and nothing is resolved across the boundary.
+  for (const [scope, kconfig] of kconfigByScope) {
+    const insSym = db.prepare(
+      `INSERT INTO kconfig
+         (name, scope, type, prompt, help, defaults, depends, selects, implies, ranges,
+          defined_in, menu_path, is_choice, choice, n_defs, has_prompt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
-    const depends = sym.definitions
-      .map((definition) => definition.condition.display)
-      .filter((value, index, all) => value !== 'y' && all.indexOf(value) === index);
-    const selects = sym.definitions.flatMap((definition) =>
-      definition.selects.map((item) => ({
-        value: item.target,
-        ...(item.condition.display !== 'y' ? { cond: item.condition.display } : {}),
-      })),
+    const insEdge = db.prepare(
+      'INSERT INTO kconfig_edge (from_sym, to_sym, kind, scope) VALUES (?, ?, ?, ?)',
     );
-    const implies = sym.definitions.flatMap((definition) =>
-      definition.implies.map((item) => ({
-        value: item.target,
-        ...(item.condition.display !== 'y' ? { cond: item.condition.display } : {}),
-      })),
-    );
-    const ranges = sym.definitions.flatMap((definition) =>
-      definition.ranges.map((item) => ({
-        low: item.low.display,
-        high: item.high.display,
-        ...(item.condition.display !== 'y' ? { cond: item.condition.display } : {}),
-      })),
-    );
-    const prompt = sym.definitions.find((definition) => definition.prompt)?.prompt ?? '';
-    const menuPath =
-      sym.definitions.find((definition) => definition.menuPath.length > 0)?.menuPath.join(' > ') ?? '';
-    const info = insSym.run(
-      sym.name,
-      sym.type ?? null,
-      prompt,
-      sym.help ?? '',
-      JSON.stringify(defaults),
-      JSON.stringify(depends),
-      JSON.stringify(selects),
-      JSON.stringify(implies),
-      JSON.stringify(ranges),
-      JSON.stringify(sym.definitions.map((definition) => ({ file: definition.file, line: definition.line }))),
-      menuPath,
-      sym.choice ? 1 : 0,
-      sym.choice ?? null,
-      sym.definitions.length,
-      sym.hasPrompt ? 1 : 0,
-    );
-    symbolIds.set(sym.name, Number(info.lastInsertRowid));
-    for (const relation of selects) insEdge.run(sym.name, relation.value, 'select');
-    for (const relation of implies) insEdge.run(sym.name, relation.value, 'imply');
-    const expressionSymbols = (expression: KconfigExpr): string[] => [
-      ...(expression.kind === 'symbol' && expression.value ? [expression.value] : []),
-      ...(expression.children ?? []).flatMap(expressionSymbols),
-    ];
-    for (const definition of sym.definitions) {
-      for (const target of expressionSymbols(definition.condition)) {
-        insEdge.run(sym.name, target, 'depends');
+    const symbolIds = new Map<string, number>();
+    for (const sym of kconfig.symbols) {
+      const defaults = sym.definitions.flatMap((definition) =>
+        definition.defaults.map((item) => ({
+          value: item.value.display,
+          ...(item.condition.display !== 'y' ? { cond: item.condition.display } : {}),
+        })),
+      );
+      const depends = sym.definitions
+        .map((definition) => definition.condition.display)
+        .filter((value, index, all) => value !== 'y' && all.indexOf(value) === index);
+      const selects = sym.definitions.flatMap((definition) =>
+        definition.selects.map((item) => ({
+          value: item.target,
+          ...(item.condition.display !== 'y' ? { cond: item.condition.display } : {}),
+        })),
+      );
+      const implies = sym.definitions.flatMap((definition) =>
+        definition.implies.map((item) => ({
+          value: item.target,
+          ...(item.condition.display !== 'y' ? { cond: item.condition.display } : {}),
+        })),
+      );
+      const ranges = sym.definitions.flatMap((definition) =>
+        definition.ranges.map((item) => ({
+          low: item.low.display,
+          high: item.high.display,
+          ...(item.condition.display !== 'y' ? { cond: item.condition.display } : {}),
+        })),
+      );
+      const prompt = sym.definitions.find((definition) => definition.prompt)?.prompt ?? '';
+      const menuPath =
+        sym.definitions.find((definition) => definition.menuPath.length > 0)?.menuPath.join(' > ') ?? '';
+      const info = insSym.run(
+        sym.name,
+        scope,
+        sym.type ?? null,
+        prompt,
+        sym.help ?? '',
+        JSON.stringify(defaults),
+        JSON.stringify(depends),
+        JSON.stringify(selects),
+        JSON.stringify(implies),
+        JSON.stringify(ranges),
+        JSON.stringify(sym.definitions.map((definition) => ({ file: definition.file, line: definition.line }))),
+        menuPath,
+        sym.choice ? 1 : 0,
+        sym.choice ?? null,
+        sym.definitions.length,
+        sym.hasPrompt ? 1 : 0,
+      );
+      symbolIds.set(sym.name, Number(info.lastInsertRowid));
+      for (const relation of selects) insEdge.run(sym.name, relation.value, 'select', scope);
+      for (const relation of implies) insEdge.run(sym.name, relation.value, 'imply', scope);
+      const expressionSymbols = (expression: KconfigExpr): string[] => [
+        ...(expression.kind === 'symbol' && expression.value ? [expression.value] : []),
+        ...(expression.children ?? []).flatMap(expressionSymbols),
+      ];
+      for (const definition of sym.definitions) {
+        for (const target of expressionSymbols(definition.condition)) {
+          insEdge.run(sym.name, target, 'depends', scope);
+        }
       }
     }
-  }
 
-  const insExpr = db.prepare(
-    'INSERT INTO kconfig_expr (kind, value, display, left_id, right_id) VALUES (?, ?, ?, ?, ?)',
-  );
-  const expressionIds = new Map<string, number>();
-  const expressionId = (expression: KconfigExpr | null): number | null => {
-    if (!expression) return null;
-    const key = canonicalJson(expression);
-    const existing = expressionIds.get(key);
-    if (existing !== undefined) return existing;
-    const children = expression.children ?? [];
-    const id = Number(
-      insExpr.run(
-        expression.kind,
-        expression.value ?? null,
-        expression.display,
-        expressionId(children[0] ?? null),
-        expressionId(children[1] ?? null),
-      ).lastInsertRowid,
+    const insExpr = db.prepare(
+      'INSERT INTO kconfig_expr (kind, value, display, left_id, right_id) VALUES (?, ?, ?, ?, ?)',
     );
-    expressionIds.set(key, id);
-    return id;
-  };
-  const insDefinition = db.prepare(
-    `INSERT INTO kconfig_definition
-       (symbol_id, file, line, prompt, menu_path, condition_expr_id, prompt_condition_id,
-        is_menuconfig, is_configdefault)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  );
-  const insDefault = db.prepare(
-    `INSERT INTO kconfig_default
-       (definition_id, value_expr_id, condition_expr_id, ord) VALUES (?, ?, ?, ?)`,
-  );
-  const insRelation = db.prepare(
-    `INSERT INTO kconfig_relation
-       (definition_id, kind, target_name, target_symbol_id, condition_expr_id, ord)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-  );
-  const insRange = db.prepare(
-    `INSERT INTO kconfig_range
-       (definition_id, low_expr_id, high_expr_id, condition_expr_id, ord)
-     VALUES (?, ?, ?, ?, ?)`,
-  );
-  for (const sym of kconfig.symbols) {
-    const symbolId = symbolIds.get(sym.name)!;
-    for (const definition of sym.definitions) {
-      const definitionId = Number(
-        insDefinition.run(
-          symbolId,
-          definition.file,
-          definition.line,
-          definition.prompt,
-          JSON.stringify(definition.menuPath),
-          expressionId(definition.condition),
-          expressionId(definition.promptCondition),
-          definition.isMenuconfig ? 1 : 0,
-          definition.isConfigDefault ? 1 : 0,
+    const expressionIds = new Map<string, number>();
+    const expressionId = (expression: KconfigExpr | null): number | null => {
+      if (!expression) return null;
+      const key = canonicalJson(expression);
+      const existing = expressionIds.get(key);
+      if (existing !== undefined) return existing;
+      const children = expression.children ?? [];
+      const id = Number(
+        insExpr.run(
+          expression.kind,
+          expression.value ?? null,
+          expression.display,
+          expressionId(children[0] ?? null),
+          expressionId(children[1] ?? null),
         ).lastInsertRowid,
       );
-      for (const item of definition.defaults) {
-        insDefault.run(definitionId, expressionId(item.value), expressionId(item.condition), item.order);
-      }
-      for (const [kind, items] of [
-        ['select', definition.selects],
-        ['imply', definition.implies],
-      ] as const) {
-        for (const item of items) {
-          insRelation.run(
+      expressionIds.set(key, id);
+      return id;
+    };
+    const insDefinition = db.prepare(
+      `INSERT INTO kconfig_definition
+         (symbol_id, file, line, prompt, menu_path, condition_expr_id, prompt_condition_id,
+          is_menuconfig, is_configdefault)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const insDefault = db.prepare(
+      `INSERT INTO kconfig_default
+         (definition_id, value_expr_id, condition_expr_id, ord) VALUES (?, ?, ?, ?)`,
+    );
+    const insRelation = db.prepare(
+      `INSERT INTO kconfig_relation
+         (definition_id, kind, target_name, target_symbol_id, condition_expr_id, ord)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    );
+    const insRange = db.prepare(
+      `INSERT INTO kconfig_range
+         (definition_id, low_expr_id, high_expr_id, condition_expr_id, ord)
+       VALUES (?, ?, ?, ?, ?)`,
+    );
+    for (const sym of kconfig.symbols) {
+      const symbolId = symbolIds.get(sym.name)!;
+      for (const definition of sym.definitions) {
+        const definitionId = Number(
+          insDefinition.run(
+            symbolId,
+            definition.file,
+            definition.line,
+            definition.prompt,
+            JSON.stringify(definition.menuPath),
+            expressionId(definition.condition),
+            expressionId(definition.promptCondition),
+            definition.isMenuconfig ? 1 : 0,
+            definition.isConfigDefault ? 1 : 0,
+          ).lastInsertRowid,
+        );
+        for (const item of definition.defaults) {
+          insDefault.run(definitionId, expressionId(item.value), expressionId(item.condition), item.order);
+        }
+        for (const [kind, items] of [
+          ['select', definition.selects],
+          ['imply', definition.implies],
+        ] as const) {
+          for (const item of items) {
+            insRelation.run(
+              definitionId,
+              kind,
+              item.target,
+              symbolIds.get(item.target) ?? null,
+              expressionId(item.condition),
+              item.order,
+            );
+          }
+        }
+        for (const item of definition.ranges) {
+          insRange.run(
             definitionId,
-            kind,
-            item.target,
-            symbolIds.get(item.target) ?? null,
+            expressionId(item.low),
+            expressionId(item.high),
             expressionId(item.condition),
             item.order,
           );
         }
       }
-      for (const item of definition.ranges) {
-        insRange.run(
-          definitionId,
-          expressionId(item.low),
-          expressionId(item.high),
-          expressionId(item.condition),
-          item.order,
-        );
+    }
+
+    const insChoice = db.prepare(
+      'INSERT INTO kconfig_choice (stable_id, scope, name, type, definitions) VALUES (?, ?, ?, ?, ?)',
+    );
+    const insChoiceMember = db.prepare(
+      'INSERT INTO kconfig_choice_member (choice_id, symbol_id) VALUES (?, ?)',
+    );
+    for (const choice of kconfig.choices) {
+      const choiceId = Number(
+        insChoice.run(choice.id, scope, choice.name, choice.type, JSON.stringify(choice.definitions)).lastInsertRowid,
+      );
+      for (const member of new Set(choice.members)) {
+        const memberId = symbolIds.get(member);
+        if (memberId !== undefined) insChoiceMember.run(choiceId, memberId);
       }
     }
-  }
 
-  const insChoice = db.prepare(
-    'INSERT INTO kconfig_choice (stable_id, name, type, definitions) VALUES (?, ?, ?, ?)',
-  );
-  const insChoiceMember = db.prepare(
-    'INSERT INTO kconfig_choice_member (choice_id, symbol_id) VALUES (?, ?)',
-  );
-  for (const choice of kconfig.choices) {
-    const choiceId = Number(
-      insChoice.run(choice.id, choice.name, choice.type, JSON.stringify(choice.definitions)).lastInsertRowid,
-    );
-    for (const member of new Set(choice.members)) {
-      const memberId = symbolIds.get(member);
-      if (memberId !== undefined) insChoiceMember.run(choiceId, memberId);
-    }
   }
 
   // devicetree bindings
@@ -868,17 +882,33 @@ function main(): void {
     count_doc_chunks: String(chunkCount),
     report_docs: canonicalJson(docsReport),
     count_kconfig: String(kconfig.symbols.length),
+    count_kconfig_sysbuild: String(kconfigByScope.get('sysbuild')!.symbols.length),
     report_kconfig: canonicalJson({
       // The report accounts for semantic records. Kconfiglib either evaluates
       // every sourced file or aborts the export, so a successful run has one
       // indexed outcome for every discovered symbol. The separately reported
       // filesScanned value remains useful provenance, but is not the same unit.
-      discovered: kconfig.symbols.length + kconfig.choices.length,
-      indexed: kconfig.symbols.length + kconfig.choices.length,
+      discovered: [...kconfigByScope.values()].reduce(
+        (total, scoped) => total + scoped.symbols.length + scoped.choices.length,
+        0,
+      ),
+      indexed: [...kconfigByScope.values()].reduce(
+        (total, scoped) => total + scoped.symbols.length + scoped.choices.length,
+        0,
+      ),
       intentionallyExcluded: [],
       warnings: [
-        { code: 'source-files', message: `Kconfiglib evaluated ${kconfig.filesScanned} source files.` },
-        ...kconfig.warnings.map((message) => ({ code: 'kconfiglib', message })),
+        {
+          code: 'report-units',
+          message: 'Counts cover both Kconfig namespaces: the application tree and sysbuild.',
+        },
+        ...[...kconfigByScope].map(([scope, scoped]) => ({
+          code: 'source-files',
+          message: `Kconfiglib evaluated ${scoped.filesScanned} source files for the ${scope} namespace.`,
+        })),
+        ...[...kconfigByScope].flatMap(([scope, scoped]) =>
+          scoped.warnings.map((message) => ({ code: 'kconfiglib', message: `${scope}: ${message}` })),
+        ),
       ],
       errors: [],
     }),

@@ -74,11 +74,11 @@ ZEPHYR_AI_INDEX="$PWD/index/zephyr.db" claude --plugin-dir "$PWD/plugin"
 
 | Tools | Answers |
 | --- | --- |
-| `search_kconfig` / `get_kconfig` | Symbol declarations, type, prompt/assignability, independent definition contexts, defaults, ranges, selects and implies |
+| `search_kconfig` / `get_kconfig` | Symbol declarations, type, prompt/assignability, independent definition contexts, defaults, ranges, selects and implies, in both the application (`CONFIG_`) and sysbuild (`SB_CONFIG_`) namespaces |
 | `search_bindings` / `get_binding` | Compatible properties, recursive child bindings, constraints, provenance, and a type-aware skeleton |
 | `search_boards` / `get_board` | Exact targets, revisions, SoCs, features, board documentation, and the runners the board registers with the command each one serves |
 | `search_api` / `get_api` | Public C declarations, parameters, return contracts, groups, and Doxygen anchors when semantic XML is used |
-| `check_config` | A verdict per line for a whole `prj.conf`, defconfig, `.overlay`, or `.dts` |
+| `check_config` | A verdict per line for a whole `prj.conf`, defconfig, `sysbuild.conf`, `.overlay`, or `.dts` |
 | `check_environment` | Every Python interpreter on the machine and which of this Zephyr's requirements each carries, plus west, the SDK, and the command that closes each gap |
 | `get_runner` | What a flash/debug runner implements and which options it accepts, read from the tree's own runner classes |
 | `search_samples` / `get_sample` | Samples and upstream Twister test suites: platform allowlists and integration platforms, scenario names, README, configuration, overlays, and source files |

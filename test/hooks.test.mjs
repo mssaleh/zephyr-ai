@@ -690,6 +690,19 @@ describe('the write hook and check_config make the same claims', {
       text: '&i2c0 {\n\tdev@1 {\n\t\tcompatible = "acme,invented-widget";\n\t};\n};\n',
       expect: [],
     },
+    {
+      // A plain CONFIG_ line in sysbuild.conf is ignored by the build rather than
+      // rejected, so it is invisible until the option fails to take effect.
+      name: 'sysbuild.conf',
+      text: 'SB_CONFIG_BOOTLOADER_MCUBOOT=y\nCONFIG_BOOTLOADER_MCUBOOT=y\n',
+      expect: [/is a CONFIG_ line in a sysbuild\.conf-style file/],
+    },
+    {
+      // And the reverse: SB_CONFIG_ in an application configuration.
+      name: 'prj.conf',
+      text: 'SB_CONFIG_BOOTLOADER_MCUBOOT=y\n',
+      expect: [/is a SB_CONFIG_ line in a prj\.conf-style file/],
+    },
   ];
 
   for (const example of CASES) {

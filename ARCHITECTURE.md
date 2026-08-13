@@ -103,6 +103,19 @@ The canonical board-neutral catalogue deliberately excludes application-local
 Kconfig. Corpus recall checks all sample/snippet assignments and requires a checked-in
 source-backed record for every residual module/image-local exclusion.
 
+A Zephyr tree defines two Kconfig graphs, and both are indexed. The application
+tree is rooted at `Kconfig` and written `CONFIG_`; sysbuild is rooted at
+`share/sysbuild/Kconfig` and written `SB_CONFIG_`, the namespace set by
+`share/sysbuild/cmake/modules/sysbuild_kconfig.cmake`. Each is evaluated by the
+same exporter against the same environment and stored under its own `scope`,
+because a name is not an identity across them: 2876 of sysbuild's 2909 symbols
+share a name with an application symbol, since `share/sysbuild/Kconfig` sources
+the whole board and SoC tree, and ten of those names are genuinely different
+symbols. `BOOTLOADER_MCUBOOT` includes MCUboot in the build in one graph and marks
+an image as chain-loaded by it in the other. Sharing a declaring file is what
+separates a name reached twice from two distinct symbols, and it is the test used
+to decide when an answer needs to warn about the other namespace.
+
 ### Devicetree bindings
 
 The embedded exporter invokes the pinned tree's `devicetree.edtlib`. It supports

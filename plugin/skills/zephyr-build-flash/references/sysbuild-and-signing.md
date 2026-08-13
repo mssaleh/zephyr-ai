@@ -34,8 +34,21 @@ SB_CONFIG_BOOTLOADER_MCUBOOT=y
 SB_CONFIG_MCUBOOT_MODE_SWAP_USING_MOVE=y
 ```
 
-Search the system options with `search_kconfig` as usual — they are indexed like
-any other Kconfig symbol.
+Sysbuild options are a **separate Kconfig namespace**, and the index keeps them
+apart from the application ones:
+
+```
+search_kconfig query="mcuboot mode" scope=sysbuild
+get_kconfig name=SB_CONFIG_BOOTLOADER_MCUBOOT
+```
+
+The prefix is what selects the namespace. Ten symbol names exist in both trees and
+mean different things — `BOOTLOADER_MCUBOOT` includes MCUboot in the build under
+`SB_CONFIG_`, and marks this image as chain-loaded by it under `CONFIG_` — so
+`get_kconfig` says so when the name you asked about is one of them.
+
+`check_config` reads `sysbuild.conf` in the right namespace and reports a plain
+`CONFIG_` line there, which the build ignores rather than rejects.
 
 ## Flashing a signed image
 
@@ -68,7 +81,7 @@ Read the version this index was built from rather than assuming the option set:
 
 ```
 get_doc path=doc/develop/west/sign.rst
-search_kconfig query=MCUBOOT_SIGNATURE
+search_kconfig query=MCUBOOT_SIGNATURE scope=sysbuild
 ```
 
 ## Checking what was produced
