@@ -76,6 +76,19 @@ function collectDoxygenXml(root: string, xmlDirectory: string): CollectedApi {
         header: index >= 0 ? `include/zephyr/${portable.slice(index + marker.length)}` : portable,
       };
     });
+    // Doxygen emits compounds in index.xml order, which follows its own traversal
+    // of the input tree and so differs between machines. Counts are identical
+    // either way, which is how 84,934 rows came to be stored in one order here and
+    // another in CI without anything noticing until the content digest existed.
+    // Names are not unique — 6,637 are shared by more than one symbol — so the key
+    // carries the provenance that separates them.
+    collected.symbols.sort(
+      byField((symbol) =>
+        [symbol.name, symbol.header, String(symbol.line).padStart(9, '0'), symbol.kind, symbol.doxygenId ?? '']
+          .join('\u0000'),
+      ),
+    );
+    collected.groups.sort(byField((group) => `${group.id}\u0000${group.title ?? ''}`));
     return collected;
   } finally {
     rmSync(temporary, { recursive: true, force: true });

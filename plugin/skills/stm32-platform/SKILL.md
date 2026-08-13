@@ -4,7 +4,7 @@ description: Zephyr firmware on STM32 microcontrollers. Use when an STM32 build 
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.6.0"
+  version: "0.6.1"
 ---
 
 # STM32 on Zephyr

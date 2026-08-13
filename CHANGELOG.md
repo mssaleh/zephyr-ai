@@ -3,6 +3,21 @@
 All notable user-visible changes are recorded here. The format follows Keep a
 Changelog, and releases use semantic versioning.
 
+## [0.6.1] - 2026-08-13
+
+Rebuild the index with the `zephyr-index` skill after upgrading.
+
+### Fixed
+
+- **The Doxygen-backed API corpus was still stored in a machine-dependent order.**
+  Doxygen emits compounds in `index.xml` order, which follows its own traversal of
+  the input tree, and the semantic path stored them as they arrived. Every count
+  was identical, so 84,934 rows sat in one order here and another on a CI runner.
+  The content digest added in 0.6.0 caught it on its first release build — the
+  defect predates that release and had been invisible. Rows are now stored in a
+  key that is provably total across the corpus: name, header, line, kind, and
+  Doxygen id, which is needed because thousands of API names are not unique.
+
 ## [0.6.0] - 2026-08-13
 
 Rebuild the index with the `zephyr-index` skill after upgrading. The schema is
