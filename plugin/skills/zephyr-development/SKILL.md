@@ -4,7 +4,7 @@ description: Core workflow for writing, building, and debugging Zephyr RTOS firm
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.3.0"
+  version: "0.4.0"
 ---
 
 # Zephyr development

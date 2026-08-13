@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-export const INDEX_SCHEMA_VERSION = 7;
+export const INDEX_SCHEMA_VERSION = 8;
 export const INDEX_DESCRIPTOR_VERSION = 2;
 export const INDEX_BUILDER_VERSION = '0.7.0';
 

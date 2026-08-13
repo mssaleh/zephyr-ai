@@ -6,7 +6,7 @@ compatibility: Requires Node.js 24+, Python 3.12+ with PyYAML, and a complete Ze
 allowed-tools: Bash(node:*) Bash(west:*) Bash(ls:*) Bash(test:*) Bash(python3:*) Bash(command:*) Read
 metadata:
   author: zephyr-ai
-  version: "0.3.0"
+  version: "0.4.0"
 ---
 
 # Build the Zephyr index
@@ -43,19 +43,20 @@ What to do with each result:
   here works until it is upgraded. Stop and say so.
 - **Python older than 3.12, or PyYAML missing** — if the project has a west
   workspace, its virtual environment usually has both, and the indexer prefers
-  that interpreter. Otherwise create one and point `PYTHON_EXECUTABLE` at it:
-
-  ```bash
-  python3 -m venv .venv && .venv/bin/pip install west pyyaml
-  export PYTHON_EXECUTABLE="$PWD/.venv/bin/python"
-  ```
-
+  that interpreter. Otherwise point `PYTHON_EXECUTABLE` at one that has them; the
+  `zephyr-prerequisites` skill covers the layouts and their trade-offs.
 - **`west` absent** — only needed to *discover* an existing workspace and to run
   `west update`. The pinned fetch in step 2 does not need it, so an empty project
   can proceed without it.
 
 Report which prerequisite failed and the single command that fixes it. Do not
 begin a large download before the chain behind it is known to hold.
+
+**Indexing needs less than building does.** This contract covers indexing only;
+satisfying it does not mean `west build` will work, because CMake resolves Python
+from PATH rather than through `west`. Once an index exists, `check_environment`
+reports the build contract separately. Do not treat a successful index as evidence
+that the machine can build.
 
 ## 2. Find the Zephyr tree
 

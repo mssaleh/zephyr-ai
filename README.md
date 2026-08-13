@@ -76,9 +76,11 @@ ZEPHYR_AI_INDEX="$PWD/index/zephyr.db" claude --plugin-dir "$PWD/plugin"
 | --- | --- |
 | `search_kconfig` / `get_kconfig` | Symbol declarations, type, prompt/assignability, independent definition contexts, defaults, ranges, selects and implies |
 | `search_bindings` / `get_binding` | Compatible properties, recursive child bindings, constraints, provenance, and a type-aware skeleton |
-| `search_boards` / `get_board` | Exact targets, revisions, SoCs, features, and board documentation |
+| `search_boards` / `get_board` | Exact targets, revisions, SoCs, features, board documentation, and the runners the board registers with the command each one serves |
 | `search_api` / `get_api` | Public C declarations, parameters, return contracts, groups, and Doxygen anchors when semantic XML is used |
 | `check_config` | A verdict per line for a whole `prj.conf`, defconfig, `.overlay`, or `.dts` |
+| `check_environment` | Every Python interpreter on the machine and which of this Zephyr's requirements each carries, plus west, the SDK, and the command that closes each gap |
+| `get_runner` | What a flash/debug runner implements and which options it accepts, read from the tree's own runner classes |
 | `search_samples` / `get_sample` | Samples and upstream Twister test suites: platform allowlists and integration platforms, scenario names, README, configuration, overlays, and source files |
 | `search_docs` / `get_doc` | Section-level documentation with resolved includes, source origins, and official URLs |
 | `get_source` | Any file in the indexed tree, read at the commit the index was built from, with a line range and a citable reference |
@@ -86,14 +88,14 @@ ZEPHYR_AI_INDEX="$PWD/index/zephyr.db" claude --plugin-dir "$PWD/plugin"
 
 ### Skills and agents
 
-The skills cover project setup, Kconfig, devicetree, build/flash, debugging,
-RTOS patterns, drivers and sensors, power, Bluetooth, networking, testing, indexing,
-and STM32/ESP32 platform workflows. Fenced snippets are explicitly illustrative unless
+The skills cover host prerequisites, project setup, Kconfig, devicetree, build/flash,
+debugging, RTOS patterns, drivers and sensors, power, Bluetooth, networking, testing,
+indexing, and STM32/ESP32 platform workflows. Fenced snippets are explicitly illustrative unless
 their metadata identifies a release-gated example.
 
 | Skill group | Included skills | Coverage boundary |
 | --- | --- | --- |
-| Project foundation | `zephyr-project-setup`, `zephyr-development`, `zephyr-index` | Workspace layout, grounded implementation workflow, and project index lifecycle |
+| Project foundation | `zephyr-prerequisites`, `zephyr-project-setup`, `zephyr-development`, `zephyr-index` | Workspace layout, grounded implementation workflow, and project index lifecycle |
 | Configuration and hardware | `zephyr-kconfig`, `zephyr-devicetree`, `zephyr-drivers-sensors` | Semantic configuration/binding lookup, overlays, buses, devices, and sensors |
 | Kernel behavior | `zephyr-rtos-patterns`, `zephyr-power` | Concurrency, timing, ISR boundaries, synchronization, and Zephyr power workflows |
 | Connectivity | `zephyr-bluetooth`, `zephyr-networking` | Zephyr Bluetooth and networking configuration/API workflows |

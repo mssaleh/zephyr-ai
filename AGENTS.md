@@ -178,7 +178,7 @@ validate ./plugin --strict` catches this; run it.
 
 | Path | Contents |
 | --- | --- |
-| `packages/ingest/src/adapters/` | Embedded Python exporters for target-tree Kconfiglib, edtlib, and Doxygen XML |
+| `packages/ingest/src/adapters/` | Embedded Python exporters for target-tree Kconfiglib, edtlib, west runner classes, and Doxygen XML |
 | `packages/ingest/src/parsers/` | RST and conservative fallback/fixture parsers; pure functions, no I/O |
 | `packages/ingest/src/sources/` | Filesystem walkers that feed the parsers and shape records |
 | `packages/ingest/src/schema.ts` | DDL and the FTS population statement |
@@ -186,7 +186,7 @@ validate ./plugin --strict` catches this; run it.
 | `packages/mcp-server/src/protocol.ts` | JSON-RPC/MCP 2025-11-25 over stdio |
 | `packages/mcp-server/src/db.ts` | Index resolution, FTS query building, helpers |
 | `packages/mcp-server/src/tools/` | One module per domain; `index.ts` assembles them |
-| `plugin/skills/*/SKILL.md` | Workflow knowledge, one directory per skill |
+| `plugin/skills/*/SKILL.md` | Workflow knowledge, one directory per skill; `references/*.md` holds depth read on demand |
 | `plugin/agents/*.md` | Subagent definitions |
 | `plugin/scripts/*.mjs` | Hook scripts — plain JS, no build step, no dependencies |
 
@@ -205,7 +205,10 @@ fixtures *and* the real tree), collector in `sources/`, tables in `schema.ts`,
 writes in `cli.ts`, then bump `SCHEMA_VERSION` and rebuild.
 
 **A new skill.** Directory under `plugin/skills/` with `SKILL.md`, frontmatter
-`name` matching the directory. The `description` decides whether the skill ever
+`name` matching the directory. Depth that only some sessions need goes in
+`references/*.md`, which the model reads on demand; every Markdown file under a
+skill is held to the same catalogue-backed checks, so moving prose there does not
+move it out of verification. The `description` decides whether the skill ever
 fires — name the triggering situations and the vocabulary a user would actually
 use. Keep the body under ~500 lines and teach the model to query the MCP tools
 before writing code; that is what converts the index into correct output.

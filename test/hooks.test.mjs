@@ -251,6 +251,25 @@ describe('PostToolUse build failure', () => {
     }
   });
 
+  it('sends a host environment failure to check_environment, not to the symbol lookups', async () => {
+    // These arrive wrapped in "CMake Error", so without a more specific rule they
+    // are classified as a CMake problem and answered with advice about verifying
+    // symbols — sending the reader to edit a file that is not wrong. The real text
+    // upstream emits is scripts/zephyr_module.py's `sys.exit('Missing jsonschema
+    // dependency')`, surfaced by zephyr_module.cmake as a FATAL_ERROR.
+    const cases = [
+      'CMake Error at cmake/modules/zephyr_module.cmake:73 (message):\n  Missing jsonschema dependency',
+      "CMake Error: ModuleNotFoundError: No module named 'pykwalify'",
+      'CMake Error at CMakeLists.txt:8 (find_package): Could NOT find Python3',
+    ];
+    for (const output of cases) {
+      const result = await runBuild('west build -b x app', { stderr: output, exit_code: 1 });
+      strictEqual(result.code, 2, `${output} should block`);
+      match(result.stderr, /check_environment/);
+      match(result.stderr, /not a mistake in the source/);
+    }
+  });
+
   it('speaks on a non-zero build even when no signature is recognised', async () => {
     const result = await runBuild('west build', { stderr: 'something unfamiliar', exit_code: 1 });
     strictEqual(result.code, 2);

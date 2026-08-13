@@ -3,6 +3,67 @@
 All notable user-visible changes are recorded here. The format follows Keep a
 Changelog, and releases use semantic versioning.
 
+## [0.4.0] - 2026-08-13
+
+Indexes built by earlier versions are not readable by this one: the index schema is
+now 8. Rebuild with the `zephyr-index` skill after upgrading.
+
+### Added
+
+- **West flash and debug runners are indexed.** `get_board` now names every runner
+  a board registers, which one `west flash` and `west debug` each select, and the
+  arguments the board presets — read from the board's own `board.cmake` and the
+  common runner files it includes. The two defaults are not always the same runner:
+  every Espressif board flashes with `esp32` and debugs with `openocd`, and a board
+  can name a default it never registers, in which case that command has nothing to
+  run and the answer says so. Checked against the `runners.yaml` Zephyr's build
+  system resolves, across eleven boards and six vendors.
+- `get_runner` reports what a runner implements and which options it accepts —
+  `--dev-id`, `--erase`, `--reset-type` and its permitted values, `--extload`,
+  `-O` — introspected from the runner classes in the indexed tree rather than from
+  a fixed table. West rejects an option a runner does not declare before touching
+  hardware.
+- `search_boards` takes a `runner` filter, so the probe on the desk can narrow the
+  board list.
+- `check_environment` reports whether this machine can actually build the indexed
+  Zephyr version. It lists every Python interpreter separately with the packages
+  each one carries, because the interpreter that satisfies the indexer is often not
+  the one CMake selects — a west installed in its own environment indexes perfectly
+  and cannot build. It names the command that closes each gap and never installs
+  anything.
+- A new `zephyr-prerequisites` skill covers the interpreter contract, Python
+  environments with uv or pip, toolchain installation through `west sdk`, and
+  per-board host tools.
+- The build-failure hook recognises a host environment failure and routes it to
+  `check_environment` instead of to the symbol lookups. These arrive wrapped in
+  `CMake Error` and were previously answered with advice about verifying symbols,
+  sending the reader to edit a file that was not wrong.
+
+### Changed
+
+- `zephyr-build-flash` no longer carries a hand-written runner table. It listed six
+  runners; this Zephyr ships 49 and boards reference 41. It now calls `get_board`
+  and `get_runner`, and its depth moved to `references/`, read on demand.
+- `index_status` counts the runner, board-runner, and west-command corpora, and
+  reports west coverage alongside the others.
+
+### Fixed
+
+- **The release gate could not pass in CI.** `api_symbol` counts are Doxygen
+  output compared for exact equality against a committed fixture, and
+  `scripts/toolchain.json` declared `doxygen` with no version — the one tool whose
+  output is baselined was the one the contract did not pin. CI's Doxygen 1.9.8
+  found 84,919 symbols where the fixture recorded 84,934. The contract now pins an
+  exact version, which a minimum could not do because a newer Doxygen diverges as
+  surely as an older one, and CI installs that version instead of the
+  distribution's.
+- The runner catalogue no longer depends silently on which Python built the index.
+  `runners/openocd.py` imports the west package, and `runners/__init__.py`
+  downgrades an import failure to a warning, so an index built by an interpreter
+  without west omitted the runner 328 boards select and said nothing. Completeness
+  is now recorded in the coverage map and forms part of the context fingerprint,
+  and the gate builds refuse an incomplete catalogue.
+
 ## [0.3.0] - 2026-08-13
 
 Indexes built by earlier versions are not readable by this one: the index schema is

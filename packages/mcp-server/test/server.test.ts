@@ -3,7 +3,7 @@
  * stdio exactly as a client would.
  */
 
-import { ok, strictEqual } from 'node:assert/strict';
+import { deepStrictEqual, ok, strictEqual } from 'node:assert/strict';
 import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -285,13 +285,13 @@ describe('MCP server', { skip: !ready && 'run `npm run build` and build the inde
     it('lists tools with schemas', async () => {
       const res = await client.request('tools/list');
       const tools = res.result?.['tools'] as { name: string; description: string; inputSchema: unknown }[];
-      strictEqual(tools.length, 15);
+      strictEqual(tools.length, 17);
       for (const tool of tools) {
         ok(tool.description.length > 60, `${tool.name} needs a substantial description`);
         ok(tool.inputSchema, `${tool.name} needs an inputSchema`);
       }
       const names = tools.map((t) => t.name);
-      for (const expected of ['search_kconfig', 'get_binding', 'search_boards', 'get_source', 'index_status', 'check_config']) {
+      for (const expected of ['search_kconfig', 'get_binding', 'search_boards', 'get_source', 'index_status', 'check_config', 'get_runner', 'check_environment']) {
         ok(names.includes(expected), `expected tool ${expected}`);
       }
     });
@@ -404,6 +404,148 @@ describe('MCP server', { skip: !ready && 'run `npm run build` and build the inde
       const asApp = await client.call('check_config', { path: 'prj.conf', text });
       const asDefconfig = await client.call('check_config', { path: 'board_defconfig', text });
       ok(Number(asDefconfig.structured['problemCount']) <= Number(asApp.structured['problemCount']));
+    });
+  });
+
+  describe('check_environment', () => {
+    it('separates the interpreter a build uses from the one the indexer used', async () => {
+      const res = await client.call('check_environment');
+      const interpreters = res.structured['interpreters'] as {
+        path: string;
+        role: string;
+        missing: string[];
+      }[];
+      ok(interpreters.length > 0, 'at least the interpreter running the tests must be visible');
+      // The whole point of the tool: CMake resolves Python from PATH, so python3
+      // is the build's interpreter whatever the indexer preferred.
+      const build = interpreters.find((item) => item.path === 'python3');
+      ok(build, 'python3 must be probed and labelled');
+      ok(build.role.includes('CMake'), `python3 must be labelled as the build interpreter: ${build.role}`);
+      ok(res.text.includes('Python interpreters'));
+    });
+
+    it('never reports a requirement whose marker excludes this platform', async () => {
+      // Zephyr requires windows-curses only on win32. Calling it missing on Linux
+      // would be a false report of a broken environment, which is how a checker
+      // gets ignored along with everything else the plugin says.
+      const res = await client.call('check_environment');
+      const interpreters = res.structured['interpreters'] as { missing: string[] }[];
+      for (const item of interpreters) {
+        ok(
+          !item.missing.includes('windows-curses'),
+          'a requirement excluded by its environment marker must not be reported missing',
+        );
+      }
+      if (process.platform !== 'win32') ok(!res.text.includes('windows-curses'));
+    });
+
+    it('grounds the toolchain advice in what this Zephyr ships', async () => {
+      const res = await client.call('check_environment');
+      // 4.4 ships `west sdk`; the advice must come from the indexed command list
+      // rather than assuming a command that older trees do not have.
+      strictEqual(res.structured['shipsWestSdk'], true);
+      ok((res.structured['requirements'] as number) > 0, 'the index must record a requirements list');
+    });
+
+    it('names the runners a board needs on the host without inventing binaries', async () => {
+      const res = await client.call('check_environment', { board: 'esp32s3_devkitc' });
+      ok(res.text.includes('esp32'));
+      ok(res.text.includes('openocd'));
+      ok(res.text.includes('host-tools.rst'), 'it must point at the indexed host-tool document');
+      // There is no uniform declaration of a runner's host binary, so it must not
+      // claim to have checked for one.
+      ok(!/\besptool\b/.test(res.text), 'must not name a host binary it cannot verify');
+    });
+  });
+
+  describe('west runners', () => {
+    // Every fact here is checked against the resolved runners.yaml that Zephyr's
+    // own build system writes, for these same boards.
+    it('names both defaults, which are not always the same runner', async () => {
+      const esp = await client.call('get_board', { name: 'esp32s3_devkitc' });
+      const runners = esp.structured['runners'] as {
+        runner: string;
+        available: boolean;
+        flashDefault: boolean;
+        debugDefault: boolean;
+      }[];
+      strictEqual(runners.find((r) => r.flashDefault)?.runner, 'esp32');
+      strictEqual(runners.find((r) => r.debugDefault)?.runner, 'openocd');
+      ok(esp.text.includes('`west flash` uses `esp32`'));
+      ok(esp.text.includes('`west debug` uses `openocd`'));
+
+      // A board whose two defaults coincide must not be described as if they differ.
+      const sim = await client.call('get_board', { name: 'native_sim' });
+      const simRunners = sim.structured['runners'] as { runner: string }[];
+      strictEqual(simRunners.length, 1);
+      strictEqual(simRunners[0]?.runner, 'native');
+    });
+
+    it('separates a declared runner from a registered one', async () => {
+      // qemu_cortex_m3 sets qemu as the debug default and never finalises it, so
+      // Zephyr writes no runners.yaml at all and `west debug` has nothing to run.
+      // Reporting it as available would send the reader at a command that fails.
+      const res = await client.call('get_board', { name: 'qemu_cortex_m3' });
+      const runners = res.structured['runners'] as {
+        runner: string;
+        available: boolean;
+        debugDefault: boolean;
+      }[];
+      strictEqual(runners.length, 1);
+      strictEqual(runners[0]?.runner, 'qemu');
+      strictEqual(runners[0]?.debugDefault, true);
+      strictEqual(runners[0]?.available, false);
+      ok(res.text.includes('not registered'));
+      ok(!res.text.includes('`west debug` uses'));
+    });
+
+    it('never splits a preset flag from the value it takes', async () => {
+      // board_runner_args is a flat argument vector, so `--cmd-load` and the command
+      // it loads are separate entries. openocd's value is ${OPENOCD_CMD_LOAD_DEFAULT},
+      // expanded at build time; printing the flag without it would read as a complete
+      // argument and is worse than printing nothing.
+      const res = await client.call('get_board', { name: 'nucleo_h743zi' });
+      if (res.text.includes('Arguments the board always passes')) {
+        const block = res.text.slice(res.text.indexOf('Arguments the board always passes'));
+        ok(!block.includes('--cmd-load'), 'a flag whose value is unexpanded must not be shown');
+        ok(!/\$\{/.test(block), 'no unexpanded reference may reach the reader');
+      }
+      // The runner whose arguments are all settled is still shown in full.
+      ok(res.text.includes('`--port=swd` `--reset-mode=hw`'));
+    });
+
+    it('reports capabilities read from this tree, not from a fixed list', async () => {
+      const res = await client.call('get_runner', { name: 'stm32cubeprogrammer' });
+      strictEqual(res.structured['found'], true);
+      const capabilities = res.structured['capabilities'] as Record<string, unknown>;
+      // The runner class declares exactly these three; passing any other value to
+      // --reset-type is rejected before the probe is touched.
+      deepStrictEqual(capabilities['reset_types_supported'], ['sw', 'hw', 'core']);
+      deepStrictEqual(res.structured['commands'], ['flash']);
+      ok(res.text.includes('`sw`, `hw`, `core`'));
+      // It flashes but does not debug, so it must not be offered for `west debug`.
+      ok(!res.text.includes('`west debug`'));
+    });
+
+    it('filters boards by a runner they actually register', async () => {
+      const res = await client.call('search_boards', { query: 'nucleo', runner: 'pyocd', limit: 5 });
+      const results = res.structured['results'] as { name: string }[];
+      ok(results.length > 0);
+      for (const board of results) {
+        const detail = await client.call('get_board', { name: board.name });
+        const runners = detail.structured['runners'] as { runner: string; available: boolean }[];
+        ok(
+          runners.some((r) => r.runner === 'pyocd' && r.available),
+          `${board.name} was returned for runner=pyocd but does not register it`,
+        );
+      }
+    });
+
+    it('reports an unknown runner as a catalogue miss, not as absence', async () => {
+      const res = await client.call('get_runner', { name: 'openocd2' });
+      strictEqual(res.structured['found'], false);
+      ok(res.text.includes('was not found in the indexed Zephyr'));
+      ok(res.text.includes('openocd'), 'a one-character miss must suggest the real runner');
     });
   });
 

@@ -42,11 +42,19 @@ for (const tool of contract.tools) {
     problems.push(`${tool.command} is not available (${tool.tier} tier)\n      ${tool.install}`);
     continue;
   }
-  if (!tool.minimum) continue;
+  if (!tool.minimum && !tool.exact) continue;
   const found = parseVersion(`${probe.stdout}${probe.stderr}`);
   if (!found) {
     problems.push(`${tool.command} did not report a parseable version\n      ${tool.install}`);
-  } else if (olderThan(found, tool.minimum)) {
+  } else if (tool.exact && found.join('.') !== tool.exact) {
+    // An exact pin is for a tool whose output a fixture records verbatim, where a
+    // newer version diverges as surely as an older one. Say which way it differs,
+    // because "install the pinned version" reads as an error either way.
+    const direction = olderThan(found, tool.exact) ? 'older' : 'newer';
+    problems.push(
+      `${tool.command} is ${found.join('.')}, ${direction} than the pinned ${tool.exact}\n      ${tool.install}`,
+    );
+  } else if (tool.minimum && olderThan(found, tool.minimum)) {
     problems.push(
       `${tool.command} is ${found.join('.')}, below the required ${tool.minimum}\n      ${tool.install}`,
     );

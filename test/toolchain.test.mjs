@@ -54,6 +54,23 @@ describe('local gate and CI cannot diverge', () => {
     }
   });
 
+  it('keeps an exact pin and its install command in agreement', () => {
+    // Preflight quotes `install` verbatim when a version is wrong. If the pin moves
+    // and the command does not, it tells the reader to install the version it just
+    // rejected, and the only way out is to read this file.
+    for (const tool of contract.tools) {
+      if (!tool.exact) continue;
+      ok(
+        !tool.minimum,
+        `${tool.command} declares both exact and minimum; they answer different questions`,
+      );
+      ok(
+        tool.install.includes(tool.exact),
+        `${tool.command} is pinned to ${tool.exact} but its install command never names it: ${tool.install}`,
+      );
+    }
+  });
+
   it('never makes a gate conditional on a tool being present', () => {
     // A check that quietly downgrades to a skip is how a green run stops meaning
     // anything. Guard the two validators that shell out to an external binary.

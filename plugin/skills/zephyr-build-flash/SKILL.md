@@ -1,35 +1,33 @@
 ---
 name: zephyr-build-flash
-description: Build, flash, and run Zephyr firmware with west. Use when compiling an application, choosing a board target, flashing or debugging hardware, working with sysbuild or MCUboot, setting up or updating a west workspace, or when a build behaves inconsistently. Covers west build options, pristine builds, runners for STM32 and ESP32, multi-image builds, and reading build output.
+description: Build, flash, and run Zephyr firmware with west. Use when compiling an application, choosing a board target, flashing or debugging hardware, picking or configuring a runner, working with sysbuild or MCUboot, setting up or updating a west workspace, or when a build behaves inconsistently. Covers west build options, pristine builds, runner selection from the indexed tree, multi-image builds, and reading build output.
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.3.0"
+  version: "0.4.0"
 ---
 
 # Building and flashing
 
 > Example status: fenced snippets are illustrative unless an immediately preceding `zephyr-ai-example` metadata comment names a verified target and build command.
 
+## Before the first build
+
+If this machine has not built Zephyr before, or a build fails with a missing
+Python module or a missing toolchain, use the `zephyr-prerequisites` skill and
+call `check_environment`. A host environment failure looks like a build error but
+nothing in the application is wrong, and editing it will not help.
+
 ## The workspace
 
 Zephyr applications live in a **west workspace** — Zephyr plus its modules,
 managed together:
 
-First make sure `west` comes from the Python environment intended for this
-workspace. If it is absent, create or activate a virtual environment and install it:
-
-```bash
-python3 -m venv <workspace>/.venv
-source <workspace>/.venv/bin/activate
-python -m pip install west
-```
-
 ```bash
 west init -m https://github.com/zephyrproject-rtos/zephyr --mr v4.4.2 my-ws
 cd my-ws && west update
 west zephyr-export                 # makes find_package(Zephyr) work
-west packages pip --install        # Python dependencies
+west packages pip --install        # Python dependencies, into west's interpreter
 ```
 
 `west update` after any manifest change; module versions are pinned by
@@ -50,12 +48,8 @@ If `.west/config` exists but a manifest project required by the target is missin
 run `west update` in that workspace. Do not borrow a `modules/` directory from a
 different topdir; its revisions may not match the selected manifest.
 
-Verify the toolchain before debugging anything else:
-
-```bash
-echo "$ZEPHYR_SDK_INSTALL_DIR"
-west --version && cmake --version
-```
+`references/west-commands.md` covers the wider command surface — `sign`, `twister`,
+`blobs`, `shields`, `sdk` — and which of them a given Zephyr version ships.
 
 ## Building
 
@@ -94,35 +88,40 @@ anything else.** Incremental builds do not always re-run Kconfig and devicetree
 generation, and this accounts for a large share of apparently impossible
 behaviour.
 
-## Flashing
+## Flashing and debugging
 
 ```bash
-west flash                       # default runner for the board
-west flash -r <runner>           # pick one
-west flash --dev-id <serial>     # when several probes are attached
+west flash                       # the board's default flash runner
+west flash -r <runner>           # pick another one it registers
+west debug                       # the board's default debug runner
+west attach                      # attach without resetting
+west debugserver                 # GDB server only, connect your own client
 ```
 
-Runners are declared per board in `board.cmake`. Common ones:
+**Ask the index which runners a board has rather than assuming.** Runners are
+declared per board in `board.cmake`, they differ by vendor and by board within a
+vendor, and the set changes between Zephyr versions:
 
-| Runner | Typical use |
-| --- | --- |
-| `openocd` | Broadly supported, many probes |
-| `pyocd` | CMSIS-DAP, many Cortex-M targets |
-| `jlink` | SEGGER probes |
-| `stm32cubeprogrammer` | ST-LINK on STM32, needs STM32CubeProgrammer installed |
-| `dfu-util` | USB DFU bootloader |
-| `esp32` | Espressif, wraps esptool over a serial port |
-
-See `zephyr-build-flash` companions `stm32-platform` and `esp32-platform` for
-vendor specifics, and run `west flash --context` to list what a board supports.
-
-## Debugging on hardware
-
-```bash
-west debug            # start GDB attached to the target
-west attach           # attach without resetting
-west debugserver      # GDB server only, connect your own client
 ```
+get_board board=<name>       # every registered runner, and which command selects it
+get_runner name=<runner>     # which commands it implements and which options it takes
+```
+
+Three things that output tells you and a general rule cannot:
+
+- **`west flash` and `west debug` can select different runners on the same
+  board.** Every Espressif board flashes with `esp32` and debugs with `openocd`.
+- **Options are per runner.** `--dev-id`, `--erase`, `--reset-type`, `--extload`
+  and `-O` exist only where the runner declares them, and west rejects an
+  undeclared one before touching hardware. `--reset-type` also has a fixed set of
+  values per runner.
+- **A board can name a default runner it never registers,** in which case that
+  command has nothing to run. `get_board` says so rather than implying it works.
+
+In a configured build directory, `west flash --context` is the authoritative list
+for that exact build. Host programs each runner wraps are covered in the
+`zephyr-prerequisites` skill; vendor specifics are in `stm32-platform` and
+`esp32-platform`.
 
 ## Running without hardware
 
@@ -134,25 +133,19 @@ west build -b native_sim . && ./build/zephyr/zephyr.exe
 ```
 
 QEMU targets (`qemu_cortex_m3`, `qemu_riscv32`) run with `west build -t run`.
+They register no flash runner, so `west flash` is not the way to start them.
 
 ## Multi-image builds with sysbuild
-
-Sysbuild builds several images as one system — application plus MCUboot, or the
-two cores of a dual-core SoC:
 
 ```bash
 west build --sysbuild -b <target> .
 ```
 
-```kconfig
-# sysbuild.conf
-SB_CONFIG_BOOTLOADER_MCUBOOT=y
-```
-
-With MCUboot the artefact to flash is the signed image
-(`build/<app>/zephyr/zephyr.signed.bin`); flashing the unsigned one produces a
-board that boots the bootloader and stops. Sysbuild Kconfig lives in
-`sysbuild.conf` and uses the `SB_` prefix — a plain `CONFIG_` there does nothing.
+Sysbuild builds several images as one system — application plus MCUboot, or the
+two cores of a dual-core SoC. Its Kconfig lives in `sysbuild.conf` under the `SB_`
+prefix, and with a bootloader the artefact to flash is the *signed* image.
+`references/sysbuild-and-signing.md` has the layout, the flashing consequences,
+and how `west sign` relates.
 
 ## Reading the output
 
@@ -172,6 +165,15 @@ optimisation level with `CONFIG_SIZE_OPTIMIZATIONS=y`.
 Artefacts land in `build/zephyr/`: `zephyr.elf` for debugging, `zephyr.bin` and
 `zephyr.hex` for flashing, `.config` for the resolved Kconfig, `zephyr.dts` for
 the resolved devicetree.
+
+## Validation checklist
+
+- [ ] `west topdir` prints the workspace you intend to build in.
+- [ ] The target came from `search_boards`, qualified, not from a product name.
+- [ ] The build was pristine (`-p always`) after any Kconfig, devicetree, or CMake change.
+- [ ] The memory report shows the image fits, with headroom you are willing to defend.
+- [ ] The runner you passed to `-r` appears in `get_board` output for this board.
+- [ ] After flashing, the console showed the firmware running — not just a successful flash.
 
 ## Workflow
 

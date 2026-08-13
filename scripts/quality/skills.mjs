@@ -13,9 +13,24 @@ const compatibleAllowlist = JSON.parse(readFileSync(join(ROOT, 'scripts/quality/
 const failures = [];
 const markdown = [];
 
+/** Every Markdown file a skill owns, entry point first. */
+function skillDocuments(directory) {
+  const found = [];
+  const stack = [directory];
+  while (stack.length > 0) {
+    for (const entry of readdirSync(stack.pop(), { withFileTypes: true })) {
+      const path = join(entry.parentPath, entry.name);
+      if (entry.isDirectory()) stack.push(path);
+      else if (entry.name.endsWith('.md')) found.push(path);
+    }
+  }
+  return found.sort();
+}
+
 for (const entry of readdirSync(SKILLS, { withFileTypes: true })) {
   if (!entry.isDirectory()) continue;
-  const path = join(SKILLS, entry.name, 'SKILL.md');
+  const directory = join(SKILLS, entry.name);
+  const path = join(directory, 'SKILL.md');
   const text = readFileSync(path, 'utf8');
   markdown.push({ path, text });
   const name = text.match(/^name:\s*(\S+)$/m)?.[1];
@@ -25,6 +40,21 @@ for (const entry of readdirSync(SKILLS, { withFileTypes: true })) {
     failures.push(`${path}: fenced examples have no explicit illustrative/verified classification`);
   }
   if ((text.match(/^```/gm)?.length ?? 0) % 2 !== 0) failures.push(`${path}: unbalanced fenced code block`);
+
+  // Supporting documents are read by the model exactly as SKILL.md is, so they
+  // are held to the same catalogue-backed checks below. Skipping them would let
+  // any claim escape verification simply by being moved into references/.
+  for (const supporting of skillDocuments(directory)) {
+    if (supporting === path) continue;
+    const supportingText = readFileSync(supporting, 'utf8');
+    markdown.push({ path: supporting, text: supportingText });
+    if ((supportingText.match(/^```/gm)?.length ?? 0) % 2 !== 0) {
+      failures.push(`${supporting}: unbalanced fenced code block`);
+    }
+    if (!/^references\//.test(supporting.slice(directory.length + 1))) {
+      failures.push(`${supporting}: skill Markdown belongs in references/`);
+    }
+  }
 }
 
 for (const entry of readdirSync(AGENTS, { withFileTypes: true })) {

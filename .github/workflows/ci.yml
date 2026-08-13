@@ -76,11 +76,25 @@ jobs:
       - uses: actions/cache@v6
         with:
           path: .cache
-          key: zephyr-west-${{ runner.os }}-node-24-schema-7-${{ hashFiles('zephyr.lock.json', 'package-lock.json') }}
+          # toolchain.json is in the key because .cache carries the Doxygen XML, and
+          # the pinned Doxygen version lives there. Restoring XML built by a different
+          # Doxygen would reproduce the very drift the pin exists to stop.
+          key: zephyr-west-${{ runner.os }}-node-24-schema-7-${{ hashFiles('zephyr.lock.json', 'package-lock.json', 'scripts/toolchain.json') }}
+      - name: Install the pinned Doxygen
+        # apt-get ships whatever the distribution froze, which is 1.9.8 on this image
+        # and finds 15 fewer API symbols than the fixture records. The version comes
+        # from the contract so there is one place to change it.
+        run: |
+          version="$(node -p "require('./scripts/toolchain.json').tools.find((t) => t.command === 'doxygen').exact")"
+          curl --fail --location --output "$RUNNER_TEMP/doxygen.tar.gz" \
+            "https://github.com/doxygen/doxygen/releases/download/Release_${version//./_}/doxygen-${version}.linux.bin.tar.gz"
+          tar -xzf "$RUNNER_TEMP/doxygen.tar.gz" -C "$RUNNER_TEMP"
+          sudo install "$RUNNER_TEMP/doxygen-${version}/bin/doxygen" /usr/local/bin/doxygen
+          doxygen --version
       - name: Install semantic and build prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install --yes cmake ninja-build doxygen device-tree-compiler gperf ccache
+          sudo apt-get install --yes cmake ninja-build device-tree-compiler gperf ccache
           npm run fetch:zephyr
           python -m pip install -r .cache/zephyr/scripts/requirements-base.txt
           npm run fetch:modules

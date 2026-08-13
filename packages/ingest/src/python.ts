@@ -1,41 +1,8 @@
-import { existsSync, readFileSync, realpathSync } from 'node:fs';
-import { delimiter, dirname, join, resolve } from 'node:path';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-function executableOnPath(name: string, pathValue: string | undefined): string | undefined {
-  if (name.includes('/') || name.includes('\\')) return existsSync(name) ? resolve(name) : undefined;
-  for (const directory of (pathValue ?? '').split(delimiter).filter(Boolean)) {
-    const candidate = join(directory, name);
-    if (existsSync(candidate)) return candidate;
-  }
-  return undefined;
-}
-
-/** Prefer the interpreter which owns `west`, because its environment normally carries PyYAML. */
-function westInterpreter(env: NodeJS.ProcessEnv): string | undefined {
-  const west = executableOnPath('west', env['PATH']);
-  if (!west) return undefined;
-  try {
-    const firstLine = readFileSync(realpathSync(west), 'utf8').split(/\r?\n/, 1)[0] ?? '';
-    const shebang = firstLine.match(/^#!\s*(\S+)(?:\s+(.+))?$/);
-    if (!shebang) return undefined;
-    if (shebang[1]?.endsWith('/env') && shebang[2]) {
-      return executableOnPath(shebang[2].trim().split(/\s+/, 1)[0]!, env['PATH']);
-    }
-    return shebang[1] && existsSync(shebang[1]) ? shebang[1] : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function interpreterCandidates(env: NodeJS.ProcessEnv): string[] {
-  return [
-    env['PYTHON_EXECUTABLE'],
-    westInterpreter(env),
-    'python3',
-    'python',
-  ].filter((value, index, all): value is string => Boolean(value) && all.indexOf(value) === index);
-}
+import { interpreterCandidates } from '../../shared/python-interpreters.ts';
 
 /** Locate a supported Python for adapters which only use the standard library. */
 export function standardPython(env: NodeJS.ProcessEnv = process.env): string {

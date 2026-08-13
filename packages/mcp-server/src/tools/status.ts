@@ -114,6 +114,9 @@ export const indexStatus: ToolFactory = (index) => ({
       ['SoCs', meta['count_socs'] ?? '?'],
       ['Samples', meta['count_samples'] ?? '?'],
       ['C API symbols', meta['count_api'] ?? '?'],
+      ['West flash/debug runners', meta['count_runners'] ?? '?'],
+      ['Board-runner pairings', meta['count_board_runners'] ?? '?'],
+      ['West commands', meta['count_west_commands'] ?? '?'],
     ];
 
     const projectStart = idx.info.projectRoot ?? process.env['ZEPHYR_AI_PROJECT_ROOT'] ?? process.env['CLAUDE_PROJECT_DIR'];

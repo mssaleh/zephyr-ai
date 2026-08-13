@@ -25,6 +25,12 @@ strict override; otherwise the active index for `CLAUDE_PROJECT_DIR` is used. Ca
   test suites, and docs, and read any file in the indexed tree at the commit the index
   was built from. `check_config` takes a whole `prj.conf` or `.overlay` and returns a
   verdict per line; the lookup tools take lists, so grounding a file is one call.
+- `get_board` and `get_runner` answer flashing from the tree's own `board.cmake` and
+  runner classes: which runners a board registers, which one `west flash` and `west
+  debug` each select — they are not always the same — and which options a runner
+  accepts. `check_environment` reports whether this machine can build at all, naming
+  each Python interpreter separately, because the one that satisfies the indexer is
+  often not the one CMake picks.
 - Skills activate by workflow and query the index before generating firmware.
 - Specialist agents cover architecture, build triage, devicetree, and review.
 - The edit hook reports only what the catalogue can decide alone: malformed Kconfig

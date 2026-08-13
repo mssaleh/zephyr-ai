@@ -153,6 +153,27 @@ allowlists are relational evidence, not substring-searchable JSON and not univer
 claims. Eligible files are captured recursively under explicit extension/size rules,
 including every `sample.yaml` and available README.
 
+### West runners and commands
+
+Flash and debug runners come from two sources in the tree, because neither answers
+alone. The runner classes under `scripts/west_commands/runners/` are introspected
+for their `RunnerCaps`, which is where the per-runner option set lives; the
+capability record is stored whole, since Zephyr adds fields to it between releases.
+That package imports only the standard library apart from `west` itself, and an
+interpreter that cannot import `west` yields a catalogue missing `openocd`, so
+completeness is recorded in the coverage map and forms part of the context
+fingerprint.
+
+Board-to-runner binding is evaluated from `board.cmake` and the common runner files
+it includes, in CMake evaluation order: `board_finalize_runner_args` is what places
+a runner on `ZEPHYR_RUNNERS`, while `board_set_flasher_ifnset` and
+`board_set_debugger_ifnset` only choose defaults, and the first wins. The two are
+kept distinct because upstream names debug defaults it never registers. Arguments
+carry the `if()` predicate that governs them rather than being flattened, and a
+declaration outside `boards/` belongs to a board whose SoC directory is a path
+prefix of the declaring file — which is how an SoC-level finalize reaches the boards
+built on it without naming a vendor.
+
 ### Module coverage
 
 Repeatable `--modules` roots currently extend only semantic Kconfig and devicetree

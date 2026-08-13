@@ -31,6 +31,22 @@ const BUILD_COMMAND =
  */
 const FAILURES = [
   {
+    // First, because these surface as a CMake error and would otherwise be
+    // classified as one and answered with advice about symbols. Nothing in the
+    // file the user is editing is wrong: the interpreter CMake selected is
+    // missing a package Zephyr needs, which happens whenever west lives in an
+    // environment of its own and the build resolves python3 from PATH instead.
+    kind: 'environment',
+    pattern:
+      /Missing \w[\w.-]* dependency|ModuleNotFoundError: No module named|ImportError: No module named|Could NOT find Python3|A suitable Python3 (?:interpreter|version) could not be found/,
+    advice:
+      'This is a host environment failure, not a mistake in the source. Call check_environment: it ' +
+      'reports every Python interpreter on this machine and which of the packages this Zephyr ' +
+      'version requires each one carries, and names the command that fixes the gap. The usual cause ' +
+      'is that west runs from its own environment while CMake resolves python3 from PATH, so the ' +
+      'index builds cleanly and the build does not.',
+  },
+  {
     kind: 'devicetree',
     pattern: /devicetree error|dtc: Error|Error: (?:\S+\.dtsi?|\S+\.overlay):|'[^']+' is not a valid property|node '[^']+' is not/i,
     advice:

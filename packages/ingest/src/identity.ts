@@ -23,6 +23,7 @@ export interface IdentityOptions {
   applicationRoot?: string;
   buildDirectory?: string;
   apiSemantic?: boolean;
+  westComplete?: boolean;
 }
 
 function git(root: string, args: string[]): string | null {
@@ -154,6 +155,12 @@ export function buildIndexDescriptor(options: IdentityOptions): IndexDescriptor 
             ? 'Module public headers are not indexed.'
             : undefined
           : 'Doxygen XML was not supplied; the API catalogue is an incomplete header fallback.',
+      },
+      west: {
+        complete: Boolean(options.westComplete),
+        note: options.westComplete
+          ? undefined
+          : 'The west package was not importable when this index was built, so runners that import it — openocd among them — carry no capabilities.',
       },
       resolvedBuild: {
         complete: false,

@@ -60,8 +60,10 @@
       "versionArgs": [
         "--version"
       ],
-      "provisionedBy": "apt-get",
-      "install": "sudo apt-get install --yes doxygen"
+      "exact": "1.15.0",
+      "provisionedBy": "doxygen/doxygen",
+      "install": "curl -fsSL https://github.com/doxygen/doxygen/releases/download/Release_1_15_0/doxygen-1.15.0.linux.bin.tar.gz | tar -xz && sudo install doxygen-1.15.0/bin/doxygen /usr/local/bin/doxygen",
+      "$comment": "Exact, not a minimum, because scripts/quality/fixtures/baseline-counts-semantic.json records the API counts this Doxygen produces and counts.mjs compares them exactly. 1.9.8 finds 84919 symbols where 1.15.0 finds 84934; both are defensible readings of the same headers, but only one matches the fixture. apt-get cannot serve this: it ships whatever the distribution froze."
     },
     {
       "command": "cmake",

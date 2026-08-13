@@ -139,6 +139,114 @@ function nearTwins(
   return twins.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+interface BoardRunner {
+  runner: string;
+  available: boolean;
+  flashDefault: boolean;
+  debugDefault: boolean;
+  args: { value: string; guard?: string; unresolved: boolean }[];
+  declaredIn: string[];
+}
+
+function boardRunners(idx: Index, boardName: string): BoardRunner[] {
+  return idx
+    .all(
+      `SELECT r.runner, r.available, r.flash_default, r.debug_default, r.args, r.declared_in
+         FROM board_runner r JOIN board b ON b.id = r.board_id
+        WHERE b.name = ? ORDER BY r.runner`,
+      boardName,
+    )
+    .map((row) => ({
+      runner: String(row['runner']),
+      available: Number(row['available']) === 1,
+      flashDefault: Number(row['flash_default']) === 1,
+      debugDefault: Number(row['debug_default']) === 1,
+      args: json<BoardRunner['args']>(row['args'], []),
+      declaredIn: json<string[]>(row['declared_in'], []),
+    }));
+}
+
+/**
+ * The flashing and debugging section of a board answer.
+ *
+ * Two facts here are routinely got wrong from prose. `west flash` and `west
+ * debug` can select different runners on the same board — every Espressif board
+ * flashes with `esp32` and debugs with `openocd` — and a runner can be named as a
+ * default without ever being registered, in which case the command fails. Both
+ * come straight from the board's own CMake.
+ */
+function flashingSection(runners: BoardRunner[], boardName: string): string | undefined {
+  if (runners.length === 0) {
+    return (
+      '**Flashing and debugging**\n' +
+      'This board declares no runner in its `board.cmake`. That is what the tree says, not ' +
+      'proof that the board cannot be programmed — emulated targets run with ' +
+      '`west build -t run`, and some boards are programmed by vendor tooling outside west.'
+    );
+  }
+
+  const registered = runners.filter((r) => r.available);
+  const flash = runners.find((r) => r.flashDefault);
+  const debug = runners.find((r) => r.debugDefault);
+
+  const lines = runners.map((r) => {
+    const roles = [
+      r.flashDefault ? '`west flash` default' : '',
+      r.debugDefault ? '`west debug` default' : '',
+    ].filter(Boolean);
+    const conditional = r.args.filter((a) => a.guard).length;
+    const detail = [
+      roles.join(', '),
+      r.available ? '' : 'declared but never registered — this command will fail',
+      r.args.length > 0 ? `${r.args.length} preset argument(s)` : '',
+      conditional > 0 ? `${conditional} of them conditional on Kconfig` : '',
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    return `\`${r.runner}\`${detail ? ` — ${detail}` : ''}`;
+  });
+
+  const commands = [
+    flash?.available ? `\`west flash\` uses \`${flash.runner}\`` : '',
+    debug?.available ? `\`west debug\` uses \`${debug.runner}\`` : '',
+  ].filter(Boolean);
+
+  // A count of preset arguments is not something a reader can act on. The
+  // unconditional ones for the two defaults are short and are what the command
+  // actually passes, so they are shown; conditional and unexpanded ones are left
+  // to `west flash --context` against a configured build, which resolves them.
+  const presets = [flash, debug]
+    .filter((runner, position, all): runner is BoardRunner =>
+      Boolean(runner?.available) && all.indexOf(runner) === position,
+    )
+    .flatMap((runner) => {
+      // All or nothing. The list is a flat argument vector, so a flag and its value
+      // are separate entries; dropping one because it holds an unexpanded ${...}
+      // leaves the other reading as a complete argument. `--cmd-load` shown without
+      // the command it loads is worse than showing nothing.
+      if (runner.args.length === 0) return [];
+      if (runner.args.some((arg) => arg.guard || arg.unresolved)) return [];
+      return [`\`${runner.runner}\`: ${runner.args.map((arg) => `\`${arg.value}\``).join(' ')}`];
+    });
+
+  return joinSections([
+    section(`Flashing and debugging \`${boardName}\``, lines),
+    commands.length > 0 ? commands.join('; ') + '.' : undefined,
+    presets.length > 0
+      ? section('Arguments the board always passes', presets) +
+        '\n\nConditional and build-time-expanded arguments are not shown; ' +
+        '`west flash --context` resolves them against a configured build.'
+      : undefined,
+    registered.length > 1
+      ? `Select another with \`west flash -r <runner>\`. Call get_runner for what each accepts.`
+      : undefined,
+    debug && !debug.available
+      ? `\`${debug.runner}\` is set as the debug default but is not registered for this board, ` +
+        'so `west debug` has no runner to use.'
+      : undefined,
+  ]);
+}
+
 export const searchBoards: ToolFactory = (index) => ({
   name: 'search_boards',
   title: 'Search boards',
@@ -162,6 +270,12 @@ export const searchBoards: ToolFactory = (index) => ({
         description:
           'Require support for a peripheral tag, e.g. "can", "netif:wifi", "usb_device", "adc".',
       },
+      runner: {
+        type: 'string',
+        description:
+          'Require that the board registers this flash/debug runner, e.g. "pyocd", "jlink". ' +
+          'Use when the probe on the desk decides which board is worth considering.',
+      },
       limit: limitSchema(15),
     },
     required: ['query'],
@@ -173,6 +287,7 @@ export const searchBoards: ToolFactory = (index) => ({
     const vendor = optionalString(args, 'vendor');
     const arch = optionalString(args, 'arch');
     const feature = optionalString(args, 'feature');
+    const runner = optionalString(args, 'runner');
     const limit = clampLimit(args['limit'], 15);
 
     const filters: string[] = [];
@@ -189,6 +304,14 @@ export const searchBoards: ToolFactory = (index) => ({
       // supported_text is a space-joined tag list; pad both sides for a whole-tag match.
       filters.push("AND (' ' || b.supported_text || ' ') LIKE ?");
       params.push(`% ${feature} %`);
+    }
+    if (runner) {
+      // Registered, not merely declared: a board that names a runner it never
+      // finalises cannot be flashed with it.
+      filters.push(
+        'AND EXISTS (SELECT 1 FROM board_runner br WHERE br.board_id = b.id AND br.runner = ? AND br.available = 1)',
+      );
+      params.push(runner);
     }
 
     const rows = index().search(
@@ -339,6 +462,7 @@ export const getBoard: ToolFactory = (index) => ({
     });
 
     const twins = nearTwins(idx, name, String(row['full_name'] ?? ''), socs, ram, flash);
+    const runners = boardRunners(idx, name);
     const docUrl = docPath
       ? `${(idx.meta['doc_base_url'] ?? '').replace(/\/?$/, '/')}${docPath.replace(/\.rst$/, '.html')}`
       : null;
@@ -391,6 +515,7 @@ export const getBoard: ToolFactory = (index) => ({
           '\n\nThese share a marketing name and a SoC series. Confirm the target against ' +
           'the silicon rather than against a document — the documents look alike too.'
         : undefined,
+      flashingSection(runners, name),
       supported.length > 0
         ? `**Supported peripherals** (${supported.length})\n${supported.map((s) => `\`${s}\``).join(' · ')}`
         : undefined,
@@ -416,6 +541,7 @@ export const getBoard: ToolFactory = (index) => ({
       dir: row['dir'],
       targets,
       socs: socDetail,
+      runners,
       nearTwins: twins,
       revisions,
       defaultRevision: row['default_revision'] ?? null,

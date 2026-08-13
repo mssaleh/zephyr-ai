@@ -37,10 +37,12 @@ import { collectBoards, collectSocs } from './sources/boards.ts';
 import { collectDocs } from './sources/docs.ts';
 import { collectKconfig } from './sources/kconfig.ts';
 import { collectSamples } from './sources/samples.ts';
+import { collectBoardRunners, collectRunners, collectWestCommands } from './sources/west.ts';
 import type { KconfigExpr } from './sources/kconfig.ts';
 import { buildIndexDescriptor } from './identity.ts';
 import { semanticPython } from './python.ts';
 import { canonicalJson, projectId } from '../../shared/index-descriptor.ts';
+import { parseRequirements, type Requirement } from '../../shared/python-interpreters.ts';
 import { fetchPinnedZephyr, PINNED_ZEPHYR_LOCK } from './fetch.ts';
 import packageMetadata from '../package.json' with { type: 'json' };
 
@@ -56,6 +58,7 @@ interface Options {
   buildDirectory?: string;
   apiXml?: string;
   requireDoxygen: boolean;
+  requireWest: boolean;
   requirePinned: boolean;
   fetchPinned: boolean;
   autoDetectApiXml: boolean;
@@ -68,6 +71,7 @@ function parseArgs(argv: string[]): Options {
     modules: [],
     quiet: false,
     requireDoxygen: false,
+    requireWest: false,
     requirePinned: false,
     fetchPinned: false,
     autoDetectApiXml: true,
@@ -111,6 +115,9 @@ function parseArgs(argv: string[]): Options {
       case '--require-doxygen':
         opts.requireDoxygen = true;
         break;
+      case '--require-west':
+        opts.requireWest = true;
+        break;
       case '--require-pinned':
         opts.requirePinned = true;
         break;
@@ -127,7 +134,7 @@ function parseArgs(argv: string[]): Options {
           'Usage: zephyr-ai-ingest [--zephyr <path> | --fetch-pinned] [--project-root <path>]',
           '  [--plugin-data <path>] [--out <path>] [--modules <path>]... [--api-xml <dir>]',
           '  [--board <target>] [--application <path>] [--build-dir <path>]',
-          '  [--require-doxygen] [--require-pinned] [--quiet]',
+          '  [--require-doxygen] [--require-west] [--require-pinned] [--quiet]',
           '',
           '--fetch-pinned clones the bundled lockfile revision under --plugin-data, then indexes it.',
           'Without --api-xml, conventional adjacent and doc/_build Doxygen XML trees are detected.',
@@ -171,6 +178,13 @@ function readLock(): Record<string, string> {
  */
 function jsonOrNull(value: unknown): string | null {
   return value === undefined || value === null ? null : JSON.stringify(value);
+}
+
+/** Distributions a build of this tree needs, from the tree's own requirements. */
+function buildRequirements(zephyrRoot: string): Requirement[] {
+  const path = join(zephyrRoot, 'scripts', 'requirements-base.txt');
+  if (!existsSync(path)) return [];
+  return parseRequirements(readFileSync(path, 'utf8'));
 }
 
 function fsyncPath(path: string): void {
@@ -254,8 +268,22 @@ function main(): void {
       'Release API ingestion requires Doxygen XML. Run npm run build:api-xml, then pass --api-xml .cache/doxygen/xml.',
     );
   }
+  // Collected before the descriptor because its completeness belongs in the
+  // coverage map, and so in the context fingerprint: an index built where west was
+  // importable holds a different catalogue from one built where it was not, and the
+  // two must not share an identity and be reused for one another.
+  const runnerExport = collectRunners(opts.zephyr);
+  if (opts.requireWest && !runnerExport.complete) {
+    throw new Error(
+      'The west runner catalogue is incomplete: the selected interpreter cannot import the ' +
+        'west package, which openocd needs, and hundreds of boards select openocd. An index ' +
+        'built here would omit it without saying so. Install the tree\'s requirements ' +
+        '(python -m pip install -r <zephyr>/scripts/requirements-base.txt) and retry.',
+    );
+  }
   const descriptor = buildIndexDescriptor({
     zephyrRoot: opts.zephyr,
+    westComplete: runnerExport.complete,
     ...(opts.projectRoot ? { projectRoot: opts.projectRoot } : {}),
     modules: opts.modules,
     ...(lock['commit'] ? { pinnedCommit: lock['commit'] } : {}),
@@ -331,8 +359,35 @@ function main(): void {
   );
 
   const t4 = Date.now();
+  const socDirByName = new Map(socs.map((soc) => [soc.name, soc.dir]));
+  const westCommands = collectWestCommands(opts.zephyr);
+  const boardRunnerExport = collectBoardRunners(
+    opts.zephyr,
+    boards.map((board) => ({
+      name: board.name,
+      dir: board.dir,
+      socDirs: [
+        ...new Set(
+          board.socs
+            .map((soc) => socDirByName.get(soc.name))
+            .filter((dir): dir is string => Boolean(dir)),
+        ),
+      ],
+    })),
+  );
+  const west = {
+    runners: runnerExport.runners,
+    commands: westCommands,
+    boardRunners: boardRunnerExport.boardRunners,
+  };
+  log(
+    `  west      ${west.runners.length} runners, ${west.commands.length} commands, ` +
+      `${west.boardRunners.length} board bindings${runnerExport.complete ? '' : ', incomplete'} (${Date.now() - t4} ms)`,
+  );
+
+  const t5s = Date.now();
   const samples = collectSamples(opts.zephyr);
-  log(`  samples   ${samples.length} (${Date.now() - t4} ms)`);
+  log(`  samples   ${samples.length} (${Date.now() - t5s} ms)`);
 
   const t5 = Date.now();
   const api = collectApi(opts.zephyr, opts.apiXml);
@@ -682,6 +737,44 @@ function main(): void {
     );
   }
 
+  // west runners and commands
+  const insRunner = db.prepare(
+    'INSERT INTO runner (name, module, description, capabilities, commands) VALUES (?, ?, ?, ?, ?)',
+  );
+  for (const runner of west.runners) {
+    insRunner.run(
+      runner.name,
+      runner.module,
+      runner.description ?? null,
+      canonicalJson(runner.capabilities),
+      JSON.stringify(runner.capabilities['commands'] ?? []),
+    );
+  }
+
+  const insWestCommand = db.prepare(
+    'INSERT INTO west_command (name, class_name, file, help) VALUES (?, ?, ?, ?)',
+  );
+  for (const command of west.commands) {
+    insWestCommand.run(command.name, command.className, command.file, command.help ?? null);
+  }
+
+  const insBoardRunner = db.prepare(
+    `INSERT INTO board_runner
+       (board_id, runner, available, flash_default, debug_default, args, declared_in)
+     VALUES ((SELECT id FROM board WHERE name = ?), ?, ?, ?, ?, ?, ?)`,
+  );
+  for (const row of west.boardRunners) {
+    insBoardRunner.run(
+      row.board,
+      row.runner,
+      row.available ? 1 : 0,
+      row.flashDefault ? 1 : 0,
+      row.debugDefault ? 1 : 0,
+      JSON.stringify(row.args),
+      JSON.stringify(row.declaredIn),
+    );
+  }
+
   // samples
   const insSample = db.prepare(
     `INSERT INTO sample
@@ -805,6 +898,28 @@ function main(): void {
         { code: 'report-units', message: 'Counts include board, target, and SoC records.' },
       ],
       errors: [],
+    }),
+    // Recorded so the environment check can name what a build of *this* tree needs
+    // without the tree still being on disk, and without a hard-coded package list
+    // that would drift from whatever Zephyr requires next.
+    python_requirements: canonicalJson(buildRequirements(opts.zephyr)),
+    count_runners: String(west.runners.length),
+    count_west_commands: String(west.commands.length),
+    count_board_runners: String(west.boardRunners.length),
+    report_west: canonicalJson({
+      discovered:
+        runnerExport.report.discovered + west.commands.length + boardRunnerExport.report.discovered,
+      indexed: west.runners.length + west.commands.length + boardRunnerExport.report.indexed,
+      intentionallyExcluded: runnerExport.report.intentionallyExcluded,
+      warnings: [
+        ...runnerExport.report.warnings,
+        ...boardRunnerExport.report.warnings,
+        {
+          code: 'report-units',
+          message: 'Counts include runner classes, west commands, and board-runner pairings.',
+        },
+      ],
+      errors: [...runnerExport.report.errors, ...boardRunnerExport.report.errors],
     }),
     count_samples: String(samples.length),
     report_samples: canonicalJson({

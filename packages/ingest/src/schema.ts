@@ -277,6 +277,43 @@ CREATE VIRTUAL TABLE board_fts USING fts5(
   tokenize='unicode61 tokenchars ''_-/'''
 );
 
+-- ---------------------------------------------------------------- west ------
+-- The runner catalogue comes from the tree's own runner classes, so capabilities
+-- are whatever this Zephyr implements rather than whatever a table once said.
+CREATE TABLE runner (
+  id           INTEGER PRIMARY KEY,
+  name         TEXT NOT NULL UNIQUE,
+  module       TEXT NOT NULL,
+  description  TEXT,
+  -- The RunnerCaps dataclass, verbatim. Held whole because Zephyr adds fields to
+  -- it between releases and a fixed column set would silently drop the new ones.
+  capabilities TEXT NOT NULL DEFAULT '{}',
+  commands     TEXT NOT NULL DEFAULT '[]'
+);
+
+CREATE TABLE board_runner (
+  id            INTEGER PRIMARY KEY,
+  board_id      INTEGER NOT NULL REFERENCES board(id),
+  runner        TEXT NOT NULL,
+  -- Registered on ZEPHYR_RUNNERS by board_finalize_runner_args. A row can exist
+  -- without this: upstream names a debug default it never registers on some boards.
+  available     INTEGER NOT NULL DEFAULT 0,
+  flash_default INTEGER NOT NULL DEFAULT 0,
+  debug_default INTEGER NOT NULL DEFAULT 0,
+  args          TEXT NOT NULL DEFAULT '[]',
+  declared_in   TEXT NOT NULL DEFAULT '[]'
+);
+CREATE INDEX board_runner_board_idx ON board_runner(board_id);
+CREATE INDEX board_runner_runner_idx ON board_runner(runner);
+
+CREATE TABLE west_command (
+  id         INTEGER PRIMARY KEY,
+  name       TEXT NOT NULL UNIQUE,
+  class_name TEXT NOT NULL DEFAULT '',
+  file       TEXT NOT NULL DEFAULT '',
+  help       TEXT
+);
+
 -- ------------------------------------------------------------- samples -----
 -- Samples and Twister test suites share one table because upstream validates
 -- sample.yaml and testcase.yaml against a single schema; kind keeps them

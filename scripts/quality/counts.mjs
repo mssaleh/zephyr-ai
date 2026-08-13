@@ -33,6 +33,9 @@ const tables = [
   'sample_file',
   'api_symbol',
   'api_group',
+  'runner',
+  'board_runner',
+  'west_command',
 ];
 const counts = Object.fromEntries(
   tables.map((table) => [table, Number(db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get().count)]),

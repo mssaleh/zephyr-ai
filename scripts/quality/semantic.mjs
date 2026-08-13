@@ -199,7 +199,7 @@ if (measured.stringifiedNulls.length) {
   failures.push(`a stringified null is stored as a value: ${measured.stringifiedNulls.join(', ')}`);
 }
 
-const REPORTS = ['report_docs', 'report_kconfig', 'report_bindings', 'report_boards', 'report_samples', 'report_api'];
+const REPORTS = ['report_docs', 'report_kconfig', 'report_bindings', 'report_boards', 'report_samples', 'report_api', 'report_west'];
 for (const key of REPORTS) {
   const raw = db.prepare('SELECT value FROM meta WHERE key = ?').get(key)?.value;
   const report = raw ? JSON.parse(String(raw)) : null;

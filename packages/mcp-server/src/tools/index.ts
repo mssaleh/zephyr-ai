@@ -4,6 +4,7 @@ import type { Tool } from '../protocol.ts';
 import { getApi, searchApi } from './api.ts';
 import { getBoard, searchBoards } from './boards.ts';
 import { checkConfig } from './check.ts';
+import { checkEnvironment } from './environment.ts';
 import type { ToolFactory } from './common.ts';
 import { getBinding, searchBindings } from './devicetree.ts';
 import { getDoc, searchDocs } from './docs.ts';
@@ -11,6 +12,7 @@ import { getKconfig, searchKconfig } from './kconfig.ts';
 import { getSample, searchSamples } from './samples.ts';
 import { getSource } from './source.ts';
 import { indexStatus } from './status.ts';
+import { getRunner } from './west.ts';
 
 /**
  * Tool order matters a little: clients present tools in this order, so the ones
@@ -20,12 +22,14 @@ import { indexStatus } from './status.ts';
  */
 const FACTORIES: ToolFactory[] = [
   checkConfig,
+  checkEnvironment,
   searchKconfig,
   getKconfig,
   searchBindings,
   getBinding,
   searchBoards,
   getBoard,
+  getRunner,
   searchApi,
   getApi,
   searchSamples,
