@@ -3,10 +3,10 @@
 A Claude Code plugin for grounded Zephyr RTOS firmware development, with focused
 guidance for STM32 and ESP32 targets.
 
-The plugin combines a project-scoped SQLite knowledge index, fourteen MCP tools,
-fifteen workflow skills, four specialist agents, and conservative edit and build
-hooks. Exact answers identify the Zephyr source context that supports them;
-catalogue misses are reported as uncertainty unless coverage proves otherwise.
+The plugin combines a project-scoped SQLite knowledge index, MCP tools, workflow
+skills, specialist agents, and conservative edit and build hooks. Exact answers
+identify the Zephyr source context that supports them; a name the catalogue does
+not hold is reported as outside its scope, never as wrong.
 
 ## Why it exists
 
@@ -78,14 +78,15 @@ ZEPHYR_AI_INDEX="$PWD/index/zephyr.db" claude --plugin-dir "$PWD/plugin"
 | `search_bindings` / `get_binding` | Compatible properties, recursive child bindings, constraints, provenance, and a type-aware skeleton |
 | `search_boards` / `get_board` | Exact targets, revisions, SoCs, features, and board documentation |
 | `search_api` / `get_api` | Public C declarations, parameters, return contracts, groups, and Doxygen anchors when semantic XML is used |
-| `search_samples` / `get_sample` | Twister metadata, platform evidence, README, configuration, overlays, and source files |
+| `check_config` | A verdict per line for a whole `prj.conf`, defconfig, `.overlay`, or `.dts` |
+| `search_samples` / `get_sample` | Samples and upstream Twister test suites: platform allowlists and integration platforms, scenario names, README, configuration, overlays, and source files |
 | `search_docs` / `get_doc` | Section-level documentation with resolved includes, source origins, and official URLs |
 | `get_source` | Any file in the indexed tree, read at the commit the index was built from, with a line range and a citable reference |
 | `index_status` | Schema, builder, commit, source-tree/module fingerprint, coverage, project/manifest match, and stored-index usage |
 
 ### Skills and agents
 
-The fifteen skills cover project setup, Kconfig, devicetree, build/flash, debugging,
+The skills cover project setup, Kconfig, devicetree, build/flash, debugging,
 RTOS patterns, drivers and sensors, power, Bluetooth, networking, testing, indexing,
 and STM32/ESP32 platform workflows. Fenced snippets are explicitly illustrative unless
 their metadata identifies a release-gated example.
@@ -119,9 +120,17 @@ the user's model selection.
 - `PostToolUse` on Bash recognises a failed Zephyr build and names the `build-triage`
   agent together with the lookup that fits the failure class. It requires both a build
   command and a failing result, so an unrelated command that fails is silent.
+- `PreToolUse` on an edit to a `.conf`, `.dts`, `.dtsi`, or `.overlay` names the lookup
+  that prevents the mistakes in that file kind, and the agent whose job it is, before
+  the file is written — the write validator can only react to what already exists. It
+  allows the write unconditionally; a heuristic must never block one.
 
-Every hook is silent unless it has a finding — including when no index is available,
-which SessionStart reports once per session rather than on every edit.
+A hook that reports nothing looks exactly like a hook that never ran, so a clean
+Kconfig or devicetree file is acknowledged once per file per session: what was checked,
+and against which indexed Zephyr version. Findings go to stderr with the blocking exit
+code; acknowledgements and pre-write pointers do not, and neither repeats itself. When
+no index is available every hook stays quiet, because SessionStart already says so once
+per session.
 
 ## What the index covers
 

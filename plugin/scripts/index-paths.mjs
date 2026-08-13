@@ -9,7 +9,18 @@
 
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { existsSync, lstatSync, readFileSync, readlinkSync, realpathSync, statSync } from 'node:fs';
+import {
+  closeSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readlinkSync,
+  realpathSync,
+  statSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 function projectId(root) {
@@ -162,6 +173,33 @@ export function findWestWorkspace(start = process.cwd()) {
     dir = parent;
   }
   return null;
+}
+
+/**
+ * True the first time a session asks about `key`, false afterwards.
+ *
+ * A hook that repeats itself on every edit becomes noise, and noise gets ignored
+ * along with everything else the plugin says — so anything said for information
+ * rather than about a finding is said once. The marker lives in the system
+ * temporary directory keyed by the session: it is genuinely per-session state,
+ * the OS reclaims it, and nothing has to prune plugin data.
+ *
+ * Without a session id there is no way to bound the repetition, so the caller is
+ * told not to speak at all. Silence is the safe default; noise is not.
+ */
+export function firstTimeThisSession(sessionId, key) {
+  if (typeof sessionId !== 'string' || !/^[\w.-]{1,128}$/.test(sessionId)) return false;
+  const dir = join(tmpdir(), 'zephyr-ai-session', sessionId);
+  const marker = join(dir, `${createHash('sha256').update(key).digest('hex').slice(0, 32)}.seen`);
+  try {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    // Exclusive create is the test and the record in one step, so two hooks
+    // racing on the same file cannot both decide they are first.
+    closeSync(openSync(marker, 'wx', 0o600));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Read the hook's JSON payload from stdin. Returns {} if there is none. */

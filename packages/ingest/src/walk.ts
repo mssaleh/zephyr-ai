@@ -24,8 +24,11 @@ export interface WalkOptions {
  * Recursively walk `root`, yielding tree-relative POSIX paths.
  *
  * Written by hand rather than using `readdirSync(recursive: true)` because the
- * Zephyr tree contains a 300 MB `.git` directory that must not be traversed and
- * several subtrees (notably `tests/`) that are deliberately excluded.
+ * Zephyr tree contains a 300 MB `.git` directory that must not be traversed, and
+ * because callers need to exclude subtrees and refuse symlinks.
+ *
+ * Order follows the filesystem. A caller whose output depends on which of two
+ * matching files it sees first must sort the results.
  */
 export function* walk(root: string, opts: WalkOptions = {}): Generator<string> {
   if (!existsSync(root)) return;

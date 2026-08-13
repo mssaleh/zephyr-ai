@@ -160,8 +160,17 @@ function readLock(): Record<string, string> {
   return {};
 }
 
+/**
+ * JSON for a value, or SQL NULL when there is no value.
+ *
+ * The exporters come from Python, where an absent field is `None` and arrives
+ * as JSON `null` rather than as `undefined`. Testing only for `undefined` stored
+ * the four-character string `"null"`, which reads as a value everywhere
+ * downstream — `get_binding` announced "is a bus controller for: null" on every
+ * binding that controls no bus.
+ */
 function jsonOrNull(value: unknown): string | null {
-  return value === undefined ? null : JSON.stringify(value);
+  return value === undefined || value === null ? null : JSON.stringify(value);
 }
 
 function fsyncPath(path: string): void {
@@ -595,7 +604,7 @@ function main(): void {
       binding.description ?? '',
       // A scalar bus is stored verbatim so it can be filtered in SQL; the rare
       // list form is JSON. Consumers try JSON.parse and fall back to the string.
-      binding.bus === undefined
+      binding.bus === undefined || binding.bus === null
         ? null
         : typeof binding.bus === 'string'
           ? binding.bus
@@ -618,7 +627,7 @@ function main(): void {
           p.required ? 1 : 0,
           internText(p.description),
           jsonOrNull(p.default),
-          p.enum === undefined ? null : JSON.stringify(p.enum),
+          jsonOrNull(p.enum),
           jsonOrNull(p.const),
           p.deprecated ? 1 : 0,
           p.specifierSpace ?? null,
@@ -676,9 +685,9 @@ function main(): void {
   // samples
   const insSample = db.prepare(
     `INSERT INTO sample
-       (path, name, description, tags, tags_text, depends_on, integration_platforms,
-        platform_allow, files, doc_path)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (path, kind, name, description, tags, tags_text, scenarios, depends_on,
+        integration_platforms, platform_allow, files, doc_path)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const insSampleFile = db.prepare(
     'INSERT INTO sample_file (sample_id, path, text) VALUES (?, ?, ?)',
@@ -689,10 +698,12 @@ function main(): void {
   for (const sample of samples) {
     const info = insSample.run(
       sample.path,
+      sample.kind,
       sample.name,
       sample.description ?? '',
       JSON.stringify(sample.tags),
       sample.tags.join(' '),
+      JSON.stringify(sample.scenarios),
       JSON.stringify(sample.dependsOn),
       JSON.stringify(sample.integrationPlatforms),
       JSON.stringify(sample.platformAllow),

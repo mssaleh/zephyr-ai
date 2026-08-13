@@ -1,10 +1,16 @@
-import { clampLimit, json, snippet } from '../db.ts';
+import { type Index, clampLimit, json, snippet } from '../db.ts';
+import { ToolError } from '../protocol.ts';
 import {
+  BATCH_MAX_CHARS,
+  type BatchEntry,
   type ToolFactory,
-  catalogueMiss,
+  batchResult,
+  batchSchema,
+  catalogueMissText,
   joinSections,
   limitSchema,
   noResults,
+  oneOrMany,
   optionalString,
   requireString,
   result,
@@ -127,32 +133,126 @@ export const searchApi: ToolFactory = (index) => ({
   },
 });
 
+function apiMissText(idx: Index, name: string): string {
+  const near = idx.search(
+    `SELECT s.name, s.kind FROM api_fts f JOIN api_symbol s ON s.id = f.rowid
+      WHERE api_fts MATCH ? ORDER BY bm25(api_fts, 10.0, 3.0, 1.0) LIMIT 8`,
+    name.replace(/_/g, ' '),
+    [],
+    8,
+  );
+  return catalogueMissText(
+    'C API symbol',
+    name,
+    idx.meta['zephyr_version'] ?? 'unknown',
+    near.map((r) => String(r['name'])),
+    'Internal APIs, vendor-native SDK APIs, generated declarations, and external-module headers may not be covered.',
+  );
+}
+
+/**
+ * What a batched lookup returns for one symbol: that it exists, its signature,
+ * and where it is declared. Parameter and return documentation stays behind the
+ * singular form, which is the call to make before actually using the symbol.
+ */
+function apiSummary(idx: Index, requested: string, kind: string | undefined): BatchEntry {
+  const name = requested.replace(/\(\)$/, '');
+  const rows = idx.all(
+    `SELECT name, kind, signature, brief, header, line, deprecated
+       FROM api_symbol WHERE name = ? ${kind ? 'AND kind = ?' : ''}
+       ORDER BY CASE kind WHEN 'function' THEN 0 WHEN 'macro' THEN 1 ELSE 2 END`,
+    ...(kind ? [name, kind] : [name]),
+  );
+  if (rows.length === 0) {
+    return {
+      key: name,
+      text: `### ${name}\n\n${apiMissText(idx, name)}`,
+      structured: { name, found: false },
+    };
+  }
+
+  const row = rows[0]!;
+  const memberCount =
+    String(row['kind']) === 'enum'
+      ? Number(
+        idx.get(
+          `SELECT COUNT(*) AS c FROM api_symbol
+              WHERE kind = 'enumvalue' AND parent_symbol = ? AND header = ?`,
+          String(row['name']),
+          String(row['header']),
+        )?.['c'] ?? 0,
+      )
+      : 0;
+
+  return {
+    key: name,
+    text: joinSections([
+      `### ${name}${Number(row['deprecated']) === 1 ? '  ⚠️ DEPRECATED' : ''}`,
+      `\`\`\`c\n${String(row['signature'])}\n\`\`\``,
+      row['brief']
+        ? String(row['brief'])
+        : '_No brief description is present in the indexed API source._',
+      memberCount > 0
+        ? `_${memberCount} enum members — call get_api with a single name to list them._`
+        : undefined,
+      `_${String(row['kind'])} · \`${String(row['header'])}:${Number(row['line'])}\`` +
+        `${rows.length > 1 ? ` · also defined as ${rows.slice(1).map((r) => String(r['kind'])).join(', ')}` : ''}_`,
+    ]),
+    structured: {
+      name: row['name'],
+      found: true,
+      kind: row['kind'],
+      signature: row['signature'],
+      brief: row['brief'] ?? '',
+      header: row['header'],
+      line: row['line'],
+      deprecated: Number(row['deprecated']) === 1,
+      memberCount,
+    },
+  };
+}
+
 export const getApi: ToolFactory = (index) => ({
   name: 'get_api',
-  title: 'Get a Zephyr API symbol',
+  title: 'Get Zephyr API symbols',
   description:
-    'Get the indexed contract of one Zephyr C symbol: signature, parameter documentation, return ' +
+    'Get the indexed contract of a Zephyr C symbol: signature, parameter documentation, return ' +
     'description, and documented error codes. Use before calling an unfamiliar function. Zephyr ' +
     'commonly returns negative errno values, and the documented set differs per function. Empty ' +
-    'documentation is reported as unknown and never treated as proof that failure is impossible.',
+    'documentation is reported as unknown and never treated as proof that failure is impossible. ' +
+    'Pass "names" to confirm several symbols exist and read their signatures in one call, which ' +
+    'is the cheap way to check a header\'s worth of calls before writing against them.',
   inputSchema: {
     type: 'object',
     properties: {
       name: { type: 'string', description: 'Exact symbol name, e.g. "gpio_pin_configure_dt".' },
+      names: batchSchema(
+        'Several symbols in one call, e.g. ["sensor_sample_fetch", "sensor_channel_get"]. ' +
+          'Returns each signature and where it is declared, without the parameter and return ' +
+          'documentation the single-name form gives.',
+      ),
       kind: {
         type: 'string',
         enum: API_KINDS,
         description: 'Disambiguate when a name exists as more than one kind.',
       },
     },
-    required: ['name'],
     additionalProperties: false,
   },
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   handler: (args) => {
-    const name = requireString(args, 'name').replace(/\(\)$/, '');
+    const { values, batched } = oneOrMany(args, 'name', 'names');
     const kind = optionalString(args, 'kind');
     const idx = index();
+
+    if (batched) {
+      return batchResult(
+        values.map((value) => apiSummary(idx, value, kind)),
+        BATCH_MAX_CHARS,
+      );
+    }
+
+    const name = values[0]!.replace(/\(\)$/, '');
 
     const rows = idx.all(
       `SELECT name, kind, signature, brief, detail, params, returns, retvals,
@@ -162,22 +262,7 @@ export const getApi: ToolFactory = (index) => ({
       ...(kind ? [name, kind] : [name]),
     );
 
-    if (rows.length === 0) {
-      const near = idx.search(
-        `SELECT s.name, s.kind FROM api_fts f JOIN api_symbol s ON s.id = f.rowid
-          WHERE api_fts MATCH ? ORDER BY bm25(api_fts, 10.0, 3.0, 1.0) LIMIT 8`,
-        name.replace(/_/g, ' '),
-        [],
-        8,
-      );
-      return catalogueMiss(
-        'C API symbol',
-        name,
-        idx.meta['zephyr_version'] ?? 'unknown',
-        near.map((r) => String(r['name'])),
-        'Internal APIs, vendor-native SDK APIs, generated declarations, and external-module headers may not be covered.',
-      );
-    }
+    if (rows.length === 0) throw new ToolError(apiMissText(idx, name));
 
     const row = rows[0]!;
     const params = json<Param[]>(row['params'], []);

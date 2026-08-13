@@ -50,7 +50,7 @@ jobs:
       - uses: actions/cache@v6
         with:
           path: .cache/zephyr
-          key: zephyr-${{ runner.os }}-node-24-schema-5-${{ hashFiles('zephyr.lock.json', 'package-lock.json') }}
+          key: zephyr-${{ runner.os }}-node-24-schema-7-${{ hashFiles('zephyr.lock.json', 'package-lock.json') }}
       - run: npm ci
       - run: npm install -g @anthropic-ai/claude-code
       - uses: actions/setup-python@v7
@@ -76,7 +76,7 @@ jobs:
       - uses: actions/cache@v6
         with:
           path: .cache
-          key: zephyr-west-${{ runner.os }}-node-24-schema-5-${{ hashFiles('zephyr.lock.json', 'package-lock.json') }}
+          key: zephyr-west-${{ runner.os }}-node-24-schema-7-${{ hashFiles('zephyr.lock.json', 'package-lock.json') }}
       - name: Install semantic and build prerequisites
         run: |
           sudo apt-get update

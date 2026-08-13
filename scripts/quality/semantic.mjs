@@ -164,10 +164,40 @@ measured.sampleFileParity = count(
   'SELECT COUNT(*) AS n FROM sample s WHERE json_array_length(s.files) != (SELECT COUNT(*) FROM sample_file f WHERE f.sample_id = s.id)',
 );
 if (measured.sampleFileParity) failures.push('eligible and stored sample file counts differ');
+// Each row must carry the manifest its kind is named for: a sample is defined by
+// its sample.yaml and a Twister suite by its testcase.yaml, and a row whose
+// manifest was not captured cannot be read back at all.
 measured.samplesMissingManifest = count(
-  "SELECT COUNT(*) AS n FROM sample s WHERE NOT EXISTS (SELECT 1 FROM sample_file f WHERE f.sample_id = s.id AND f.path = 'sample.yaml')",
+  `SELECT COUNT(*) AS n FROM sample s WHERE NOT EXISTS (
+     SELECT 1 FROM sample_file f
+      WHERE f.sample_id = s.id
+        AND f.path = CASE s.kind WHEN 'test' THEN 'testcase.yaml' ELSE 'sample.yaml' END
+   )`,
 );
-if (measured.samplesMissingManifest) failures.push('sample.yaml is not captured for every sample');
+if (measured.samplesMissingManifest) failures.push('the defining manifest is not captured for every sample or test');
+
+measured.testsIndexed = count("SELECT COUNT(*) AS n FROM sample WHERE kind = 'test'");
+if (!measured.testsIndexed) failures.push('no upstream Twister test suites are indexed');
+
+// A Python `None` that reached JSON.stringify becomes the four-character string
+// "null", which every consumer reads as a value: get_binding announced "is a bus
+// controller for: null" on 2,929 bindings that control no bus. Nothing else
+// catches it, because the column is populated and the row count is right.
+measured.stringifiedNulls = [];
+for (const table of db
+  .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE '%_fts%'")
+  .all()) {
+  for (const column of db.prepare(`PRAGMA table_info(${table.name})`).all()) {
+    if (column.type !== 'TEXT') continue;
+    const n = count(
+      `SELECT COUNT(*) AS n FROM "${table.name}" WHERE "${column.name}" = 'null'`,
+    );
+    if (n) measured.stringifiedNulls.push(`${table.name}.${column.name}=${n}`);
+  }
+}
+if (measured.stringifiedNulls.length) {
+  failures.push(`a stringified null is stored as a value: ${measured.stringifiedNulls.join(', ')}`);
+}
 
 const REPORTS = ['report_docs', 'report_kconfig', 'report_bindings', 'report_boards', 'report_samples', 'report_api'];
 for (const key of REPORTS) {

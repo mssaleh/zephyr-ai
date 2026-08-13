@@ -7,14 +7,14 @@
   },
   "metadata": {
     "description": "Zephyr RTOS firmware development for Claude Code",
-    "version": "0.2.0"
+    "version": "0.3.0"
   },
   "plugins": [
     {
       "name": "zephyr-ai",
       "source": "./plugin",
       "description": "Project-scoped Zephyr RTOS reference tools and firmware workflows for STM32 and ESP32, with semantic Kconfig/binding ingestion and conservative validation.",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "category": "development",
       "keywords": [
         "zephyr",

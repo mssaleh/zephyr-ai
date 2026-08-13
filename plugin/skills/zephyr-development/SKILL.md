@@ -4,7 +4,7 @@ description: Core workflow for writing, building, and debugging Zephyr RTOS firm
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.2.0"
+  version: "0.3.0"
 ---
 
 # Zephyr development
@@ -132,10 +132,13 @@ the source documents them; an empty list does not prove the call cannot fail.
    peripheral the board does not expose wastes everything that follows.
 2. **Find a sample that already does it.** `search_samples`, then `get_sample` to
    read its `prj.conf` and overlay. Copy the configuration, then adapt.
-3. **Verify every symbol you write.** The plugin validates provable `.conf` and
-   `.overlay` mistakes automatically. Catalogue misses remain advisory unless
-   the active index declares complete coverage, so confirm uncertain names with
-   the lookup tools and the build.
+3. **Verify every symbol you write.** `check_config` takes a whole `prj.conf` or
+   `.overlay` and returns a verdict per line; `get_kconfig`, `get_binding`, and
+   `get_api` each take a list, so grounding a file costs one call rather than one
+   per name. The plugin also validates provable mistakes on write. A name the
+   catalogue does not hold is never reported as wrong — an application may
+   declare its own Kconfig and bindings — so confirm uncertain names against the
+   build.
 4. **Build before claiming it works.** `west build -b <target> <app>`. Firmware
    that has not been compiled has not been written.
 5. **Triage failures, review what compiled.** A failed build goes to

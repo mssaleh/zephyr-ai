@@ -21,10 +21,12 @@ strict override; otherwise the active index for `CLAUDE_PROJECT_DIR` is used. Ca
 
 ## How it behaves
 
-- Fourteen MCP tools search/get Kconfig, bindings, boards, APIs, samples, and docs, and
-  read any file in the indexed tree at the commit the index was built from.
-- Fifteen skills activate by workflow and query the index before generating firmware.
-- Four specialist agents cover architecture, build triage, devicetree, and review.
+- MCP tools search and read Kconfig, bindings, boards, APIs, samples, upstream Twister
+  test suites, and docs, and read any file in the indexed tree at the commit the index
+  was built from. `check_config` takes a whole `prj.conf` or `.overlay` and returns a
+  verdict per line; the lookup tools take lists, so grounding a file is one call.
+- Skills activate by workflow and query the index before generating firmware.
+- Specialist agents cover architecture, build triage, devicetree, and review.
 - The edit hook reports only what the catalogue can decide alone: malformed Kconfig
   syntax, a type mismatch, assigning a promptless symbol, or a devicetree `compatible`
   that misspells an indexed one. It never reports a `CONFIG_` symbol or a compatible as
@@ -45,7 +47,7 @@ Troubleshooting:
 - **Schema, commit, manifest, or context mismatch:** rebuild the project index.
 - **Python contract failure:** activate the west environment containing PyYAML or set
   `PYTHON_EXECUTABLE`.
-- **A catalogue miss for module syntax:** rebuild with the applicable module root and
-  treat the miss as unproven until coverage is complete.
+- **A catalogue miss for module syntax:** rebuild with the applicable module root. A
+  miss is never proof the name is wrong; confirm it against the build.
 
 Apache-2.0.

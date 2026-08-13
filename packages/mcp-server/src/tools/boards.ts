@@ -1,8 +1,10 @@
-import { clampLimit, json } from '../db.ts';
+import { type Index, clampLimit, json } from '../db.ts';
 import { ToolError } from '../protocol.ts';
 import {
   type ToolFactory,
+  boundedList,
   catalogueMiss,
+  editDistance,
   joinSections,
   limitSchema,
   noResults,
@@ -26,6 +28,115 @@ interface Soc {
   name: string;
   variants: string[];
   cpuclusters: string[];
+}
+
+interface NearTwin {
+  name: string;
+  fullName: string;
+  soc: string;
+  ram: number | null;
+  flash: number | null;
+  differs: string[];
+}
+
+/**
+ * The part-code-shaped tokens in a board's marketing name.
+ *
+ * A vendor writes the orderable code into `full_name` — "Disco L475 IOT01
+ * (B-L475E-IOT01A)", "B-L4S5I-IOT01A Discovery kit" — in whatever position it
+ * likes, so the code is found by shape rather than by position. Requiring both a
+ * digit and a letter rejects prose ("Discovery", "kit", "V2") without needing a
+ * per-vendor rule.
+ */
+function partCodes(fullName: string): string[] {
+  return [
+    ...new Set(
+      fullName
+        .split(/[\s()[\],/]+/)
+        .map((token) => token.replace(/[.,;:]+$/, '').toUpperCase())
+        .filter((token) => token.length >= 6 && /\d/.test(token) && /[A-Z]/.test(token)),
+    ),
+  ];
+}
+
+/**
+ * Boards that are easy to mistake for this one, and the figures that separate
+ * them.
+ *
+ * Two boards can share a PCB reference and a series and still differ on flash,
+ * RAM, and which bus the external memory sits on — a confusion no amount of
+ * document cross-checking catches, because the documents look alike too. The
+ * rule is the near-miss discipline the write validator already uses for
+ * compatibles: a genuine twin is one or two characters away, an unrelated board
+ * is many. Requiring the same vendor and the same SoC series does the rest, so
+ * no curated list of confusable products is needed and every vendor gets the
+ * same treatment.
+ */
+function nearTwins(
+  idx: Index,
+  name: string,
+  fullName: string,
+  socs: Soc[],
+  ownRam: number | null,
+  ownFlash: number | null,
+): NearTwin[] {
+  const codes = partCodes(fullName);
+  if (codes.length === 0 || socs.length === 0) return [];
+
+  const candidates = idx.all(
+    `SELECT DISTINCT b.name, b.full_name, b.ram, b.flash, s.name AS soc
+       FROM board b, json_each(b.socs) j
+       JOIN soc s ON s.name = json_extract(j.value, '$.name')
+      WHERE b.name <> ?
+        AND b.vendor = (SELECT vendor FROM board WHERE name = ?)
+        AND s.series IN (
+          SELECT series FROM soc WHERE name IN (
+            SELECT json_extract(value, '$.name') FROM json_each((SELECT socs FROM board WHERE name = ?))
+          )
+        )`,
+    name,
+    name,
+    name,
+  );
+
+  const twins: NearTwin[] = [];
+  for (const candidate of candidates) {
+    const candidateFull = String(candidate['full_name'] ?? '');
+    let best: number | null = null;
+    for (const mine of codes) {
+      for (const theirs of partCodes(candidateFull)) {
+        if (Math.abs(mine.length - theirs.length) > 2) continue;
+        const edits = editDistance(mine, theirs);
+        if (edits === 0 || edits > 2) continue;
+        // One character apart is the confusion case whatever the code's length —
+        // a ratio floor would drop NUCLEO-F401RE against NUCLEO-F411RE, which
+        // differ in RAM. The floor only earns its place on the second edit,
+        // where it keeps unrelated parts in the same series apart.
+        if (edits > 1 && 1 - edits / Math.max(mine.length, theirs.length) < 0.85) continue;
+        if (best === null || edits < best) best = edits;
+      }
+    }
+    if (best === null) continue;
+
+    const ram = candidate['ram'] === null ? null : Number(candidate['ram']);
+    const flash = candidate['flash'] === null ? null : Number(candidate['flash']);
+    const soc = String(candidate['soc']);
+    twins.push({
+      name: String(candidate['name']),
+      fullName: candidateFull,
+      soc,
+      ram,
+      flash,
+      // Name what actually differs, so the answer can be checked against a probe
+      // rather than against a datasheet that describes the other board.
+      differs: [
+        socs.some((s) => s.name === soc) ? '' : `SoC ${soc}`,
+        ram !== null && ram !== ownRam ? `${ram} KB RAM` : '',
+        flash !== null && flash !== ownFlash ? `${flash} KB flash` : '',
+      ].filter(Boolean),
+    });
+  }
+  return twins.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export const searchBoards: ToolFactory = (index) => ({
@@ -149,7 +260,10 @@ export const getBoard: ToolFactory = (index) => ({
     'its architecture, flash and RAM budget and supported peripherals, the SoCs and CPU clusters ' +
     'it contains, available hardware revisions, and a link to its documentation page (pinout, ' +
     'jumper settings, and flashing instructions). Use before starting a project for a specific ' +
-    'board, and to confirm which peripherals are actually wired up.',
+    'board, and to confirm which peripherals are actually wired up. It also names the boards ' +
+    'this one is easy to mistake for — products that share a PCB reference and a SoC series but ' +
+    'differ on flash, RAM, or SoC — so a board chosen from a document can be checked against ' +
+    'the silicon before a build targets the wrong twin.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -208,7 +322,23 @@ export const getBoard: ToolFactory = (index) => ({
     const socs = json<Soc[]>(row['socs'], []);
     const revisions = json<string[]>(row['revisions'], []);
     const supported = json<string[]>(row['supported'], []);
+    const ram = row['ram'] === null ? null : Number(row['ram']);
+    const flash = row['flash'] === null ? null : Number(row['flash']);
     const docPath = row['doc_path'] as string | null;
+
+    // The soc table carries the series and family that place a part in its
+    // range; without them a board answer names a SoC that cannot be checked
+    // against anything.
+    const socDetail = socs.map((s) => {
+      const identity = idx.get('SELECT series, family, vendor FROM soc WHERE name = ?', s.name);
+      return {
+        ...s,
+        series: identity ? String(identity['series'] ?? '') : '',
+        family: identity ? String(identity['family'] ?? '') : '',
+      };
+    });
+
+    const twins = nearTwins(idx, name, String(row['full_name'] ?? ''), socs, ram, flash);
     const docUrl = docPath
       ? `${(idx.meta['doc_base_url'] ?? '').replace(/\/?$/, '/')}${docPath.replace(/\.rst$/, '.html')}`
       : null;
@@ -226,17 +356,41 @@ export const getBoard: ToolFactory = (index) => ({
     const text = joinSections([
       `# ${String(row['full_name'] || row['name'])}`,
       `Board \`${String(row['name'])}\` from **${String(row['vendor'] ?? 'unknown')}**` +
-        `${row['arch'] ? `, ${String(row['arch'])} architecture` : ''}.`,
+        `${row['arch'] ? `, ${String(row['arch'])} architecture` : ''}` +
+        // The figures that distinguish one board from a near-identical one, on
+        // the board itself rather than only on targets that happen to carry
+        // Twister metadata.
+        `${flash !== null ? `, ${flash} KB flash` : ''}` +
+        `${ram !== null ? `, ${ram} KB RAM` : ''}.`,
       section('Build targets (use with `west build -b`)', targetLines),
       section(
         'SoCs',
-        socs.map(
+        socDetail.map(
           (s) =>
             `\`${s.name}\`` +
+            (s.series ? ` — series \`${s.series}\`` : '') +
+            (s.family ? `, family \`${s.family}\`` : '') +
             (s.variants.length ? ` — variants: ${s.variants.join(', ')}` : '') +
             (s.cpuclusters.length ? ` — CPU clusters: ${s.cpuclusters.join(', ')}` : ''),
         ),
       ),
+      twins.length > 0
+        ? section(
+            'Easily confused with',
+            twins
+              .slice(0, 8)
+              .map(
+                (t) =>
+                  `\`${t.name}\` (${t.fullName})` +
+                  (t.differs.length > 0
+                    ? ` — differs: ${t.differs.join(', ')}`
+                    : ' — same SoC, flash and RAM; check the peripheral list'),
+              ),
+          ) +
+          (twins.length > 8 ? `\n- …and ${twins.length - 8} more in the same series` : '') +
+          '\n\nThese share a marketing name and a SoC series. Confirm the target against ' +
+          'the silicon rather than against a document — the documents look alike too.'
+        : undefined,
       supported.length > 0
         ? `**Supported peripherals** (${supported.length})\n${supported.map((s) => `\`${s}\``).join(' · ')}`
         : undefined,
@@ -257,9 +411,12 @@ export const getBoard: ToolFactory = (index) => ({
       fullName: row['full_name'] ?? '',
       vendor: row['vendor'] ?? '',
       arch: row['arch'] ?? null,
+      ram,
+      flash,
       dir: row['dir'],
       targets,
-      socs,
+      socs: socDetail,
+      nearTwins: twins,
       revisions,
       defaultRevision: row['default_revision'] ?? null,
       supported,

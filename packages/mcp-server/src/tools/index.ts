@@ -3,6 +3,7 @@ import type { Tool } from '../protocol.ts';
 
 import { getApi, searchApi } from './api.ts';
 import { getBoard, searchBoards } from './boards.ts';
+import { checkConfig } from './check.ts';
 import type { ToolFactory } from './common.ts';
 import { getBinding, searchBindings } from './devicetree.ts';
 import { getDoc, searchDocs } from './docs.ts';
@@ -12,10 +13,13 @@ import { getSource } from './source.ts';
 import { indexStatus } from './status.ts';
 
 /**
- * Tool order matters a little: clients present tools in this order, and the
- * three that prevent the most wasted build cycles come first.
+ * Tool order matters a little: clients present tools in this order, so the ones
+ * that prevent the most wasted build cycles come first. `check_config` leads
+ * because it settles a whole file in one call, and the per-symbol lookups follow
+ * in the order the three commonest failures occur — Kconfig, devicetree, board.
  */
 const FACTORIES: ToolFactory[] = [
+  checkConfig,
   searchKconfig,
   getKconfig,
   searchBindings,

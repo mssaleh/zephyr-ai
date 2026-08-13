@@ -14,7 +14,7 @@ import {
   validIndexDescriptor,
 } from './index-paths.mjs';
 
-const EXPECTED_SCHEMA = 6;
+const EXPECTED_SCHEMA = 7;
 const EXPECTED_DESCRIPTOR = 2;
 
 function treeVersion(root) {

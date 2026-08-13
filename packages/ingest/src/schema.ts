@@ -278,19 +278,25 @@ CREATE VIRTUAL TABLE board_fts USING fts5(
 );
 
 -- ------------------------------------------------------------- samples -----
+-- Samples and Twister test suites share one table because upstream validates
+-- sample.yaml and testcase.yaml against a single schema; kind keeps them
+-- separable for callers who want one or the other.
 CREATE TABLE sample (
   id                    INTEGER PRIMARY KEY,
   path                  TEXT NOT NULL UNIQUE,
+  kind                  TEXT NOT NULL DEFAULT 'sample' CHECK(kind IN ('sample', 'test')),
   name                  TEXT NOT NULL DEFAULT '',
   description           TEXT NOT NULL DEFAULT '',
   tags                  TEXT NOT NULL DEFAULT '[]',
   tags_text             TEXT NOT NULL DEFAULT '',
+  scenarios             TEXT NOT NULL DEFAULT '[]',
   depends_on            TEXT NOT NULL DEFAULT '[]',
   integration_platforms TEXT NOT NULL DEFAULT '[]',
   platform_allow        TEXT NOT NULL DEFAULT '[]',
   files                 TEXT NOT NULL DEFAULT '[]',
   doc_path              TEXT
 );
+CREATE INDEX sample_kind_idx ON sample(kind);
 
 -- Contents of a sample's small, high-value files (prj.conf, overlays, sources),
 -- so the server can hand back a working configuration without needing a

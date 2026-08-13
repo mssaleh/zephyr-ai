@@ -285,13 +285,13 @@ describe('MCP server', { skip: !ready && 'run `npm run build` and build the inde
     it('lists tools with schemas', async () => {
       const res = await client.request('tools/list');
       const tools = res.result?.['tools'] as { name: string; description: string; inputSchema: unknown }[];
-      strictEqual(tools.length, 14);
+      strictEqual(tools.length, 15);
       for (const tool of tools) {
         ok(tool.description.length > 60, `${tool.name} needs a substantial description`);
         ok(tool.inputSchema, `${tool.name} needs an inputSchema`);
       }
       const names = tools.map((t) => t.name);
-      for (const expected of ['search_kconfig', 'get_binding', 'search_boards', 'get_source', 'index_status']) {
+      for (const expected of ['search_kconfig', 'get_binding', 'search_boards', 'get_source', 'index_status', 'check_config']) {
         ok(names.includes(expected), `expected tool ${expected}`);
       }
     });
@@ -346,6 +346,147 @@ describe('MCP server', { skip: !ready && 'run `npm run build` and build the inde
         const res = await client.call('search_bindings', { query });
         strictEqual(res.isError, false, `query ${query} should not error`);
       }
+    });
+  });
+
+  describe('check_config', () => {
+    it('gives a verdict per line for a whole Kconfig fragment', async () => {
+      const res = await client.call('check_config', {
+        path: 'prj.conf',
+        text: [
+          'CONFIG_BT=y',
+          'CONFIG_BT_BUF_ACL_RX_SIZE=y',
+          'CONFIG_MALFORMED',
+          'CONFIG_ZEPHYR_AI_INVENTED_SYMBOL=y',
+        ].join('\n'),
+      });
+      strictEqual(res.structured['kind'], 'kconfig');
+      strictEqual(res.structured['checked'], 4);
+      strictEqual(res.structured['problemCount'], 2);
+      ok(res.text.includes('is int but is set to "y"'));
+      ok(res.text.includes('malformed Kconfig assignment'));
+      // An unknown symbol is scope, never a mistake: generated and
+      // application-local symbols live outside the catalogue by construction.
+      ok(res.text.includes('not in the indexed catalogue'));
+      ok(!res.text.includes('CONFIG_ZEPHYR_AI_INVENTED_SYMBOL is'), 'absence must not be a finding');
+    });
+
+    it('checks devicetree without checking property names', async () => {
+      const res = await client.call('check_config', {
+        path: 'app.overlay',
+        text:
+          '&spi1 {\n screen: s@0 {\n  compatible = "sitronix,st7789v";\n' +
+          '  not-a-real-property = <1>;\n };\n};\n',
+      });
+      strictEqual(res.structured['kind'], 'devicetree');
+      strictEqual(res.structured['problemCount'], 0);
+      ok(!res.text.includes('not-a-real-property'), 'property names belong to get_binding');
+    });
+
+    it('infers the file kind from content when no path is given', async () => {
+      const dt = await client.call('check_config', {
+        text: 'a { compatible = "sitronix,st7789v"; };',
+      });
+      strictEqual(dt.structured['kind'], 'devicetree');
+      const kc = await client.call('check_config', { text: 'CONFIG_BT=y\n' });
+      strictEqual(kc.structured['kind'], 'kconfig');
+      const neither = await client.call('check_config', { text: 'hello world\n' });
+      strictEqual(neither.isError, true);
+      ok(neither.text.includes('kind'));
+    });
+
+    it('does not report a promptless assignment in a defconfig', async () => {
+      // A defconfig is exactly where assigning a promptless symbol is correct,
+      // so the same line is a finding in prj.conf and not one here.
+      const symbol = await client.call('search_kconfig', { query: 'sensor', limit: 1 });
+      ok(symbol.text.length > 0);
+      const text = 'CONFIG_SENSOR_LOG_LEVEL_DBG=y\n';
+      const asApp = await client.call('check_config', { path: 'prj.conf', text });
+      const asDefconfig = await client.call('check_config', { path: 'board_defconfig', text });
+      ok(Number(asDefconfig.structured['problemCount']) <= Number(asApp.structured['problemCount']));
+    });
+  });
+
+  describe('batched lookups', () => {
+    // One fact per call lost to the shell: a single `for` loop checked thirteen
+    // Kconfig symbols in one command, so an agent economising on tool calls
+    // reached for grep and got a weaker answer than the index holds.
+    const SYMBOLS = [
+      'SETTINGS_NVS',
+      'NVS',
+      'HTS221',
+      'LPS22HB',
+      'LSM6DSL',
+      'BT_SETTINGS',
+      'WATCHDOG',
+      'BT_GATT_DYNAMIC_DB',
+    ];
+
+    it('answers many Kconfig symbols in one call, with more than grep gives', async () => {
+      const res = await client.call('get_kconfig', { names: SYMBOLS });
+      strictEqual(res.structured['requested'], SYMBOLS.length);
+      const results = res.structured['results'] as { name: string; found: boolean }[];
+      strictEqual(results.length, SYMBOLS.length);
+      ok(results.every((r) => r.found), 'every symbol above is indexed');
+      for (const symbol of SYMBOLS) ok(res.text.includes(`CONFIG_${symbol}`), `${symbol} missing`);
+      // The point of the batch is that it beats `grep "^config FOO$"` on content,
+      // not only on call count.
+      ok(res.text.includes('Depends on'));
+      ok(res.text.includes('Choice alternatives'));
+    });
+
+    it('reports a miss inside a batch without discarding the rest', async () => {
+      const res = await client.call('get_kconfig', {
+        names: ['NVS', 'A_SYMBOL_THAT_IS_NOT_INDEXED', 'WATCHDOG'],
+      });
+      const results = res.structured['results'] as { name: string; found: boolean }[];
+      strictEqual(results.length, 3);
+      strictEqual(results.filter((r) => r.found).length, 2);
+      ok(res.text.includes('was not found in the indexed Zephyr'));
+      ok(res.text.includes('CONFIG_WATCHDOG'), 'a miss must not abort the entries after it');
+    });
+
+    it('batches bindings and API symbols too', async () => {
+      const bindings = await client.call('get_binding', {
+        compatibles: ['st,lsm6dsl', 'st,hts221'],
+      });
+      strictEqual((bindings.structured['results'] as unknown[]).length, 2);
+      ok(bindings.text.includes('Required properties'));
+
+      const api = await client.call('get_api', {
+        names: ['sensor_sample_fetch', 'sensor_channel_get'],
+      });
+      strictEqual((api.structured['results'] as unknown[]).length, 2);
+      ok(api.text.includes('sensor_sample_fetch') && api.text.includes('sensor_channel_get'));
+    });
+
+    it('keeps the singular form and its full answer unchanged', async () => {
+      const res = await client.call('get_kconfig', { name: 'SETTINGS_NVS' });
+      // The flat, per-symbol structuredContent shape, not the batch envelope.
+      strictEqual(res.structured['name'], 'CONFIG_SETTINGS_NVS');
+      strictEqual(res.structured['requested'], undefined);
+      ok(res.text.includes('Definition contexts'));
+    });
+
+    it('rejects supplying both the singular and plural argument', async () => {
+      const res = await client.call('get_kconfig', { name: 'NVS', names: ['NVS'] });
+      strictEqual(res.isError, true);
+      ok(res.text.includes('not both'));
+    });
+
+    it('collapses duplicates rather than spending the budget twice', async () => {
+      const res = await client.call('get_kconfig', { names: ['NVS', 'CONFIG_NVS', 'NVS'] });
+      // CONFIG_NVS normalises to NVS only after the dedupe, so three inputs
+      // become two lookups and one duplicated rendering — not three.
+      ok(Number(res.structured['requested']) < 3);
+    });
+
+    it('rejects a batch larger than the declared maximum', async () => {
+      const res = await client.call('get_kconfig', {
+        names: Array.from({ length: 51 }, (_, i) => `SYMBOL_${i}`),
+      });
+      strictEqual(res.isError, true);
+      ok(res.text.includes('Invalid input'));
     });
   });
 
@@ -430,6 +571,42 @@ describe('MCP server', { skip: !ready && 'run `npm run build` and build the inde
       ok(full.text.includes('wakeup-source'));
     });
 
+    it('never hides that a device has a binding per bus', async () => {
+      // A part reachable over both I2C and SPI has one binding per bus, and they
+      // do not require the same properties — the SPI one needs
+      // spi-max-frequency. Returning whichever row the database stored first
+      // answered an I2C question for a SPI part, silently, and the node would
+      // fail to build. The compatible is read from the index, so the test states
+      // the rule rather than one vendor's part.
+      const dual = await client.call('search_bindings', { query: 'accelerometer', bus: 'spi' });
+      const candidates = (dual.structured['results'] as { compatible: string }[]).map((r) => r.compatible);
+
+      let exercised = 0;
+      for (const compatible of candidates) {
+        const res = await client.call('get_binding', { compatible });
+        const variants = res.structured['busVariants'] as { onBus: string | null }[];
+        if (variants.length < 2) continue;
+        exercised++;
+        ok(res.text.includes('bindings, one per bus'), `${compatible} hid its bus variants`);
+
+        const spi = await client.call('get_binding', { compatible, on_bus: 'spi' });
+        strictEqual(spi.structured['onBus'], 'spi');
+        const required = (spi.structured['required'] as { name: string }[]).map((p) => p.name);
+        ok(required.includes('spi-max-frequency'), `${compatible} on spi must require it`);
+        break;
+      }
+      ok(exercised > 0, 'no dual-bus binding was reached, so the rule went untested');
+    });
+
+    it('refuses a bus the compatible is not declared for', async () => {
+      const res = await client.call('get_binding', {
+        compatible: 'st,lsm6dsl',
+        on_bus: 'not-a-bus',
+      });
+      strictEqual(res.isError, true);
+      ok(res.text.includes('It is declared for'));
+    });
+
     it('filters bindings by vendor', async () => {
       const res = await client.call('search_bindings', { query: 'gpio', vendor: 'espressif' });
       const results = res.structured['results'] as { compatible: string }[];
@@ -465,6 +642,58 @@ describe('MCP server', { skip: !ready && 'run `npm run build` and build the inde
       const results = res.structured['results'] as { supported: string[] }[];
       ok(results.length > 0, 'expected ST nucleo boards with CAN');
       ok(results.every((r) => r.supported.includes('can')));
+    });
+
+    it('reports the memory figures and SoC series it holds for a board', async () => {
+      // Board-level ram and flash were selected and then dropped, so they
+      // reached a caller only through targets that happen to carry Twister
+      // metadata — a generated qualifier target carries none. Upstream leaves
+      // both unset for some boards, so the claim is "renders what it holds",
+      // not "every board has figures".
+      const found = await client.call('search_boards', { query: 'nucleo', limit: 10 });
+      const names = (found.structured['results'] as { name: string }[]).map((r) => r.name);
+
+      let exercised = 0;
+      for (const name of names) {
+        const res = await client.call('get_board', { name });
+        const flash = res.structured['flash'];
+        const ram = res.structured['ram'];
+        const socs = res.structured['socs'] as { name: string; series: string }[];
+        ok(socs.length > 0 && socs.every((s) => s.series !== ''), `${name} surfaced no SoC series`);
+        if (flash === null || ram === null) continue;
+        exercised++;
+        ok(res.text.includes(`${String(flash)} KB flash`), `${name} stored flash unrendered`);
+        ok(res.text.includes(`${String(ram)} KB RAM`), `${name} stored ram unrendered`);
+      }
+      ok(exercised > 0, 'no board carried both figures, so the invariant went untested');
+    });
+
+    it('names near-twin boards symmetrically and only real ones', async () => {
+      // Confusing two products built on one PCB reference is an error no
+      // document check catches, because the documents look alike too. The rule
+      // is structural — same vendor, same SoC series, part codes within two
+      // edits — so these invariants hold for whatever boards it selects.
+      const found = await client.call('search_boards', { query: 'nucleo', limit: 20 });
+      const names = (found.structured['results'] as { name: string }[]).map((r) => r.name);
+
+      let exercised = 0;
+      for (const name of names) {
+        const res = await client.call('get_board', { name });
+        const twins = res.structured['nearTwins'] as { name: string; differs: string[] }[];
+        if (twins.length === 0) continue;
+        exercised++;
+        ok(res.text.includes('Easily confused with'), `${name} found twins but rendered none`);
+        for (const twin of twins.slice(0, 3)) {
+          const back = await client.call('get_board', { name: twin.name });
+          strictEqual(back.structured['found'], true, `${twin.name} is not a real board`);
+          const reverse = back.structured['nearTwins'] as { name: string }[];
+          ok(
+            reverse.some((t) => t.name === name),
+            `${name} names ${twin.name} as a twin but not the reverse`,
+          );
+        }
+      }
+      ok(exercised > 0, 'no board reported a twin, so the rule went untested');
     });
   });
 
@@ -582,6 +811,76 @@ describe('MCP server', { skip: !ready && 'run `npm run build` and build the inde
       });
       const included = res.structured['filesIncluded'] as string[];
       ok(!included.some((f) => f.startsWith('src/')));
+    });
+
+    it('renders every platform list it stores, not only the CI subset', async () => {
+      // A column that is indexed but never rendered is invisible in a way no row
+      // count catches. get_sample stored platform_allow and showed it only when
+      // integration_platforms was empty, so "not in CI" read as "not supported"
+      // — and a reader concluded no upstream sample named a board that several
+      // of them name. The assertion is the invariant, not any one sample.
+      const found = await client.call('search_samples', { query: 'net', limit: 15 });
+      const paths = (found.structured['results'] as { path: string }[]).map((r) => r.path);
+
+      let exercised = 0;
+      for (const path of paths) {
+        const res = await client.call('get_sample', { path, max_chars: 1000 });
+        const allow = res.structured['platformAllow'] as string[];
+        const integration = res.structured['integrationPlatforms'] as string[];
+        if (allow.length === 0 || integration.length === 0) continue;
+        exercised++;
+        ok(res.text.includes('platform allowlist'), `${path} stored platform_allow unrendered`);
+        ok(res.text.includes('integration platforms'), `${path} stored integration unrendered`);
+        ok(res.text.includes(allow[0]!), `${path} did not name ${allow[0]}`);
+      }
+      ok(exercised > 0, 'no sample carried both lists, so the invariant went untested');
+    });
+
+    it('answers what upstream verifies on a board, from tests/ as well as samples/', async () => {
+      // The index held 610 rows, all under samples/ and none under tests/, so
+      // "is this exercised in CI" was half unanswerable by construction — a
+      // reader could only see the sample half and reasonably conclude the rest
+      // did not exist.
+      const res = await client.call('search_samples', { board: 'frdm_k64f', limit: 25 });
+      const results = res.structured['results'] as { path: string; kind: string }[];
+      ok(results.length > 0);
+      ok(results.some((r) => r.kind === 'test' && r.path.startsWith('tests/')), 'no tests/ rows');
+      ok(results.some((r) => r.kind === 'sample'), 'no samples/ rows');
+
+      const onlyTests = await client.call('search_samples', {
+        board: 'frdm_k64f',
+        kind: 'test',
+        limit: 25,
+      });
+      const testRows = onlyTests.structured['results'] as { kind: string }[];
+      ok(testRows.length > 0);
+      ok(testRows.every((r) => r.kind === 'test'), 'the kind filter let a sample through');
+    });
+
+    it('reads a test suite and tells you how to run it', async () => {
+      const found = await client.call('search_samples', { query: 'gpio', kind: 'test', limit: 1 });
+      const path = (found.structured['results'] as { path: string }[])[0]!.path;
+      const res = await client.call('get_sample', { path, max_chars: 1000 });
+      strictEqual(res.structured['kind'], 'test');
+      ok(res.text.includes('west twister -T'), 'a test suite is run, not built');
+      ok((res.structured['scenarios'] as string[]).length > 0, 'no twister scenario ids');
+    });
+
+    it('requires a query or a board, not neither', async () => {
+      const res = await client.call('search_samples', {});
+      strictEqual(res.isError, true);
+    });
+
+    it('says which evidence made a sample match the requested board', async () => {
+      const found = await client.call('search_samples', {
+        query: 'net',
+        board: 'frdm_k64f',
+        limit: 10,
+      });
+      const results = found.structured['results'] as { boardEvidence: string[] }[];
+      const matched = results.filter((r) => r.boardEvidence.length > 0);
+      ok(matched.length > 0, 'ranking consulted board evidence but reported none');
+      ok(found.text.includes('names frdm_k64f in:'));
     });
   });
 

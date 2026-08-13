@@ -3,6 +3,83 @@
 All notable user-visible changes are recorded here. The format follows Keep a
 Changelog, and releases use semantic versioning.
 
+## [0.3.0] - 2026-08-13
+
+Indexes built by earlier versions are not readable by this one: the index schema is
+now 7. Rebuild with the `zephyr-index` skill after upgrading.
+
+### Added
+
+- `get_kconfig`, `get_binding`, and `get_api` each accept a list — `names`,
+  `compatibles`, `names` — and answer the whole list in one call, returning the
+  facts a shell `grep` cannot give: a symbol's type, prompt, dependencies, defaults
+  and choice alternatives; a compatible's bus and required properties; a function's
+  signature and header. Checking a dozen symbols cost a dozen calls, so agents used
+  a shell loop instead and settled for a weaker answer.
+- `check_config` takes a whole `prj.conf`, defconfig, `.overlay`, or `.dts` and
+  returns a verdict per line, making the same claims as the write hook.
+- Upstream Twister test suites under `tests/` are indexed alongside `samples/`,
+  with their scenario names. `search_samples` takes a `kind` filter, and a `board`
+  with no query lists everything upstream names for that board and how many of each
+  kind exist. Questions about what upstream verifies on a board were previously
+  unanswerable by construction.
+- `get_board` names the boards a target is easy to mistake for — products sharing a
+  PCB reference and a SoC series — alongside the flash, RAM, and SoC figures that
+  separate them, so a board chosen from a document can be checked against silicon.
+- A `PreToolUse` hook names the lookup and the agent that fit a `.conf`, `.dts`,
+  `.dtsi`, or `.overlay` before it is written. It never blocks the write.
+- A clean Kconfig or devicetree file is acknowledged once per file per session,
+  reporting what was checked and against which indexed Zephyr version. A check that
+  reports nothing was previously indistinguishable from one that never ran.
+
+### Fixed
+
+- **Devicetree write validation could never run.** It required
+  `coverage.bindings.complete`, which the ingest sets only when there is no project
+  root — and a project-scoped index always has one. Every index a user builds
+  reported the flag as false, so the devicetree half of the write hook was dead in
+  the field for the whole of 0.2.0. The gate is removed; safety comes from the
+  near-miss rule, which never reports absence. The test fixture ran against the one
+  descriptor shape in which the gate opened and no user ever has, so it passed
+  throughout; it now runs against a project-scoped index.
+- **`get_sample` never rendered `platform_allow`.** It showed the allowlist only
+  when `integration_platforms` was empty, which hid it for 249 of 610 samples. A
+  reader concluded from that output that no upstream Wi-Fi sample named a board that
+  seven of them name. Both lists are now always rendered and labelled by what they
+  mean. `search_samples` ranked on allowlist evidence without ever saying so, and
+  now reports which list matched.
+- An absent value exported from Python was stored as the four-character string
+  `"null"`, which every consumer read as a value — `get_binding` announced "is a bus
+  controller for: `null`" on 2,929 bindings that control no bus. The index is
+  smaller for the fix, and a corpus gate now fails on any stringified null.
+- **A device reachable over more than one bus has a binding per bus, and
+  `get_binding` returned whichever one the database held first.** Of the compatibles
+  with several bindings, 78 of 80 require different properties, and the difference is
+  usually `spi-max-frequency` — so a SPI part got the I2C answer and the node it
+  produced would not build. `get_binding` now takes `on_bus`, names every variant
+  when asked without one, and orders them stably; `check_config` reports each
+  variant's required-property count rather than picking one.
+- **The write validator reported nodes that upstream ships.** A devicetree node binds
+  through the first of its compatibles that has a binding, so a fallback list such as
+  `"microchip,mcp9808", "jedec,jc-42.4-temp"` is correct with only the generic name
+  indexed. Judging each value alone flagged four of Zephyr's own sample overlays,
+  because the specific name lands two edits from an unrelated Microchip ADC.
+- **`CONFIG_X=y # comment` was reported as a type error.** For bool and tristate
+  kconfiglib reads only the first character after `=`, matching the C implementation,
+  so the assignment is legal and upstream uses it.
+- **Promptless assignments were reported from an incomplete view.** Zephyr decides
+  promptlessness across every definition of a symbol; this catalogue holds only those
+  reachable in the context it was built for, so a symbol declared in a module Kconfig
+  or another SoC's tree looked promptless when it was not. The claim is now made only
+  where the catalogue can see the declaration. Measured over 800 upstream files, the
+  validator's findings on correct code went from nine to none.
+- `get_board` selected the board's flash and RAM and then dropped them, so they
+  reached a caller only through build targets that happen to carry Twister metadata.
+  SoC series and family were indexed but never queried by any tool.
+- The write hook and `check-index` hardcode the index schema they accept and nothing
+  tied them to the shared constant; after a bump that was not carried across, every
+  hook would silently refuse every index. A gate now ties the three together.
+
 ## [0.2.0] - 2026-08-12
 
 Indexes built by earlier versions are not readable by this one: the index schema

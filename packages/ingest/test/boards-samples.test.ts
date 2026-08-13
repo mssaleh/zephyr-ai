@@ -38,8 +38,30 @@ describe('boards and samples against the real Zephyr tree', { skip: !haveTree &&
     ok(samples.some((sample) => sample.tags.length > 0));
     for (const sample of samples) {
       strictEqual(sample.files.length, sample.contents.length, `eligible/stored mismatch for ${sample.path}`);
-      ok(sample.files.includes('sample.yaml'));
+      // The manifest a record is defined by, which is the filename its kind is
+      // read from rather than the directory it happens to sit in.
+      ok(sample.files.includes(sample.kind === 'test' ? 'testcase.yaml' : 'sample.yaml'), sample.path);
       if (sample.docPath) ok(sample.files.includes('README.rst'));
     }
+  });
+
+  it('indexes Twister suites under tests/ and keys the kind off the manifest', () => {
+    // Upstream validates sample.yaml and testcase.yaml with one schema, so the
+    // parser needs no special case — but the tree has testcase.yaml under
+    // samples/ and a sample.yaml under tests/, so a path prefix would mislabel
+    // both. The filename is the honest discriminator.
+    const samples = collectSamples(ZEPHYR);
+    const tests = samples.filter((sample) => sample.kind === 'test');
+    ok(tests.length > 0, 'no testcase.yaml was indexed');
+    ok(tests.some((sample) => sample.path.startsWith('tests/')));
+    ok(
+      tests.some((sample) => sample.path.startsWith('samples/')),
+      'a testcase.yaml under samples/ must still be a test',
+    );
+    ok(
+      samples.some((sample) => sample.kind === 'sample' && sample.path.startsWith('tests/')),
+      'a sample.yaml under tests/ must still be a sample',
+    );
+    ok(tests.some((sample) => sample.scenarios.length > 0), 'twister scenario ids are not captured');
   });
 });

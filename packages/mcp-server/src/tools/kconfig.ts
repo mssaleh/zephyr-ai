@@ -1,10 +1,16 @@
-import { clampLimit, json, snippet } from '../db.ts';
+import { type Index, clampLimit, json, snippet } from '../db.ts';
+import { ToolError } from '../protocol.ts';
 import {
+  BATCH_MAX_CHARS,
+  type BatchEntry,
   type ToolFactory,
-  catalogueMiss,
+  batchResult,
+  batchSchema,
+  catalogueMissText,
   joinSections,
   limitSchema,
   noResults,
+  oneOrMany,
   prefixCandidates,
   requireString,
   result,
@@ -116,16 +122,158 @@ export const searchKconfig: ToolFactory = (index) => ({
   },
 });
 
+/**
+ * The message for a symbol the catalogue does not hold.
+ *
+ * Offers the nearest names rather than a bare miss. Underscores are split into
+ * separate terms so BT_PERIPHERAL_MODE can still reach BT_PERIPHERAL; as one
+ * token it matches nothing and the user gets no help at all.
+ */
+function kconfigMissText(idx: Index, name: string): string {
+  const near = idx.search(
+    `SELECT k.name FROM kconfig_fts f JOIN kconfig k ON k.id = f.rowid
+      WHERE kconfig_fts MATCH ? ORDER BY bm25(kconfig_fts, 12.0, 4.0, 1.0) LIMIT 8`,
+    name.replace(/_/g, ' '),
+    [],
+    8,
+  );
+  const byPrefix = prefixCandidates(
+    (sql, ...params) => idx.all(sql, ...params),
+    "SELECT name FROM kconfig WHERE name LIKE ? ESCAPE '\\' ORDER BY LENGTH(name) LIMIT 40",
+    name,
+    'name',
+  );
+  const candidates = [...new Set([...near.map((r) => String(r['name'])), ...byPrefix])];
+  return catalogueMissText(
+    'Kconfig symbol',
+    `CONFIG_${name}`,
+    idx.meta['zephyr_version'] ?? 'unknown',
+    candidates.map((value) => `CONFIG_${value}`),
+    'Generated, application-local, board/SoC-derived, and external-module symbols may not be covered.',
+  );
+}
+
+/**
+ * What a batched lookup returns for one symbol.
+ *
+ * This is the answer a shell `grep "^config FOO$"` was reaching for and could
+ * not give: existence plus type, prompt, dependencies, defaults, and the
+ * alternatives in its choice. The full definition-context walk stays behind the
+ * singular form, because rendering it for fifty symbols is the quarter-megabyte
+ * answer the per-symbol cap already exists to prevent.
+ */
+function kconfigSummary(idx: Index, requested: string): BatchEntry {
+  const name = normaliseName(requested);
+  const key = `CONFIG_${name}`;
+  const row = idx.get(
+    'SELECT id, name, type, prompt, has_prompt, choice, n_defs FROM kconfig WHERE name = ?',
+    name,
+  );
+  if (!row) {
+    return {
+      key,
+      text: `### ${key}\n\n${kconfigMissText(idx, name)}`,
+      structured: { name: key, found: false },
+    };
+  }
+
+  // The context an application configuration can actually act on is a prompted
+  // one; an unprompted definition is a board or SoC defconfig alternative.
+  const definition = idx.get(
+    `SELECT d.id, d.file, d.line, COALESCE(e.display, 'y') AS condition
+       FROM kconfig_definition d
+       LEFT JOIN kconfig_expr e ON e.id = d.condition_expr_id
+      WHERE d.symbol_id = ? ORDER BY (d.prompt IS NULL), d.id LIMIT 1`,
+    Number(row['id']),
+  );
+  const defaults = definition
+    ? idx
+      .all(
+        `SELECT v.display AS value, COALESCE(c.display, 'y') AS cond
+             FROM kconfig_default d
+             JOIN kconfig_expr v ON v.id = d.value_expr_id
+             LEFT JOIN kconfig_expr c ON c.id = d.condition_expr_id
+            WHERE d.definition_id = ? ORDER BY d.ord LIMIT 6`,
+        Number(definition['id']),
+      )
+      .map((item) =>
+        item['cond'] === 'y'
+          ? `\`${String(item['value'])}\``
+          : `\`${String(item['value'])}\` if \`${String(item['cond'])}\``,
+      )
+    : [];
+  const choiceMembers = idx
+    .all(
+      `SELECT k2.name AS name
+         FROM kconfig_choice_member m1
+         JOIN kconfig_choice_member m2 ON m2.choice_id = m1.choice_id
+         JOIN kconfig k1 ON k1.id = m1.symbol_id
+         JOIN kconfig k2 ON k2.id = m2.symbol_id
+        WHERE k1.name = ? AND k2.name <> k1.name ORDER BY k2.name`,
+      name,
+    )
+    .map((r) => `CONFIG_${String(r['name'])}`);
+  const selectedBy = idx
+    .all(
+      'SELECT DISTINCT from_sym FROM kconfig_edge WHERE to_sym = ? AND kind = ? ORDER BY from_sym LIMIT 8',
+      name,
+      'select',
+    )
+    .map((r) => `CONFIG_${String(r['from_sym'])}`);
+
+  const type = (row['type'] as string) ?? 'unknown';
+  const hasPrompt = Number(row['has_prompt']) === 1;
+  const condition = definition ? String(definition['condition']) : 'y';
+  const definitionCount = Number(row['n_defs']);
+
+  const text = joinSections([
+    `### ${key}`,
+    `\`${type}\`${row['prompt'] ? ` — ${String(row['prompt'])}` : ''}`,
+    condition !== 'y' ? `**Depends on:** \`${condition}\`` : undefined,
+    defaults.length > 0 ? `**Defaults:** ${defaults.join(', ')}` : undefined,
+    hasPrompt
+      ? undefined
+      : '**Promptless** — do not assign this from `prj.conf`; enable a symbol that selects it.',
+    selectedBy.length > 0 ? `**Selected by:** ${selectedBy.join(', ')}` : undefined,
+    choiceMembers.length > 0
+      ? `**Choice alternatives** (selecting one deselects the rest): ${choiceMembers.join(', ')}`
+      : undefined,
+    definitionCount > 1
+      ? `_${definitionCount} definition contexts — call get_kconfig with a single name for all of them._`
+      : undefined,
+  ]);
+
+  return {
+    key,
+    text,
+    structured: {
+      name: key,
+      found: true,
+      type,
+      prompt: row['prompt'] ?? '',
+      hasPrompt,
+      dependsOn: condition,
+      definitionCount,
+      selectedBy,
+      choice: row['choice'] ?? null,
+      choiceMembers,
+      knowledgeLevel: 'catalogue',
+    },
+  };
+}
+
 export const getKconfig: ToolFactory = (index) => ({
   name: 'get_kconfig',
-  title: 'Get a Kconfig symbol',
+  title: 'Get Kconfig symbols',
   description:
-    'Get the full definition of one Zephyr Kconfig symbol: type, default values with the ' +
+    'Get the full definition of a Zephyr Kconfig symbol: type, default values with the ' +
     'conditions that select them, what it depends on, what it selects and implies, valid ranges, ' +
     'help text, the files that define it, and which other symbols select or imply it. Use this to ' +
     'confirm a symbol exists before relying on it, and to diagnose a setting that appears to be ' +
-    'ignored. The tool shows catalogue-level dependency information; use the resolved build ' +
-    'configuration to determine whether a setting is visible and effective.',
+    'ignored. Pass "names" to check many symbols in one call — checking a whole prj.conf should ' +
+    'cost one call, not one per line — which returns type, prompt, dependencies, defaults and ' +
+    'choice alternatives for each. The tool shows catalogue-level dependency information; use the ' +
+    'resolved build configuration to determine whether a setting is visible and effective.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -133,15 +281,27 @@ export const getKconfig: ToolFactory = (index) => ({
         type: 'string',
         description: 'Symbol name, with or without the CONFIG_ prefix (e.g. CONFIG_BT_PERIPHERAL).',
       },
+      names: batchSchema(
+        'Several symbols in one call, e.g. ["BT_PERIPHERAL", "NVS", "SETTINGS_NVS"]. Returns a ' +
+          'compact summary of each instead of the full definition-context listing. Prefer this ' +
+          'over repeated single-name calls.',
+      ),
     },
-    required: ['name'],
     additionalProperties: false,
   },
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   handler: (args) => {
-    const requested = requireString(args, 'name');
-    const name = normaliseName(requested);
+    const { values, batched } = oneOrMany(args, 'name', 'names');
     const idx = index();
+
+    if (batched) {
+      return batchResult(
+        values.map((value) => kconfigSummary(idx, value)),
+        BATCH_MAX_CHARS,
+      );
+    }
+
+    const name = normaliseName(values[0]!);
 
     const row = idx.get(
       `SELECT id, name, type, prompt, help, has_prompt, choice, n_defs
@@ -149,32 +309,7 @@ export const getKconfig: ToolFactory = (index) => ({
       name,
     );
 
-    if (!row) {
-      // Offer the nearest names rather than a bare miss. Underscores are split
-      // into separate terms so BT_PERIPHERAL_MODE can still reach BT_PERIPHERAL;
-      // as one token it matches nothing and the user gets no help at all.
-      const near = idx.search(
-        `SELECT k.name FROM kconfig_fts f JOIN kconfig k ON k.id = f.rowid
-          WHERE kconfig_fts MATCH ? ORDER BY bm25(kconfig_fts, 12.0, 4.0, 1.0) LIMIT 8`,
-        name.replace(/_/g, ' '),
-        [],
-        8,
-      );
-      const byPrefix = prefixCandidates(
-        (sql, ...params) => idx.all(sql, ...params),
-        "SELECT name FROM kconfig WHERE name LIKE ? ESCAPE '\\' ORDER BY LENGTH(name) LIMIT 40",
-        name,
-        'name',
-      );
-      const candidates = [...new Set([...near.map((r) => String(r['name'])), ...byPrefix])];
-      return catalogueMiss(
-        'Kconfig symbol',
-        `CONFIG_${name}`,
-        idx.meta['zephyr_version'] ?? 'unknown',
-        candidates.map((value) => `CONFIG_${value}`),
-        'Generated, application-local, board/SoC-derived, and external-module symbols may not be covered.',
-      );
-    }
+    if (!row) throw new ToolError(kconfigMissText(idx, name));
 
     // Board and SoC defconfigs make definition counts wildly uneven: NUM_IRQS has
     // 730 alternatives and SOC 719. Rendering every one produced a quarter-megabyte

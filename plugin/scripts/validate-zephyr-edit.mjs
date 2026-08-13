@@ -14,6 +14,14 @@
  * silence. Exit 2 is the blocking-error contract and is reserved for a finding
  * about the file's contents. SessionStart already reports a missing or unusable
  * index once per session.
+ *
+ * A check that finds nothing is otherwise indistinguishable from a check that
+ * never ran, both to someone reading a transcript and to a user wondering
+ * whether the plugin is alive — and that blindness is exactly what hid an
+ * unreachable devicetree branch for a whole release. So a clean file is
+ * acknowledged once per file per session, on exit 0, as JSON on stdout:
+ * `hookSpecificOutput.additionalContext` reaches the model and `systemMessage`
+ * reaches the user, and neither is framed as a blocking error.
  */
 import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { basename, join, relative, resolve, sep } from 'node:path';
@@ -22,12 +30,13 @@ import { DatabaseSync } from 'node:sqlite';
 import {
   descriptorFingerprint,
   findWestWorkspace,
+  firstTimeThisSession,
   readHookInput,
   resolveIndexPath,
   validIndexDescriptor,
 } from './index-paths.mjs';
 
-const EXPECTED_SCHEMA = 6;
+const EXPECTED_SCHEMA = 7;
 const EXPECTED_DESCRIPTOR = 2;
 const MAX_REPORTED = 12;
 
@@ -197,6 +206,7 @@ function openValidatedIndex(path) {
     const rows = db.prepare('SELECT key, value FROM meta').all();
     const meta = Object.fromEntries(rows.map((row) => [String(row.key), String(row.value)]));
     const descriptor = JSON.parse(meta.index_descriptor ?? 'null');
+    const version = meta.zephyr_version ?? 'unknown';
     if (
       Number(meta.schema_version) !== EXPECTED_SCHEMA ||
       !validIndexDescriptor(descriptor, EXPECTED_SCHEMA, EXPECTED_DESCRIPTOR) ||
@@ -205,7 +215,7 @@ function openValidatedIndex(path) {
     ) {
       throw new Error('the index schema or descriptor is incompatible');
     }
-    return { db, descriptor };
+    return { db, descriptor, version };
   } catch (error) {
     db.close();
     throw error;
@@ -213,14 +223,49 @@ function openValidatedIndex(path) {
 }
 
 function valueProblem(type, value) {
-  if ((type === 'bool' || type === 'tristate') && !['y', 'm', 'n'].includes(value)) {
-    return `is ${type} but is set to "${value}" (expected ${type === 'bool' ? 'y or n' : 'y, m, or n'})`;
+  // For bool and tristate, kconfiglib reads only the first character after `=`,
+  // matching the C implementation it replaces, so `CONFIG_X=y # why` assigns y
+  // and is legal — upstream ships exactly that. Rejecting the whole token
+  // contradicted the tool that actually builds the firmware. Numeric and string
+  // types are not lenient in the same way: kconfiglib validates those in full.
+  if (type === 'bool' || type === 'tristate') {
+    const allowed = type === 'bool' ? /^[yn]/ : /^[ymn]/;
+    return allowed.test(value)
+      ? null
+      : `is ${type} but is set to "${value}" (expected ${type === 'bool' ? 'y or n' : 'y, m, or n'})`;
   }
-  if (type === 'bool' && value === 'm') return 'is bool but is set to "m" (expected y or n)';
   if (type === 'int' && !/^-?[0-9]+$/.test(value)) return `is int but is set to "${value}"`;
   if (type === 'hex' && !/^(?:0x)?[0-9a-fA-F]+$/.test(value)) return `is hex but is set to "${value}"`;
   if (type === 'string' && !/^"(?:[^"\\]|\\.)*"$/.test(value)) return `is string but is not a quoted string`;
   return null;
+}
+
+/**
+ * Acknowledge a file that was really checked and really came back clean.
+ *
+ * Bounded to once per file per session, and said only when a check actually ran
+ * against a real index — an acknowledgement that could appear when nothing was
+ * checked would be worth less than the silence it replaces.
+ */
+function acknowledge(sessionId, path, kind, checked, version) {
+  if (checked === 0) return;
+  if (!firstTimeThisSession(sessionId, `validated:${path}`)) return;
+  const subject = kind === 'kconfig' ? 'Kconfig assignment' : 'devicetree compatible';
+  const summary =
+    `Zephyr: checked ${checked} ${subject}${checked === 1 ? '' : 's'} in ${basename(path)} ` +
+    `against indexed Zephyr ${version} — no problems found.`;
+  process.stdout.write(
+    `${JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: 'PostToolUse',
+        additionalContext:
+          `${summary} Names absent from the catalogue are not reported: an application may ` +
+          'declare its own Kconfig and bindings. Property names are never checked here — ' +
+          'get_binding is the only reliable source for them.',
+      },
+      systemMessage: summary,
+    })}\n`,
+  );
 }
 
 function emit(path, problems, followUp) {
@@ -263,22 +308,53 @@ async function main() {
   } catch {
     return 0;
   }
-  const { db, descriptor } = opened;
+  const { db, descriptor, version } = opened;
+  const sessionId = payload.session_id;
   const problems = [];
+  let checked = 0;
   try {
     if (!looksLikeZephyrProject(file.root, descriptor)) return 0;
-    if (kind === 'devicetree') return validateDevicetree(db, descriptor, file);
+    if (kind === 'devicetree') {
+      const outcome = validateDevicetree(db, file);
+      if (outcome.code === 0) {
+        acknowledge(sessionId, file.path, kind, outcome.checked, version);
+      }
+      return outcome.code;
+    }
     const parsed = extractConfigs(file.text);
+    checked = parsed.assignments.length + parsed.malformed.length;
     for (const entry of parsed.malformed) {
       problems.push(`  line ${entry.line}: malformed Kconfig assignment: ${entry.text}`);
     }
-    const stmt = db.prepare('SELECT name, type, has_prompt FROM kconfig WHERE name = ?');
+    // Zephyr's own build refuses an assignment to a promptless symbol, and it
+    // decides promptlessness across *every* definition. This catalogue holds
+    // only the definitions reachable in the context it was built for, so its
+    // view is incomplete in three knowable ways, and each one produced a false
+    // positive on Zephyr's own samples:
+    //   - no type: the declaration itself was never indexed;
+    //   - a definition under modules/: the real declaration lives in a module
+    //     Kconfig that is only present when that module is;
+    //   - only Kconfig.defconfig definitions: a defconfig sets a value, it does
+    //     not declare the symbol.
+    // Where the view is incomplete the check stays quiet, for the same reason a
+    // missing symbol is never reported as absent.
+    const stmt = db.prepare(`
+      SELECT k.type AS type, k.has_prompt AS has_prompt,
+             (SELECT COUNT(*) FROM kconfig_definition d WHERE d.symbol_id = k.id) AS defs,
+             (SELECT COUNT(*) FROM kconfig_definition d WHERE d.symbol_id = k.id
+               AND d.file LIKE 'modules/%') AS module_defs,
+             (SELECT COUNT(*) FROM kconfig_definition d WHERE d.symbol_id = k.id
+               AND d.file LIKE '%Kconfig.defconfig%') AS defconfig_defs
+        FROM kconfig k WHERE k.name = ?`);
+    const promptStatusIsKnown = (row) =>
+      row.type !== null && Number(row.defs) > 0 && Number(row.module_defs) === 0 &&
+      Number(row.defconfig_defs) < Number(row.defs);
     for (const entry of parsed.assignments) {
       const row = stmt.get(entry.name);
       // A miss is not evidence of absence: generated, application-local, and
       // out-of-tree module symbols are outside this catalogue by construction.
       if (!row) continue;
-      if (!file.path.endsWith('_defconfig') && Number(row.has_prompt) === 0) {
+      if (!file.path.endsWith('_defconfig') && Number(row.has_prompt) === 0 && promptStatusIsKnown(row)) {
         problems.push(
           `  line ${entry.line}: CONFIG_${entry.name} has no prompt and cannot be assigned from an application configuration. Enable the symbol that selects it instead.`,
         );
@@ -290,9 +366,11 @@ async function main() {
   } finally {
     db.close();
   }
-  return problems.length
-    ? emit(file.path, problems, 'Use get_kconfig to inspect the indexed declaration, then correct the file.')
-    : 0;
+  if (problems.length) {
+    return emit(file.path, problems, 'Use get_kconfig to inspect the indexed declaration, then correct the file.');
+  }
+  acknowledge(sessionId, file.path, kind, checked, version);
+  return 0;
 }
 
 function editDistance(left, right) {
@@ -344,23 +422,46 @@ function nearestCompatible(value, candidates) {
   return 1 - bestEdits / Math.max(value.length, best.length) >= 0.85 ? { name: best, edits: bestEdits } : null;
 }
 
-/** Report `compatible` strings that look like a misspelling of an indexed one. */
-function validateDevicetree(db, descriptor, file) {
-  // With an incomplete binding catalogue even a near miss is unsafe: the real
-  // name may simply not be indexed.
-  if (descriptor?.coverage?.bindings?.complete !== true) return 0;
-
+/**
+ * Report `compatible` strings that look like a misspelling of an indexed one.
+ *
+ * Binding-catalogue completeness is deliberately not consulted, because it can
+ * never hold where it would matter: the ingest marks binding coverage complete
+ * only when there is no project root, no application root and no modules, and a
+ * project-scoped index always records a project root. Gating on it disabled
+ * this check for every index a user builds.
+ *
+ * Safety comes from `nearestCompatible`, which reports a near miss against an
+ * indexed vendor and never reports absence. That claim holds whether or not the
+ * catalogue is complete — the same reasoning the Kconfig path relies on when it
+ * skips symbols it cannot see.
+ */
+function validateDevicetree(db, file) {
   const nodes = extractCompatibles(file.text);
-  if (nodes.length === 0) return 0;
+  if (nodes.length === 0) return { code: 0, checked: 0 };
 
   const local = localCompatibles(file.root);
   const exact = db.prepare('SELECT 1 FROM dt_binding WHERE compatible = ?');
   let catalogue = null;
 
+  const resolves = (value) => local.has(value) || exact.get(value) !== undefined;
+
   const problems = [];
+  let checked = 0;
   for (const node of nodes) {
+    // A node binds through the FIRST of its compatibles that has a binding, so a
+    // fallback list is correct as long as one entry resolves. Upstream ships
+    // `compatible = "microchip,mcp9808", "jedec,jc-42.4-temp"`, where only the
+    // generic name is indexed and the specific one lands two edits from an
+    // unrelated Microchip ADC. Judging each value on its own reported that node
+    // — a false positive on Zephyr's own sample, and a validator that cries wolf
+    // gets ignored along with everything else this plugin says.
+    if (node.values.some(resolves)) {
+      checked += node.values.length;
+      continue;
+    }
     for (const value of node.values) {
-      if (local.has(value) || exact.get(value) !== undefined) continue;
+      checked++;
       catalogue ??= db.prepare('SELECT compatible FROM dt_binding').all().map((row) => row.compatible);
       const near = nearestCompatible(value, catalogue);
       if (!near) continue;
@@ -372,15 +473,18 @@ function validateDevicetree(db, descriptor, file) {
     }
   }
 
-  return problems.length
-    ? emit(
-      file.path,
-      problems,
-      'Confirm the name with search_bindings, then use get_binding to read the properties it accepts. ' +
-          'Property names are not checked here — get_binding is the only reliable source for them, ' +
-          'because bindings inherit most of their properties through include: chains.',
-    )
-    : 0;
+  return {
+    code: problems.length
+      ? emit(
+        file.path,
+        problems,
+        'Confirm the name with search_bindings, then use get_binding to read the properties it accepts. ' +
+            'Property names are not checked here — get_binding is the only reliable source for them, ' +
+            'because bindings inherit most of their properties through include: chains.',
+      )
+      : 0,
+    checked,
+  };
 }
 
 main()

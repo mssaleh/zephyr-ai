@@ -1,4 +1,4 @@
-import { match, strictEqual } from 'node:assert/strict';
+import { match, ok, strictEqual } from 'node:assert/strict';
 import {
   copyFileSync,
   existsSync,
@@ -19,6 +19,7 @@ const ROOT = resolve(import.meta.dirname, '..');
 const HOOK = join(ROOT, 'plugin', 'scripts', 'validate-zephyr-edit.mjs');
 const SESSION_HOOK = join(ROOT, 'plugin', 'scripts', 'check-index.mjs');
 const BUILD_HOOK = join(ROOT, 'plugin', 'scripts', 'check-build-failure.mjs');
+const MCP_SERVER = join(ROOT, 'plugin', 'mcp', 'zephyr-mcp.mjs');
 const INDEX = process.env.ZEPHYR_AI_INDEX ?? join(ROOT, 'index', 'zephyr.db');
 const TEMPORARY = mkdtempSync(join(tmpdir(), 'zephyr-ai-hooks-'));
 after(() => rmSync(TEMPORARY, { recursive: true, force: true }));
@@ -42,7 +43,7 @@ function projectFile(name, text, { zephyrProject = true } = {}) {
   return { project, path };
 }
 
-function runHook({ project, path, content = '', index = INDEX, toolName = 'Edit' }) {
+function runHook({ project, path, content = '', index = INDEX, toolName = 'Edit', sessionId, hook = HOOK }) {
   return new Promise((resolvePromise, reject) => {
     const env = {
       ...process.env,
@@ -53,7 +54,7 @@ function runHook({ project, path, content = '', index = INDEX, toolName = 'Edit'
     // Otherwise a developer's exported ZEPHYR_BASE would satisfy the project gate
     // and the non-Zephyr fixture below would pass for the wrong reason.
     delete env.ZEPHYR_BASE;
-    const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', HOOK], {
+    const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', hook], {
       cwd: ROOT,
       env,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -67,7 +68,11 @@ function runHook({ project, path, content = '', index = INDEX, toolName = 'Edit'
     child.once('error', reject);
     child.once('close', (code) => resolvePromise({ code, stdout, stderr }));
     child.stdin.end(
-      JSON.stringify({ tool_name: toolName, tool_input: { file_path: path, new_string: content } }),
+      JSON.stringify({
+        ...(sessionId ? { session_id: sessionId } : {}),
+        tool_name: toolName,
+        tool_input: { file_path: path, new_string: content },
+      }),
     );
   });
 }
@@ -97,6 +102,63 @@ function indexCopy(label, mutate) {
   copyFileSync(INDEX, path);
   rewriteDescriptor(path, mutate);
   return path;
+}
+
+/**
+ * Call one MCP tool on the built server and return its text content.
+ *
+ * The hook cannot import the server bundle — it is a short-lived process with no
+ * build step — so `check_config` reimplements the claims the hook makes. The
+ * only thing keeping the two honest is a test that drives both, which needs a
+ * client here.
+ */
+function callTool(name, args, index = INDEX) {
+  return new Promise((resolvePromise, reject) => {
+    const child = spawn(process.execPath, [MCP_SERVER], {
+      cwd: ROOT,
+      env: { ...process.env, ZEPHYR_AI_INDEX: index },
+      stdio: ['pipe', 'pipe', 'ignore'],
+    });
+    let buffer = '';
+    const pending = new Map();
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', (chunk) => {
+      buffer += chunk;
+      let newline;
+      while ((newline = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, newline);
+        buffer = buffer.slice(newline + 1);
+        if (!line.trim()) continue;
+        const message = JSON.parse(line);
+        if (message.id && pending.has(message.id)) {
+          pending.get(message.id)(message);
+          pending.delete(message.id);
+        }
+      }
+    });
+    child.once('error', reject);
+    let id = 0;
+    const send = (method, params) =>
+      new Promise((done) => {
+        const next = ++id;
+        pending.set(next, done);
+        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: next, method, params })}\n`);
+      });
+    send('initialize', {
+      protocolVersion: '2025-11-25',
+      capabilities: {},
+      clientInfo: { name: 'hooks-test', version: '1' },
+    })
+      .then(() => {
+        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`);
+        return send('tools/call', { name, arguments: args });
+      })
+      .then((response) => {
+        child.kill();
+        resolvePromise((response.result?.content ?? []).map((part) => part.text).join('\n'));
+      })
+      .catch(reject);
+  });
 }
 
 function runSession({ project, index, pluginData }) {
@@ -297,15 +359,166 @@ describe('PostToolUse Zephyr validation', {
     strictEqual(result.stderr, '');
   });
 
-  it('is completely silent for a valid file', async () => {
-    const file = projectFile('prj.conf', '# CONFIG_BT is not set\n');
+  it('accepts a trailing comment on a bool, because kconfiglib does', async () => {
+    // kconfiglib reads only the first character after `=` for bool and tristate,
+    // matching the C implementation, so `y # why` assigns y. Upstream ships it.
+    // Rejecting the whole token contradicted the tool that builds the firmware.
+    const file = projectFile('prj.conf', 'CONFIG_BT=y # every target supports this\n');
     const result = await runHook(file);
     strictEqual(result.code, 0);
-    strictEqual(result.stdout, '');
+    strictEqual(result.stderr, '');
+
+    // The leniency is bool-shaped, not general: an int is still validated whole.
+    const int = projectFile('prj.conf', 'CONFIG_BT_BUF_ACL_RX_SIZE=64 # bytes\n');
+    const reported = await runHook(int);
+    strictEqual(reported.code, 2);
+    match(reported.stderr, /is int but is set to/);
+  });
+
+  it('does not claim promptless when the catalogue cannot see every definition', async () => {
+    // Zephyr decides promptlessness across all of a symbol's definitions. This
+    // catalogue holds only those reachable in the context it was built for, so
+    // a symbol whose declaration lives in a module Kconfig or another SoC's
+    // tree looks promptless when it is not — which reported four assignments
+    // that Zephyr's own samples make and its own CI builds.
+    const db = new DatabaseSync(INDEX, { readOnly: true });
+    const hidden = db.prepare(`
+      SELECT k.name FROM kconfig k
+       WHERE k.has_prompt = 0
+         AND (SELECT COUNT(*) FROM kconfig_definition d WHERE d.symbol_id = k.id) > 0
+         AND (k.type IS NULL
+              OR (SELECT COUNT(*) FROM kconfig_definition d
+                   WHERE d.symbol_id = k.id AND d.file LIKE 'modules/%') > 0)
+       ORDER BY k.name LIMIT 1`).get();
+    db.close();
+    ok(hidden, 'expected at least one symbol whose prompt status the catalogue cannot decide');
+
+    const file = projectFile('prj.conf', `CONFIG_${hidden.name}=y\n`);
+    const result = await runHook(file);
+    strictEqual(result.code, 0, `must not claim ${hidden.name} is promptless`);
     strictEqual(result.stderr, '');
   });
 
+  it('raises no finding for a valid file', async () => {
+    const file = projectFile('prj.conf', '# CONFIG_BT is not set\n');
+    const result = await runHook(file);
+    strictEqual(result.code, 0);
+    strictEqual(result.stderr, '', 'stderr is the finding channel and must stay empty');
+  });
+
+  describe('acknowledging a clean file', () => {
+    // A check that finds nothing looks exactly like a check that never ran, and
+    // that blindness is what hid an unreachable devicetree branch for a whole
+    // release. The acknowledgement is what tells the two apart — but it is
+    // information, not a finding, so it goes out on stdout at exit 0 rather than
+    // through the exit-2 blocking contract.
+    it('says what it checked, once per file per session', async () => {
+      const file = projectFile('prj.conf', 'CONFIG_BT=y\nCONFIG_GPIO=y\n');
+      const first = await runHook({ ...file, sessionId: `ack-${Date.now()}-${Math.random()}` });
+      strictEqual(first.code, 0);
+      strictEqual(first.stderr, '');
+
+      const payload = JSON.parse(first.stdout);
+      strictEqual(payload.hookSpecificOutput.hookEventName, 'PostToolUse');
+      match(payload.hookSpecificOutput.additionalContext, /checked 2 Kconfig assignments/);
+      match(payload.systemMessage, /against indexed Zephyr \d/);
+      // No decision field: PostToolUse cannot block, and this is not a finding.
+      strictEqual(payload.hookSpecificOutput.permissionDecision, undefined);
+    });
+
+    it('does not repeat itself for the same file in the same session', async () => {
+      const file = projectFile('prj.conf', 'CONFIG_BT=y\n');
+      const sessionId = `repeat-${Date.now()}-${Math.random()}`;
+      const first = await runHook({ ...file, sessionId });
+      const second = await runHook({ ...file, sessionId });
+      ok(first.stdout.length > 0, 'the first edit should be acknowledged');
+      strictEqual(second.stdout, '', 'a per-edit acknowledgement would be noise');
+    });
+
+    it('stays silent when nothing was actually checked', async () => {
+      // An acknowledgement that can appear when no check ran is worth less than
+      // the silence it replaces.
+      const empty = projectFile('prj.conf', '# just a comment\n');
+      const result = await runHook({ ...empty, sessionId: `empty-${Date.now()}` });
+      strictEqual(result.stdout, '');
+
+      const notZephyr = projectFile('prj.conf', 'CONFIG_BT=y\n', { zephyrProject: false });
+      const outside = await runHook({ ...notZephyr, sessionId: `outside-${Date.now()}` });
+      strictEqual(outside.stdout, '');
+    });
+
+    it('acknowledges nothing when it has a finding to report instead', async () => {
+      const file = projectFile('prj.conf', 'CONFIG_BT_BUF_ACL_RX_SIZE=y\n');
+      const result = await runHook({ ...file, sessionId: `finding-${Date.now()}` });
+      strictEqual(result.code, 2);
+      strictEqual(result.stdout, '', 'a finding is reported once, through stderr');
+      match(result.stderr, /is int but is set to "y"/);
+    });
+  });
+
+  describe('PreToolUse pointer', () => {
+    const POINTER = join(ROOT, 'plugin', 'scripts', 'announce-zephyr-write.mjs');
+
+    it('names the lookup and never blocks the write', async () => {
+      for (const [name, expected] of [
+        ['prj.conf', /get_kconfig/],
+        ['app.overlay', /get_binding/],
+      ]) {
+        const file = projectFile(name, '');
+        const result = await runHook({
+          ...file,
+          hook: POINTER,
+          sessionId: `pre-${name}-${Date.now()}-${Math.random()}`,
+        });
+        // Exit 2 would block the tool call, and a heuristic must never do that.
+        strictEqual(result.code, 0, `${name} must not block`);
+        const payload = JSON.parse(result.stdout);
+        strictEqual(payload.hookSpecificOutput.permissionDecision, 'allow');
+        match(payload.hookSpecificOutput.additionalContext, expected);
+        match(payload.hookSpecificOutput.additionalContext, /check_config/);
+      }
+    });
+
+    it('says nothing for a file it has no claim about, or a second time', async () => {
+      const sessionId = `pre-quiet-${Date.now()}-${Math.random()}`;
+      const source = projectFile('main.c', '');
+      const c = await runHook({ ...source, hook: POINTER, sessionId });
+      strictEqual(c.stdout, '', 'a pointer on every C file would be noise');
+
+      const conf = projectFile('prj.conf', '');
+      const first = await runHook({ ...conf, hook: POINTER, sessionId });
+      const second = await runHook({ ...conf, hook: POINTER, sessionId });
+      ok(first.stdout.length > 0);
+      strictEqual(second.stdout, '');
+    });
+
+    it('says nothing without an index to back the advice', async () => {
+      const file = projectFile('prj.conf', '');
+      const result = await runHook({
+        ...file,
+        hook: POINTER,
+        index: join(TEMPORARY, 'no-such-index.db'),
+        sessionId: `pre-noindex-${Date.now()}`,
+      });
+      strictEqual(result.code, 0);
+      strictEqual(result.stdout, '');
+    });
+  });
+
   describe('devicetree compatibles', () => {
+    // Every test below runs against a project-scoped index, because that is the
+    // only kind a user ever has and the coverage gate that used to guard this
+    // check could open only on the other kind. The suite was green for the whole
+    // period the feature was dead in the field, which is worse than no suite:
+    // it was read as evidence.
+    const PROJECT_INDEX = indexCopy('project-scoped', (descriptor) => {
+      descriptor.projectRoot = '/home/someone/firmware';
+      descriptor.coverage.bindings = {
+        complete: false,
+        note: 'Application-local or undisclosed module binding roots may not be indexed.',
+      };
+    });
+
     const OVERLAY = [
       '/ {',
       '\tchosen { zephyr,display = &screen; };',
@@ -329,7 +542,7 @@ describe('PostToolUse Zephyr validation', {
       // A node needs only one of its compatibles to resolve, so a legitimate
       // `"vendor,part", "generic-part"` fallback must not be reported.
       const file = projectFile('app.overlay', OVERLAY);
-      const result = await runHook(file);
+      const result = await runHook({ ...file, index: PROJECT_INDEX });
       strictEqual(result.code, 0);
       strictEqual(result.stderr, '');
     });
@@ -338,7 +551,7 @@ describe('PostToolUse Zephyr validation', {
       // One character from `sitronix,st7789v`, same vendor: a slip, not an
       // out-of-tree device.
       const file = projectFile('app.overlay', `${OVERLAY}\n&i2c0 {\n\tx: dev@1 {\n\t\tcompatible = "sitronix,st7789";\n\t};\n};\n`);
-      const result = await runHook(file);
+      const result = await runHook({ ...file, index: PROJECT_INDEX });
       strictEqual(result.code, 2);
       match(result.stderr, /line 19: "sitronix,st7789" is not a known compatible/);
       match(result.stderr, /"sitronix,st7789v" is and differs by 1 character/);
@@ -349,7 +562,7 @@ describe('PostToolUse Zephyr validation', {
       // Absence is not evidence: an application may declare bindings through
       // dts/bindings, DTS_ROOT, or a module the catalogue cannot see.
       const file = projectFile('app.overlay', '&i2c0 {\n\tdev@1 {\n\t\tcompatible = "acme,invented-widget";\n\t};\n};\n');
-      const result = await runHook(file);
+      const result = await runHook({ ...file, index: PROJECT_INDEX });
       strictEqual(result.code, 0);
       strictEqual(result.stderr, '');
     });
@@ -361,9 +574,61 @@ describe('PostToolUse Zephyr validation', {
         'bad.overlay',
         '&spi1 {\n\tscreen: st7789v@0 {\n\t\tcompatible = "sitronix,st7789v";\n\t\tnot-a-real-property = <1>;\n\t};\n};\n',
       );
-      const result = await runHook(file);
+      const result = await runHook({ ...file, index: PROJECT_INDEX });
       strictEqual(result.code, 0);
       strictEqual(result.stderr, '');
+    });
+
+    it('accepts a fallback list whose specific name is not indexed', async () => {
+      // A node binds through the first compatible that has a binding, so
+      // `"microchip,mcp9808", "jedec,jc-42.4-temp"` is correct even though only
+      // the generic name is indexed — and upstream ships exactly that. Judging
+      // each value alone reported it, because the specific name lands two edits
+      // from an unrelated Microchip ADC. The compatibles are read from the
+      // catalogue rather than named here, so the test states the rule.
+      const db = new DatabaseSync(INDEX, { readOnly: true });
+      const generic = String(
+        db.prepare("SELECT compatible FROM dt_binding WHERE compatible LIKE '%,%' ORDER BY compatible LIMIT 1").get().compatible,
+      );
+      db.close();
+      // A specific name one edit from nothing, paired with a real generic one.
+      const file = projectFile(
+        'app.overlay',
+        `&i2c0 {\n\tdev@1 {\n\t\tcompatible = "acme,unindexed-specific-part", "${generic}";\n\t};\n};\n`,
+      );
+      const result = await runHook({ ...file, index: PROJECT_INDEX });
+      strictEqual(result.code, 0);
+      strictEqual(result.stderr, '');
+    });
+
+    it('reports a one-edit misspelling and stays silent on an out-of-tree name', async () => {
+      // The pair the evaluation ran by hand against a real project-scoped index,
+      // where the coverage gate had made both outcomes identically silent. The
+      // compatibles are read out of the catalogue rather than named here, so the
+      // test states the rule, not one vendor's device.
+      const db = new DatabaseSync(INDEX, { readOnly: true });
+      const indexed = String(
+        db.prepare(
+          "SELECT compatible FROM dt_binding WHERE compatible LIKE '%,%' AND LENGTH(compatible) > 12 ORDER BY compatible LIMIT 1",
+        ).get().compatible,
+      );
+      db.close();
+
+      // One inserted character, same vendor prefix: a slip.
+      const comma = indexed.indexOf(',');
+      const slip = `${indexed.slice(0, comma + 2)}x${indexed.slice(comma + 2)}`;
+      const misspelled = projectFile('app.overlay', `&i2c0 {\n\tdev@1 {\n\t\tcompatible = "${slip}";\n\t};\n};\n`);
+      const reported = await runHook({ ...misspelled, index: PROJECT_INDEX });
+      strictEqual(reported.code, 2, `expected a finding for ${slip} against ${indexed}`);
+      match(reported.stderr, new RegExp(`"${indexed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}" is and differs by 1 character`));
+
+      const outOfTree = projectFile(
+        'app.overlay',
+        '&i2c0 {\n\tdev@1 {\n\t\tcompatible = "acme,totally-out-of-tree-widget";\n\t};\n};\n',
+      );
+      const quiet = await runHook({ ...outOfTree, index: PROJECT_INDEX });
+      strictEqual(quiet.code, 0);
+      strictEqual(quiet.stderr, '');
     });
 
     it('accepts a compatible the project declares in its own bindings', async () => {
@@ -373,10 +638,84 @@ describe('PostToolUse Zephyr validation', {
         join(file.project, 'dts', 'bindings', 'acme.yaml'),
         'description: Out-of-tree device.\ncompatible: "acme,invented"\n',
       );
-      const result = await runHook(file);
+      const result = await runHook({ ...file, index: PROJECT_INDEX });
       strictEqual(result.code, 0);
       strictEqual(result.stderr, '');
     });
+  });
+});
+
+describe('the write hook and check_config make the same claims', {
+  skip:
+    (!existsSync(INDEX) || !existsSync(MCP_SERVER)) &&
+    'needs the rebuilt index and the built server bundle',
+}, () => {
+  // The hook runs in a short-lived process with no build step, so it cannot
+  // import the server bundle and the two implement the same claim set twice.
+  // Nothing but this test stops a threshold or a regex being changed in one and
+  // not the other, which would leave the plugin contradicting itself depending
+  // on whether the model asked or the hook spoke.
+  const CASES = [
+    {
+      name: 'prj.conf',
+      text: 'CONFIG_BT_BUF_ACL_RX_SIZE=y\nCONFIG_MALFORMED\n',
+      expect: [/is int but is set to "y"/, /malformed Kconfig assignment/],
+    },
+    {
+      name: 'clean.conf',
+      text: '# CONFIG_BT is not set\nCONFIG_ZEPHYR_AI_INVENTED_SYMBOL=y\n',
+      expect: [],
+    },
+    {
+      name: 'app.overlay',
+      text: '&i2c0 {\n\tdev@1 {\n\t\tcompatible = "acme,invented-widget";\n\t};\n};\n',
+      expect: [],
+    },
+  ];
+
+  for (const example of CASES) {
+    it(`agrees on ${example.name}`, async () => {
+      const file = projectFile(example.name, example.text);
+      const hook = await runHook(file);
+      const tool = await callTool('check_config', { text: example.text, path: example.name });
+
+      strictEqual(
+        hook.code === 2,
+        example.expect.length > 0,
+        `hook exit ${hook.code} disagrees with the expected finding count`,
+      );
+      // The tool always answers; the agreement is about which findings exist.
+      const toolProblems = /## Problems \((\d+)\)/.exec(tool);
+      strictEqual(
+        Number(toolProblems?.[1] ?? 0),
+        example.expect.length,
+        `check_config reported ${toolProblems?.[1] ?? 0} problems:\n${tool}`,
+      );
+      for (const pattern of example.expect) {
+        match(hook.stderr, pattern);
+        match(tool, pattern);
+      }
+    });
+  }
+
+  it('agrees that a one-edit misspelling is a finding and absence is not', async () => {
+    const db = new DatabaseSync(INDEX, { readOnly: true });
+    const indexed = String(
+      db.prepare(
+        "SELECT compatible FROM dt_binding WHERE compatible LIKE '%,%' AND LENGTH(compatible) > 12 ORDER BY compatible LIMIT 1",
+      ).get().compatible,
+    );
+    db.close();
+    const comma = indexed.indexOf(',');
+    const slip = `${indexed.slice(0, comma + 2)}x${indexed.slice(comma + 2)}`;
+    const text = `&i2c0 {\n\tdev@1 {\n\t\tcompatible = "${slip}";\n\t};\n};\n`;
+
+    const hook = await runHook(projectFile('app.overlay', text));
+    const tool = await callTool('check_config', { text, path: 'app.overlay' });
+    strictEqual(hook.code, 2);
+    match(hook.stderr, /differs by 1 character/);
+    match(tool, /differs by 1 character/);
+    match(tool, /## Problems \(1\)/);
   });
 });
 

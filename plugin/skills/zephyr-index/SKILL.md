@@ -3,10 +3,10 @@ name: zephyr-index
 description: Build or refresh the project-scoped Zephyr reference index that the zephyr MCP server queries. Use when starting Zephyr firmware in an empty directory, when lookup tools report no index, when index_status reports a commit or context mismatch, after west update, or when answers must reflect the active workspace and modules.
 license: Apache-2.0
 compatibility: Requires Node.js 24+, Python 3.12+ with PyYAML, and a complete Zephyr source tree.
-allowed-tools: Bash(node:*) Bash(west:*) Bash(ls:*) Bash(test:*) Read
+allowed-tools: Bash(node:*) Bash(west:*) Bash(ls:*) Bash(test:*) Bash(python3:*) Bash(command:*) Read
 metadata:
   author: zephyr-ai
-  version: "0.2.0"
+  version: "0.3.0"
 ---
 
 # Build the Zephyr index
@@ -23,7 +23,41 @@ and python-devicetree. It prefers `PYTHON_EXECUTABLE`, then the interpreter behi
 `west`, then `python3`/`python`. A failure is actionable and leaves the active index
 unchanged.
 
-## 1. Find the Zephyr tree
+## 1. Check the prerequisites first
+
+Do this before anything else. The indexer probes the same contract itself, but it
+does so after choosing a tree, so a missing interpreter surfaces several minutes
+and one large download later. Discovering the chain by trial is what makes a
+first index feel slow.
+
+```bash
+node --version                       # must be v24 or newer
+python3 --version                    # must be 3.12 or newer
+python3 -c 'import yaml' && echo ok  # PyYAML, in the interpreter that will be used
+command -v west || echo "west absent"
+```
+
+What to do with each result:
+
+- **Node older than 24** — the bundled server and indexer both target it; nothing
+  here works until it is upgraded. Stop and say so.
+- **Python older than 3.12, or PyYAML missing** — if the project has a west
+  workspace, its virtual environment usually has both, and the indexer prefers
+  that interpreter. Otherwise create one and point `PYTHON_EXECUTABLE` at it:
+
+  ```bash
+  python3 -m venv .venv && .venv/bin/pip install west pyyaml
+  export PYTHON_EXECUTABLE="$PWD/.venv/bin/python"
+  ```
+
+- **`west` absent** — only needed to *discover* an existing workspace and to run
+  `west update`. The pinned fetch in step 2 does not need it, so an empty project
+  can proceed without it.
+
+Report which prerequisite failed and the single command that fixes it. Do not
+begin a large download before the chain behind it is known to hold.
+
+## 2. Find the Zephyr tree
 
 **Starting from an empty directory, there is nothing to discover — fetch the
 pinned revision.** This is the common first-run case, and the discovery commands
@@ -38,7 +72,7 @@ node "${CLAUDE_PLUGIN_ROOT}/mcp/zephyr-ingest.mjs" \
 ```
 
 That fetches into persistent plugin data and builds the index in one run; continue
-at step 4. Never clone without consent.
+at step 5. Never clone without consent.
 
 Otherwise the project may already have a tree. Try these in order and stop at the
 first that resolves to a directory containing a `VERSION` file:
@@ -58,7 +92,7 @@ If none resolves, offer the pinned fetch above, ask for a path to an existing
 checkout, or use the `zephyr-project-setup` skill to create a complete west
 workspace.
 
-## 2. Find the HAL modules worth including
+## 3. Find the HAL modules worth including
 
 Vendor HALs carry their own bindings and Kconfig. Include the ones relevant to
 the project's targets:
@@ -67,7 +101,7 @@ the project's targets:
 west list -f '{name} {posixpath}' 2>/dev/null
 ```
 
-## 3. Build it
+## 4. Build it
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/mcp/zephyr-ingest.mjs" \
@@ -112,7 +146,7 @@ Indexing Zephyr <version> from /home/user/ws/zephyr
   kconfig   <n> symbols from <n> files
   bindings  <n> compatibles, <n> properties, <n> fragments
   boards    <n> boards, <n> targets, <n> SoCs
-  samples   <n>
+  samples   <n>          # samples/ plus the upstream tests/ suites
   api       <n> symbols, <n> groups, header-fallback
 Done in <n> s -> .../<context-fingerprint>/zephyr.db (<n> MiB)
 ```
@@ -121,7 +155,7 @@ Counts, duration, and size depend on the selected tree and modules. If any major
 corpus count is zero, stop and inspect the emitted source report rather than
 activating a partial index.
 
-## 4. Confirm
+## 5. Confirm
 
 Call `index_status`. It should report the project's exact Zephyr commit, context
 fingerprint, coverage map, and no project mismatch.
