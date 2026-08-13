@@ -43,7 +43,7 @@ import type { KconfigExpr } from './sources/kconfig.ts';
 import { buildIndexDescriptor } from './identity.ts';
 import { semanticPython } from './python.ts';
 import { canonicalJson, projectId, type ProducerRecord } from '../../shared/index-descriptor.ts';
-import { contentDigest } from '../../shared/content-digest.ts';
+import { contentDigest, tableDigests } from '../../shared/content-digest.ts';
 import { parseRequirements, type Requirement } from '../../shared/python-interpreters.ts';
 import { fetchPinnedZephyr, PINNED_ZEPHYR_LOCK } from './fetch.ts';
 import packageMetadata from '../package.json' with { type: 'json' };
@@ -1014,8 +1014,11 @@ function main(): void {
 
   // Computed before the FTS tables exist, and written last, so the digest covers
   // every assertion the index makes and nothing derived from them.
+  const perTable = tableDigests(db);
   const digest = contentDigest(db);
-  db.prepare('INSERT INTO meta (key, value) VALUES (?, ?)').run('content_hash', digest);
+  const insertMeta = db.prepare('INSERT INTO meta (key, value) VALUES (?, ?)');
+  insertMeta.run('table_hashes', canonicalJson(perTable));
+  insertMeta.run('content_hash', digest);
   log(`  content   ${digest.slice(0, 16)}…`);
 
   const tFts = Date.now();

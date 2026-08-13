@@ -4,7 +4,7 @@ description: Zephyr firmware on Espressif ESP32 microcontrollers. Use when an Es
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.6.1"
+  version: "0.6.2"
 ---
 
 # ESP32 on Zephyr

@@ -52,6 +52,10 @@ const pinned = {
   // Counts cannot see ordering or within-row drift; the digest can, and every
   // defect this gate has caught late was one or the other.
   contentHash: meta.content_hash,
+  // Per table, so a mismatch on another machine names where to look instead of
+  // only that something is different. A whole-index hash alone cost two release
+  // builds to localise once.
+  tableHashes: JSON.parse(meta.table_hashes ?? '{}'),
   zephyrVersion: meta.zephyr_version,
   zephyrCommit: meta.zephyr_commit,
   counts,
@@ -74,6 +78,14 @@ if (process.argv.includes('--verify')) {
     throw new Error(`No corpus baseline exists for api_ingest_mode=${meta.api_ingest_mode}: ${baselinePath}`);
   }
   const baseline = JSON.parse(readFileSync(baselinePath, 'utf8'));
+  if (JSON.stringify(pinned.tableHashes) !== JSON.stringify(baseline.tableHashes ?? {})) {
+    const differing = Object.keys(pinned.tableHashes).filter(
+      (table) => pinned.tableHashes[table] !== baseline.tableHashes?.[table],
+    );
+    process.stderr.write(
+      `Content differs from the pinned baseline in: ${differing.join(', ') || '(table set changed)'}\n`,
+    );
+  }
   if (JSON.stringify(pinned) !== JSON.stringify(baseline)) {
     process.stderr.write(
       `Corpus counts differ from ${baselinePath}. If the change is intended, regenerate the fixture with ` +

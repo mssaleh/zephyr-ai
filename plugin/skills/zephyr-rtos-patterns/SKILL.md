@@ -4,7 +4,7 @@ description: Write correct concurrent code on Zephyr. Use when creating threads,
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.6.1"
+  version: "0.6.2"
 ---
 
 # Real-time patterns

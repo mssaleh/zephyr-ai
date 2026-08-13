@@ -121,7 +121,12 @@ def main():
         raise RuntimeError("Doxygen XML directory has no index.xml: %s" % args.xml)
 
     index = ET.parse(index_path).getroot()
-    compound_refs = [(c.get("refid", ""), c.get("kind", "")) for c in index.findall("compound")]
+    # Sorted, because index.xml lists compounds in Doxygen's own traversal order.
+    # The merge above resolves a member seen twice, so the order compounds are
+    # visited decides which record is kept and which is merged into it.
+    compound_refs = sorted(
+        (c.get("refid", ""), c.get("kind", "")) for c in index.findall("compound")
+    )
     symbols_by_id = {}
     groups = []
     group_parents = {}
@@ -146,8 +151,14 @@ def main():
         if not previous.get("group") and record.get("group"):
             previous["group"] = record["group"]
         for field in ("brief", "detail"):
-            if len(record.get(field, "")) > len(previous.get(field, "")):
-                previous[field] = record[field]
+            candidate, held = record.get(field, ""), previous.get(field, "")
+            # Longest wins, and equal lengths break lexicographically rather than
+            # by which compound Doxygen happened to emit first. Whichever member
+            # of a tie is kept must not depend on traversal, because the file and
+            # group compounds that carry the same member are visited in index.xml
+            # order and that order is not the same on every machine.
+            if len(candidate) > len(held) or (len(candidate) == len(held) and candidate < held):
+                previous[field] = candidate
 
     for compound_id, indexed_kind in compound_refs:
         source = os.path.join(args.xml, compound_id + ".xml")

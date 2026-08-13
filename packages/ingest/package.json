@@ -1,6 +1,6 @@
 {
   "name": "@zephyr-ai/ingest",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "private": true,
   "type": "module",
   "description": "Builds the Zephyr knowledge index consumed by the zephyr-ai MCP server",

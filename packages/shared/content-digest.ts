@@ -39,8 +39,9 @@ export const NON_CONTENT_META_KEYS: ReadonlySet<string> = new Set([
   // reading, and that is how a pinned value stops being a check. A code change
   // that alters extraction moves the digest through the extracted content itself.
   'ingest_version',
-  // The digest cannot cover itself.
+  // The digest cannot cover itself, nor the per-table digests it is built from.
   'content_hash',
+  'table_hashes',
 ]);
 
 interface DigestDatabase {
@@ -63,10 +64,17 @@ function isDerived(name: string): boolean {
  * either, so no pair of adjacent values can be confused for one longer value —
  * without a separator, the rows ('ab','c') and ('a','bc') hash identically.
  */
-export function contentDigest(db: DigestDatabase): string {
+/**
+ * A digest per table, and the whole-index digest over them.
+ *
+ * Per table because a single hash says only "these two indexes differ", and the
+ * two are usually on different machines with no way to diff them. Naming the
+ * table turns a bisect into a question, which is worth the few extra bytes in the
+ * fixture — the first mismatch this caught cost two release builds to localise.
+ */
+export function tableDigests(db: DigestDatabase): Record<string, string> {
   const FIELD = '\u0000';
   const ROW = '\u0001';
-  const hash = createHash('sha256');
   const tables = (
     db
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -75,8 +83,9 @@ export function contentDigest(db: DigestDatabase): string {
     .map((row) => row.name)
     .filter((name) => !isDerived(name));
 
+  const digests: Record<string, string> = {};
   for (const table of tables) {
-    hash.update(`${ROW}table:${table}${ROW}`);
+    const hash = createHash('sha256');
     if (table === 'meta') {
       const rows = db.prepare('SELECT key, value FROM meta ORDER BY key').all() as {
         key: string;
@@ -86,20 +95,29 @@ export function contentDigest(db: DigestDatabase): string {
         if (NON_CONTENT_META_KEYS.has(row.key)) continue;
         hash.update(`${row.key}${FIELD}${row.value}${ROW}`);
       }
-      continue;
-    }
-    for (const row of db.prepare(`SELECT * FROM "${table}" ORDER BY rowid`).all() as Record<
-      string,
-      unknown
-    >[]) {
-      // Column order comes from the table declaration, so it is stable. A null is
-      // encoded distinctly from the empty string, which are different assertions.
-      for (const value of Object.values(row)) {
-        hash.update(value === null ? `${FIELD}null` : String(value));
-        hash.update(FIELD);
+    } else {
+      for (const row of db.prepare(`SELECT * FROM "${table}" ORDER BY rowid`).all() as Record<
+        string,
+        unknown
+      >[]) {
+        // Column order comes from the table declaration, so it is stable. A null is
+        // encoded distinctly from the empty string, which are different assertions.
+        for (const value of Object.values(row)) {
+          hash.update(value === null ? `${FIELD}null` : String(value));
+          hash.update(FIELD);
+        }
+        hash.update(ROW);
       }
-      hash.update(ROW);
     }
+    digests[table] = hash.digest('hex');
+  }
+  return digests;
+}
+
+export function contentDigest(db: DigestDatabase): string {
+  const hash = createHash('sha256');
+  for (const [table, digest] of Object.entries(tableDigests(db))) {
+    hash.update(`${table}\u0000${digest}\u0001`);
   }
   return hash.digest('hex');
 }

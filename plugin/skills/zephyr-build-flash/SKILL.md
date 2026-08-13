@@ -4,7 +4,7 @@ description: Build, flash, and run Zephyr firmware with west. Use when compiling
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.6.1"
+  version: "0.6.2"
 ---
 
 # Building and flashing

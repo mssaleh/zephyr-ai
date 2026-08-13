@@ -3,6 +3,32 @@
 All notable user-visible changes are recorded here. The format follows Keep a
 Changelog, and releases use semantic versioning.
 
+## [0.6.2] - 2026-08-13
+
+Rebuild the index with the `zephyr-index` skill after upgrading.
+
+### Fixed
+
+- **Doxygen's traversal order decided API content, not just row order.** 0.6.1
+  sorted the rows, which was necessary and not sufficient: the exporter merges a
+  member that appears in both a file compound and a group compound, keeping the
+  longer prose and breaking ties by whichever was seen first. Compounds are listed
+  in `index.xml` in Doxygen's own traversal of the input tree, so which record
+  survived a tie differed between machines — identical counts, different text. The
+  exporter now visits compounds in sorted order and breaks ties lexicographically,
+  so neither depends on the listing.
+
+### Added
+
+- `quality:reproducible` now covers the semantic corpus, and builds it a third
+  time against a copy of the Doxygen XML with all 5,853 compounds reversed. That
+  is the check that makes this class provable before a tag rather than on a
+  release build: the path it exercises had never been checked for determinism at
+  all, which is how the defect above survived 0.6.0 and 0.6.1.
+- The index records a digest per table, and `quality:baseline` names the tables
+  that differ. A single whole-index hash said only that two machines disagreed,
+  which cost two release builds to localise.
+
 ## [0.6.1] - 2026-08-13
 
 Rebuild the index with the `zephyr-index` skill after upgrading.
