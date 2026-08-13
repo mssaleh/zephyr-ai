@@ -194,6 +194,37 @@ bindings. Module docs, boards, samples, and APIs are not silently merged; the
 descriptor marks each uncovered corpus. Vendor-native sources belong in separate
 versioned packs, not this Zephyr database.
 
+## The index as a derivation
+
+The index is a function of a declared input set, and the declaration is enforced
+rather than remembered. Three things make that true.
+
+**Inputs are a manifest, not a filesystem.** `SourceManifest` is an ordered,
+content-addressed list of every file a root offers, taken from `git ls-files -s`
+where the root is a repository — which supplies both the order and the hashes for
+nothing — reconciled against the worktree for modified and untracked files, and
+hashed directly when the root is not a repository, in which case the index records
+that its source was not addressable. Collectors select from the manifest and read
+through it; a read it does not vouch for, or one whose bytes have changed, is an
+error. There is no directory walk outside its construction.
+
+**Execution is hermetic at the process boundary.** The ingest re-execs once into
+an environment built from `packages/shared/hermetic.ts` and inherits nothing.
+Every descendant is then hermetic without knowing it, which is the difference
+between a property and a rule: the Python adapters, git and Doxygen are covered,
+and so is whatever is added next. `LC_ALL`, `TZ` and `PYTHONHASHSEED` are imposed
+rather than carried, because collation, dates and Python set iteration had all
+reached stored content at some point.
+
+**The derivation has an identity.** `input_hash` covers the tree and module
+manifests, the Doxygen XML, the adapter sources, the lockfile, the recorded tool
+versions and the declared environment. Paired with `content_hash` it makes a
+disagreement between two machines answerable: if `input_hash` differs the inputs
+differ and it names which, and if it matches while `content_hash` does not, the
+derivation is impure. `quality:reproducible` checks exactly that, varying nine
+environment variables and the working directory at once rather than sampling one
+axis at a time.
+
 ## SQLite and search
 
 Structured facts are authoritative. Six external-content FTS5 tables provide BM25

@@ -1,9 +1,9 @@
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import { parse as parseYaml } from 'yaml';
 
-import { toPosix, walk } from '../walk.ts';
+import type { SourceManifest } from '../../../shared/source-manifest.ts';
 import { byField } from '../../../shared/ordering.ts';
 
 /**
@@ -67,6 +67,7 @@ const MANIFESTS: Record<string, SampleKind> = {
 };
 
 function readContents(
+  manifest: SourceManifest,
   sampleDir: string,
   files: string[],
 ): { contents: { path: string; text: string }[]; exclusions: { path: string; reason: string }[] } {
@@ -76,13 +77,13 @@ function readContents(
 
   for (const rel of files) {
     if (!shouldStore(rel)) continue;
-    const abs = join(sampleDir, rel);
+    const abs = join(manifest.root, sampleDir, rel);
     try {
       if (statSync(abs).size > MAX_FILE_BYTES) {
         exclusions.push({ path: rel, reason: 'file-size-limit' });
         continue;
       }
-      const text = readFileSync(abs, 'utf8');
+      const text = manifest.read(`${sampleDir}/${rel}`);
       if (Buffer.byteLength(text) > budget) {
         exclusions.push({ path: rel, reason: 'sample-size-budget' });
         continue;
@@ -113,11 +114,11 @@ function asStrings(v: unknown): string[] {
  * the exact Kconfig and devicetree changes a feature needs, which is far more
  * reliable than reconstructing them from prose.
  */
-function interestingFiles(sampleDir: string): string[] {
+function interestingFiles(manifest: SourceManifest, sampleDir: string): string[] {
   const out: string[] = [];
 
   const push = (rel: string) => {
-    if (existsSync(join(sampleDir, rel))) out.push(rel);
+    if (manifest.has(`${sampleDir}/${rel}`)) out.push(rel);
   };
   for (const f of [
     'sample.yaml',
@@ -132,52 +133,50 @@ function interestingFiles(sampleDir: string): string[] {
   }
 
   for (const dir of ['src', 'boards', 'snippets']) {
-    const abs = join(sampleDir, dir);
-    if (!existsSync(abs)) continue;
-    try {
-      out.push(
-        ...[...walk(abs, { match: (name) => shouldStore(`${dir}/${name}`) })]
-          .sort()
-          .map((path) => `${dir}/${path}`),
-      );
-    } catch {
-      /* unreadable directory */
-    }
+    out.push(
+      ...manifest
+        .select({ under: `${sampleDir}/${dir}`, match: (name) => shouldStore(`${dir}/${name}`) })
+        .map((path) => path.slice(sampleDir.length + 1)),
+    );
   }
 
   return out;
 }
 
-export function collectSamples(root: string): SampleRecord[] {
+export function collectSamples(manifest: SourceManifest): SampleRecord[] {
   const samples: SampleRecord[] = [];
   const seen = new Set<string>();
+  const root = manifest.root;
 
   for (const subdir of ['samples', 'snippets', 'tests']) {
-    const base = join(root, subdir);
-    if (!existsSync(base)) continue;
 
     // `hasOwn`, not `in`: `in` also matches Object.prototype keys, so a file
     // named `constructor` or `toString` would pass the filter and then resolve
     // to a function instead of a kind. Sorted, so that a directory carrying both
     // manifests resolves the same way on every machine — `sample.yaml` sorts
     // first and wins — rather than following readdir order.
-    for (const rel of [...walk(base, { match: (name) => Object.hasOwn(MANIFESTS, name) })].sort()) {
-      const abs = join(base, rel);
-      const manifest = rel.split('/').pop()!;
-      const kind = MANIFESTS[manifest]!;
+    for (const relPath of manifest.select({
+      under: subdir,
+      match: (name) => Object.hasOwn(MANIFESTS, name),
+    })) {
+      const abs = join(root, relPath);
+      const manifestName = relPath.slice(relPath.lastIndexOf('/') + 1);
+      const kind = MANIFESTS[manifestName]!;
       let doc: Record<string, unknown> | null = null;
       try {
-        const parsed = parseYaml(readFileSync(abs, 'utf8'), { logLevel: 'silent' });
+        const parsed = parseYaml(manifest.read(relPath), { logLevel: 'silent' });
         if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
           throw new Error('expected a YAML mapping');
         }
         doc = parsed as Record<string, unknown>;
       } catch (error) {
-        throw new Error(`Failed to parse ${manifest} metadata ${rel}: ${(error as Error).message}`);
+        throw new Error(
+          `Failed to parse ${manifestName} metadata ${relPath}: ${(error as Error).message}`,
+        );
       }
 
-      const sampleDir = dirname(abs);
-      const relDir = toPosix(join(subdir, dirname(rel)));
+      const relDir = relPath.slice(0, relPath.lastIndexOf('/'));
+      const sampleDir = relDir;
       if (seen.has(relDir)) continue;
       seen.add(relDir);
 
@@ -215,8 +214,8 @@ export function collectSamples(root: string): SampleRecord[] {
         addMetadata({ ...common, ...(value as Record<string, unknown>) });
       }
 
-      const eligibleFiles = interestingFiles(sampleDir);
-      const { contents, exclusions } = readContents(sampleDir, eligibleFiles);
+      const eligibleFiles = interestingFiles(manifest, sampleDir);
+      const { contents, exclusions } = readContents(manifest, sampleDir, eligibleFiles);
       const files = contents.map((file) => file.path);
       const record: SampleRecord = {
         path: relDir,
@@ -232,7 +231,7 @@ export function collectSamples(root: string): SampleRecord[] {
         exclusions,
       };
       if (typeof meta['description'] === 'string') record.description = meta['description'];
-      if (existsSync(join(sampleDir, 'README.rst'))) record.docPath = `${relDir}/README.rst`;
+      if (manifest.has(`${sampleDir}/README.rst`)) record.docPath = `${relDir}/README.rst`;
 
       samples.push(record);
     }

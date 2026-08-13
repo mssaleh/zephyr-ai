@@ -12,6 +12,7 @@ import {
   parseHeader,
 } from '../src/parsers/doxygen.ts';
 import { collectApi, discoverDoxygenXml } from '../src/sources/api.ts';
+import { SourceManifest } from '../../shared/source-manifest.ts';
 
 const ZEPHYR = process.env.ZEPHYR_BASE ?? join(process.cwd(), '..', '..', '.cache', 'zephyr');
 const GPIO_H = join(ZEPHYR, 'include', 'zephyr', 'drivers', 'gpio.h');
@@ -349,7 +350,7 @@ describe('Doxygen XML adapter', () => {
           </sectiondef><location file="include/zephyr/drivers/gpio.h"/>
         </compounddef></doxygen>`,
       );
-      const api = collectApi(temporary, join(temporary, 'xml'));
+      const api = collectApi(SourceManifest.forRoot(temporary), join(temporary, 'xml'));
       strictEqual(api.mode, 'doxygen-xml');
       const fn = api.symbols.find((symbol) => symbol.name === 'gpio_demo')!;
       strictEqual(fn.signature, 'int gpio_demo (const struct device * dev)');
@@ -387,7 +388,7 @@ describe('public-header fallback', () => {
         join(temporary, 'include', 'zephyr', 'fixture.h'),
         '/** @brief Fixed storage. */\nuint8_t bits[BIT(3)];\n',
       );
-      const api = collectApi(temporary);
+      const api = collectApi(SourceManifest.forRoot(temporary));
       ok(!api.symbols.some((symbol) => symbol.name === 'BIT'));
       ok(api.report.intentionallyExcluded.some(
         (entry) => entry.reason === 'fallback-array-declarator-artifact',
@@ -455,7 +456,7 @@ describe('against the real Zephyr tree', {
   it('names no symbol after a C type keyword across the public headers', () => {
     // Function-pointer struct members were indexed under their return type,
     // putting 595 symbols named `void` into the catalogue and the FTS index.
-    const api = collectApi(ZEPHYR);
+    const api = collectApi(SourceManifest.forRoot(ZEPHYR));
     const bogus = api.symbols.filter((s) =>
       ['void', 'int', 'char', 'bool', 'unsigned', 'size_t', '__packed', '__deprecated'].includes(
         s.name,

@@ -4,7 +4,7 @@ description: Describe hardware to Zephyr with devicetree. Use when writing or ed
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.6.2"
+  version: "0.7.0"
 ---
 
 # Devicetree in Zephyr

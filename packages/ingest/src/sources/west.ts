@@ -8,7 +8,7 @@ import { parse as parseYaml } from 'yaml';
 import RUNNER_EXPORTER from '../adapters/runner-export.py';
 import { standardPython } from '../python.ts';
 import type { SourceReport } from '../report.ts';
-import { toPosix, walk } from '../walk.ts';
+import type { SourceManifest } from '../../../shared/source-manifest.ts';
 import { byField } from '../../../shared/ordering.ts';
 
 export interface RunnerRecord {
@@ -346,19 +346,15 @@ function evaluate(
  * particular vendor.
  */
 function socScopedDeclarations(
-  zephyrRoot: string,
+  source: SourceManifest,
   errors: SourceReport['errors'],
 ): { path: string; runner: string; args: RunnerArgument[] }[] {
   const found: { path: string; runner: string; args: RunnerArgument[] }[] = [];
-  const socRoot = join(zephyrRoot, 'soc');
-  if (!existsSync(socRoot)) return found;
-  // walk() follows filesystem order; sort so the catalogue does not depend on it.
-  const candidates = [
-    ...walk(socRoot, { match: (name) => name === 'CMakeLists.txt' || name.endsWith('.cmake') }),
-  ].sort();
-  for (const rel of candidates) {
-    const relative = toPosix(join('soc', rel));
-    const text = readFileSync(join(socRoot, rel), 'utf8');
+  for (const relative of source.select({
+    under: 'soc',
+    match: (name) => name === 'CMakeLists.txt' || name.endsWith('.cmake'),
+  })) {
+    const text = source.read(relative);
     if (!text.includes('board_finalize_runner_args')) continue;
     let calls: CMakeCall[];
     try {
@@ -413,10 +409,10 @@ export function collectRunners(zephyrRoot: string): CollectedRunners {
   }
 }
 
-export function collectWestCommands(zephyrRoot: string): WestCommandRecord[] {
-  const manifest = join(zephyrRoot, 'scripts', 'west-commands.yml');
-  if (!existsSync(manifest)) return [];
-  const parsed = parseYaml(readFileSync(manifest, 'utf8'), { logLevel: 'silent' }) as unknown;
+export function collectWestCommands(source: SourceManifest): WestCommandRecord[] {
+  const declaration = 'scripts/west-commands.yml';
+  if (!source.has(declaration)) return [];
+  const parsed = parseYaml(source.read(declaration), { logLevel: 'silent' }) as unknown;
   if (!parsed || typeof parsed !== 'object') return [];
   const groups = (parsed as Record<string, unknown>)['west-commands'];
   if (!Array.isArray(groups)) return [];
@@ -442,11 +438,12 @@ export function collectWestCommands(zephyrRoot: string): WestCommandRecord[] {
 }
 
 export function collectBoardRunners(
-  zephyrRoot: string,
+  source: SourceManifest,
   boards: { name: string; dir: string; socDirs: string[] }[],
 ): { boardRunners: BoardRunnerRecord[]; report: SourceReport } {
+  const zephyrRoot = source.root;
   const errors: SourceReport['errors'] = [];
-  const socScoped = socScopedDeclarations(zephyrRoot, errors);
+  const socScoped = socScopedDeclarations(source, errors);
   const records: BoardRunnerRecord[] = [];
   let withoutCMake = 0;
 

@@ -42,6 +42,10 @@ export const NON_CONTENT_META_KEYS: ReadonlySet<string> = new Set([
   // The digest cannot cover itself, nor the per-table digests it is built from.
   'content_hash',
   'table_hashes',
+  // The inputs are the other half of the pair, not part of what was derived.
+  // Hashing them into the content would make the two indistinguishable, and the
+  // whole value of recording both is that they answer different questions.
+  'input_hash',
 ]);
 
 interface DigestDatabase {
@@ -54,23 +58,20 @@ function isDerived(name: string): boolean {
 }
 
 /**
- * Hash every stored assertion in a stable order.
- *
- * Rows are read in `rowid` order rather than sorted here: the order rows were
- * written in is itself part of what must be reproducible, so imposing an order
- * at hash time would conceal exactly the drift this is meant to expose.
- *
- * Fields are separated by NUL and rows by SOH. SQLite text never contains
- * either, so no pair of adjacent values can be confused for one longer value —
- * without a separator, the rows ('ab','c') and ('a','bc') hash identically.
- */
-/**
- * A digest per table, and the whole-index digest over them.
+ * A digest per table, and the whole-index digest built over them.
  *
  * Per table because a single hash says only "these two indexes differ", and the
  * two are usually on different machines with no way to diff them. Naming the
- * table turns a bisect into a question, which is worth the few extra bytes in the
- * fixture — the first mismatch this caught cost two release builds to localise.
+ * table turns a bisect into a question — the first mismatch this caught cost two
+ * release builds to localise.
+ *
+ * Rows are read in `rowid` order rather than sorted here: the order rows were
+ * written in is itself part of what must be reproducible, so imposing an order at
+ * hash time would conceal exactly the drift this exists to expose.
+ *
+ * Fields are separated by NUL and rows by SOH. SQLite text never contains either,
+ * so no pair of adjacent values can be confused for one longer value — without a
+ * separator, the rows ('ab','c') and ('a','bc') hash identically.
  */
 export function tableDigests(db: DigestDatabase): Record<string, string> {
   const FIELD = '\u0000';

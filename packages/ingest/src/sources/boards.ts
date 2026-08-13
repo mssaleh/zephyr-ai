@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 
 import { parse as parseYaml } from 'yaml';
 
-import { toPosix, walk } from '../walk.ts';
+import type { SourceManifest } from '../../../shared/source-manifest.ts';
 import { byCodeUnits, byField } from '../../../shared/ordering.ts';
 
 export interface BoardTarget {
@@ -47,9 +47,9 @@ export interface SocRecord {
   cpuclusters: string[];
 }
 
-function safeYaml(path: string): Record<string, unknown> {
+function safeYaml(manifest: SourceManifest, path: string): Record<string, unknown> {
   try {
-    const parsed = parseYaml(readFileSync(path, 'utf8'), { logLevel: 'silent' });
+    const parsed = parseYaml(manifest.read(path), { logLevel: 'silent' });
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       throw new Error('expected a YAML mapping');
     }
@@ -123,20 +123,20 @@ function officialBoards(root: string): Map<string, OfficialBoard> {
  * target identifier, the architecture, flash and RAM budgets, and the list of
  * supported peripherals — none of which is in `board.yml` itself.
  */
-function readTargets(boardDir: string): BoardTarget[] {
+function readTargets(manifest: SourceManifest, boardDir: string): BoardTarget[] {
   const targets: BoardTarget[] = [];
-  let entries: string[];
-  try {
-    entries = readdirSync(boardDir);
-  } catch {
-    return targets;
-  }
-
-  for (const entry of entries) {
-    if (!entry.endsWith('.yaml') && !entry.endsWith('.yml')) continue;
-    if (entry === 'board.yml' || entry === 'board.yaml') continue;
-
-    const doc = safeYaml(join(boardDir, entry));
+  // Twister metadata sits beside board.yml. Selected from the manifest so the
+  // set and its order are declared, and so a file nobody declared cannot appear.
+  const siblings = manifest.select({
+    under: boardDir,
+    match: (name) =>
+      (name.endsWith('.yaml') || name.endsWith('.yml')) &&
+      name !== 'board.yml' &&
+      name !== 'board.yaml',
+  });
+  for (const path of siblings) {
+    if (path.slice(boardDir.length + 1).includes('/')) continue;
+    const doc = safeYaml(manifest, path);
     const common = {
       toolchains: asStrings(doc['toolchain']),
       supported: asStrings(doc['supported']),
@@ -173,15 +173,17 @@ function readTargets(boardDir: string): BoardTarget[] {
   return targets;
 }
 
-export function collectBoards(root: string): BoardRecord[] {
+export function collectBoards(manifest: SourceManifest): BoardRecord[] {
   const boards: BoardRecord[] = [];
+  const root = manifest.root;
   const official = officialBoards(root);
 
-  for (const rel of walk(join(root, 'boards'), {
+  for (const relPath of manifest.select({
+    under: 'boards',
     match: (name) => name === 'board.yml' || name === 'board.yaml',
   })) {
-    const abs = join(root, 'boards', rel);
-    const doc = safeYaml(abs);
+    const abs = join(root, relPath);
+    const doc = safeYaml(manifest, relPath);
 
     // `board:` is the common shape; `boards:` (a list) appears in shared-directory setups.
     const entries: Record<string, unknown>[] = [];
@@ -196,13 +198,12 @@ export function collectBoards(root: string): BoardRecord[] {
     }
     if (entries.length === 0) continue;
 
-    const boardDir = dirname(abs);
-    const relDir = toPosix(join('boards', dirname(rel)));
-    const targets = readTargets(boardDir);
-    const documentation = [
-      ...walk(join(boardDir, 'doc'), { match: (name) => name.endsWith('.rst') }),
-    ].sort();
-    const preferredDoc = documentation.includes('index.rst') ? 'index.rst' : documentation.sort()[0];
+    const relDir = relPath.slice(0, relPath.lastIndexOf('/'));
+    const targets = readTargets(manifest, relDir);
+    const documentation = manifest
+      .select({ under: `${relDir}/doc`, match: (name) => name.endsWith('.rst') })
+      .map((path) => path.slice(relDir.length + 5));
+    const preferredDoc = documentation.includes('index.rst') ? 'index.rst' : documentation[0];
     const docPath = preferredDoc ? `${relDir}/doc/${preferredDoc}` : undefined;
 
     for (const entry of entries) {
@@ -288,17 +289,19 @@ export function collectBoards(root: string): BoardRecord[] {
 }
 
 /** Read the `soc.yml` family/series/soc hierarchy. */
-export function collectSocs(root: string): SocRecord[] {
+export function collectSocs(manifest: SourceManifest): SocRecord[] {
+  const root = manifest.root;
   const socs: SocRecord[] = [];
 
-  for (const rel of walk(join(root, 'soc'), {
+  for (const relPath of manifest.select({
+    under: 'soc',
     match: (name) => name === 'soc.yml' || name === 'soc.yaml',
   })) {
-    const abs = join(root, 'soc', rel);
-    const doc = safeYaml(abs);
+    const doc = safeYaml(manifest, relPath);
 
-    const relDir = toPosix(join('soc', dirname(rel)));
-    const vendor = rel.includes('/') ? rel.split('/')[0] : undefined;
+    const relDir = relPath.slice(0, relPath.lastIndexOf('/'));
+    const inSoc = relPath.slice('soc/'.length);
+    const vendor = inSoc.includes('/') ? inSoc.split('/')[0] : undefined;
 
     const pushSoc = (
       socEntry: Record<string, unknown>,

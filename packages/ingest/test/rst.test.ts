@@ -14,6 +14,7 @@ import { describe, it } from 'node:test';
 
 import { cleanInline, cleanRst, parseRst } from '../src/parsers/rst.ts';
 import { collectDocs, docUrl } from '../src/sources/docs.ts';
+import { SourceManifest } from '../../shared/source-manifest.ts';
 
 const ZEPHYR = process.env.ZEPHYR_BASE ?? join(process.cwd(), '..', '..', '.cache', 'zephyr');
 const SENSOR_RST = join(ZEPHYR, 'doc', 'hardware', 'peripherals', 'sensor', 'index.rst');
@@ -155,7 +156,7 @@ describe('documentation preprocessing', () => {
         join(root, 'doc', 'index.rst'),
         'Build System\n============\n\n.. toctree::\n   :maxdepth: 1\n\n   CMake guide <cmake/index.rst>\n   flashing/index.rst\n',
       );
-      const { pages, report } = collectDocs(root, 'https://example.invalid/');
+      const { pages, report } = collectDocs(SourceManifest.forRoot(root), 'https://example.invalid/');
       strictEqual(report.indexed, 1);
       strictEqual(pages[0]!.chunks.length, 1);
       ok(pages[0]!.chunks[0]!.body.includes('CMake guide (cmake/index)'));
@@ -175,7 +176,7 @@ describe('documentation preprocessing', () => {
         join(root, 'doc', 'index.rst'),
         'Fixture\n-------\n\n.. literalinclude:: fragment.txt\n   :start-after: START\n   :end-before: END\n   :language: text\n',
       );
-      const { pages } = collectDocs(root, 'https://example.invalid/');
+      const { pages } = collectDocs(SourceManifest.forRoot(root), 'https://example.invalid/');
       const page = pages.find((item) => item.path === 'doc/index.rst')!;
       const text = page.chunks.map((chunk) => chunk.body).join('\n');
       ok(text.includes('kept one'));
@@ -202,7 +203,7 @@ describe('documentation preprocessing', () => {
         for (const [path, text] of Object.entries(extra)) writeFileSync(join(root, 'doc', path), text);
         let failed = false;
         try {
-          collectDocs(root, 'https://example.invalid/');
+          collectDocs(SourceManifest.forRoot(root), 'https://example.invalid/');
         } catch {
           failed = true;
         }
@@ -227,7 +228,7 @@ describe('documentation preprocessing', () => {
       );
       let message = '';
       try {
-        collectDocs(root, 'https://example.invalid/');
+        collectDocs(SourceManifest.forRoot(root), 'https://example.invalid/');
       } catch (error) {
         message = (error as Error).message;
       }
@@ -247,7 +248,7 @@ describe('documentation preprocessing', () => {
         join(root, 'doc', 'index.rst'),
         'Fixture\n-------\n\n.. only:: html\n\n   .. include:: fragment.rst\n',
       );
-      const page = collectDocs(root, 'https://example.invalid/').pages[0]!;
+      const page = collectDocs(SourceManifest.forRoot(root), 'https://example.invalid/').pages[0]!;
       ok(page.chunks.some((chunk) => chunk.body.includes('Nested include text.')));
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -274,7 +275,7 @@ describe('against the real Zephyr tree', {
   });
 
   it('indexes build documentation and resolves board includes', () => {
-    const { pages, report } = collectDocs(ZEPHYR, 'https://docs.zephyrproject.org/4.4.2/');
+    const { pages, report } = collectDocs(SourceManifest.forRoot(ZEPHYR), 'https://docs.zephyrproject.org/4.4.2/');
     ok(pages.some((page) => page.path.startsWith('doc/build/')));
     const esp = pages.find((page) => page.path === 'boards/espressif/esp32s3_devkitc/doc/index.rst');
     ok(esp);

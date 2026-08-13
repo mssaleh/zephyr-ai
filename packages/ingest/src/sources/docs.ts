@@ -3,7 +3,7 @@ import { dirname, extname, join, relative, resolve, sep } from 'node:path';
 
 import { type DocChunk, parseRst } from '../parsers/rst.ts';
 import type { SourceReport } from '../report.ts';
-import { walk } from '../walk.ts';
+import type { SourceManifest } from '../../../shared/source-manifest.ts';
 
 export interface DocOrigin {
   path: string;
@@ -131,12 +131,13 @@ function sliceIncluded(text: string, options: Record<string, string>): { text: s
 }
 
 function preprocessRst(
-  treeRoot: string,
+  manifest: SourceManifest,
   sourcePath: string,
   text: string,
   origins: DocOrigin[],
   stack: string[] = [],
 ): string {
+  const treeRoot = manifest.root;
   const canonical = realpathSync(sourcePath);
   if (stack.includes(canonical)) {
     throw new Error(`include cycle: ${[...stack, canonical].map((path) => relative(treeRoot, path)).join(' -> ')}`);
@@ -171,7 +172,7 @@ function preprocessRst(
     if (kind === 'only') {
       if (/\bhtml\b/.test(argument)) {
         const dedented = body.map((value) => (value.trim() ? value.slice(Math.min(value.length, indent + 3)) : ''));
-        const nested = preprocessRst(treeRoot, canonical, dedented.join('\n'), origins, stack);
+        const nested = preprocessRst(manifest, canonical, dedented.join('\n'), origins, stack);
         out.push(...nested.split('\n').map((value) => `${' '.repeat(indent)}${value}`));
       }
       continue;
@@ -189,7 +190,11 @@ function preprocessRst(
     if (escaped === '..' || escaped.startsWith(`..${sep}`)) {
       throw new Error(`include escapes the Zephyr tree: ${argument}`);
     }
-    const included = sliceIncluded(readFileSync(canonicalCandidate, 'utf8'), options);
+    // An include target is an input like any other, so it is read through the
+    // manifest: a page that pulls in a file nobody declared is a hole in the
+    // input set, not a detail of that page.
+    const includedPath = relative(canonicalRoot, canonicalCandidate).replaceAll(sep, '/');
+    const included = sliceIncluded(manifest.read(includedPath), options);
     origins.push({
       path: relative(canonicalRoot, canonicalCandidate).replaceAll(sep, '/'),
       startLine: included.start,
@@ -201,34 +206,36 @@ function preprocessRst(
       const language = options['language'] ?? extname(candidate).slice(1);
       out.push(`${' '.repeat(indent)}.. code-block:: ${language}`, '', ...included.text.split('\n').map((value) => `${' '.repeat(indent + 3)}${value}`));
     } else {
-      const nested = preprocessRst(canonicalRoot, canonicalCandidate, included.text, origins, nextStack);
+      const nested = preprocessRst(manifest, canonicalCandidate, included.text, origins, nextStack);
       out.push(...nested.split('\n').map((value) => `${' '.repeat(indent)}${value}`));
     }
   }
   return out.join('\n');
 }
 
-function collectFrom(root: string, subdir: string, baseUrl: string, report: SourceReport): DocPage[] {
+function collectFrom(
+  manifest: SourceManifest,
+  subdir: string,
+  baseUrl: string,
+  report: SourceReport,
+): DocPage[] {
   const pages: DocPage[] = [];
-  const base = join(root, subdir);
-  // Sorted: walk() follows filesystem order, and unsorted it decided the id every
-  // doc row got, so two machines produced the same pages in different positions.
-  const found = [
-    ...walk(base, { skipDirs: DOC_SKIP, match: (name) => name.endsWith('.rst') }),
-  ].sort();
-  for (const rel of found) {
-    const relPath = `${subdir}/${rel}`;
-    const absolute = join(base, rel);
+  for (const relPath of manifest.select({
+    under: subdir,
+    skipSegments: DOC_SKIP,
+    match: (name) => name.endsWith('.rst'),
+  })) {
+    const absolute = join(manifest.root, relPath);
     report.discovered++;
     try {
-      const source = readFileSync(absolute, 'utf8');
+      const source = manifest.read(relPath);
       const origins: DocOrigin[] = [{
         path: relPath,
         startLine: 1,
         endLine: source.split(/\r?\n/).length,
         directive: 'page',
       }];
-      const expanded = preprocessRst(root, absolute, source, origins);
+      const expanded = preprocessRst(manifest, absolute, source, origins);
       const parsed = parseRst(expanded);
       let chunks = parsed.chunks
         .filter((chunk) => chunk.body.trim() !== '')
@@ -266,7 +273,7 @@ function collectFrom(root: string, subdir: string, baseUrl: string, report: Sour
   return pages;
 }
 
-export function collectDocs(root: string, baseUrl: string): CollectedDocs {
+export function collectDocs(manifest: SourceManifest, baseUrl: string): CollectedDocs {
   const report: SourceReport = {
     discovered: 0,
     indexed: 0,
@@ -275,8 +282,8 @@ export function collectDocs(root: string, baseUrl: string): CollectedDocs {
     errors: [],
   };
   const pages = [
-    ...collectFrom(root, 'doc', baseUrl, report),
-    ...collectFrom(root, 'boards', baseUrl, report),
+    ...collectFrom(manifest, 'doc', baseUrl, report),
+    ...collectFrom(manifest, 'boards', baseUrl, report),
   ];
   if (report.errors.length > 0) {
     const detail = report.errors.slice(0, 12).map((error) => `${error.path}: ${error.message}`).join('\n');

@@ -26,7 +26,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
@@ -42,8 +42,24 @@ import { collectBoardRunners, collectRunners, collectWestCommands } from './sour
 import type { KconfigExpr } from './sources/kconfig.ts';
 import { buildIndexDescriptor } from './identity.ts';
 import { semanticPython } from './python.ts';
-import { canonicalJson, projectId, type ProducerRecord } from '../../shared/index-descriptor.ts';
+import {
+  canonicalJson,
+  fingerprint,
+  projectId,
+  type ProducerRecord,
+} from '../../shared/index-descriptor.ts';
 import { contentDigest, tableDigests } from '../../shared/content-digest.ts';
+import { SourceManifest } from '../../shared/source-manifest.ts';
+import KCONFIG_EXPORTER_TEXT from './adapters/kconfig-export.py';
+import BINDING_EXPORTER_TEXT from './adapters/binding-export.py';
+import API_EXPORTER_TEXT from './adapters/api-export.py';
+import RUNNER_EXPORTER_TEXT from './adapters/runner-export.py';
+import {
+  declaredEnvironmentIdentity,
+  hermeticEnvironment,
+  isHermetic,
+  reExecHermetically,
+} from '../../shared/hermetic.ts';
 import { parseRequirements, type Requirement } from '../../shared/python-interpreters.ts';
 import { fetchPinnedZephyr, PINNED_ZEPHYR_LOCK } from './fetch.ts';
 import packageMetadata from '../package.json' with { type: 'json' };
@@ -155,10 +171,19 @@ function parseArgs(argv: string[]): Options {
   return opts;
 }
 
+/**
+ * The pinned revision this build compares itself against.
+ *
+ * Resolved from where the ingest is installed, never from the working directory.
+ * It was cwd-relative, which made the same tree index as `pinned-upstream` from
+ * the repository root and as `explicit-tree` from anywhere else — an input that
+ * changed the recorded identity and that nothing declared.
+ */
 function readLock(): Record<string, string> {
   for (const candidate of [
-    join(process.cwd(), 'zephyr.lock.json'),
-    join(process.cwd(), '..', '..', 'zephyr.lock.json'),
+    join(import.meta.dirname, '..', '..', '..', 'zephyr.lock.json'),
+    join(import.meta.dirname, '..', '..', 'zephyr.lock.json'),
+    join(import.meta.dirname, '..', 'zephyr.lock.json'),
   ]) {
     try {
       return JSON.parse(readFileSync(candidate, 'utf8')) as Record<string, string>;
@@ -180,6 +205,45 @@ function readLock(): Record<string, string> {
  */
 function jsonOrNull(value: unknown): string | null {
   return value === undefined || value === null ? null : JSON.stringify(value);
+}
+
+/**
+ * The identity of everything this build consumed.
+ *
+ * The point is not the number itself but the pair it forms with the content
+ * digest. When two machines disagree, one of exactly two things is true, and
+ * until now the system could say neither: either the inputs differed, in which
+ * case this differs and names where to look, or the derivation is impure, in
+ * which case this matches and the content does not. Four releases were spent
+ * discovering by elimination what this answers directly.
+ */
+function inputHash(parts: {
+  tree: SourceManifest;
+  modules: SourceManifest[];
+  apiXml: SourceManifest | null;
+  adapters: string[];
+  lock: Record<string, string>;
+  producer: ProducerRecord;
+  environment: Record<string, string>;
+}): string {
+  return fingerprint({
+    tree: { fingerprint: parts.tree.fingerprint(), addressed: parts.tree.addressed },
+    modules: parts.modules.map((module) => ({
+      fingerprint: module.fingerprint(),
+      addressed: module.addressed,
+    })),
+    apiXml: parts.apiXml
+      ? { fingerprint: parts.apiXml.fingerprint(), addressed: parts.apiXml.addressed }
+      : null,
+    // The adapters are as much an input as the tree: they decide what the tree
+    // means. Their text is bundled, so it is hashed rather than referenced.
+    adapters: parts.adapters.map((text) => createHash('sha256').update(text).digest('hex')),
+    // The lockfile decides whether this tree counts as the pinned revision, which
+    // is recorded in the index, so it is an input like any other.
+    lock: parts.lock,
+    producer: parts.producer,
+    environment: parts.environment,
+  });
 }
 
 /** Distributions a build of this tree needs, from the tree's own requirements. */
@@ -314,6 +378,7 @@ function main(): void {
         '(python -m pip install -r <zephyr>/scripts/requirements-base.txt) and retry.',
     );
   }
+  const producer = producerRecord(opts.zephyr, opts.apiXml);
   const descriptor = buildIndexDescriptor({
     zephyrRoot: opts.zephyr,
     westComplete: runnerExport.complete,
@@ -324,7 +389,7 @@ function main(): void {
     ...(opts.applicationRoot ? { applicationRoot: opts.applicationRoot } : {}),
     ...(opts.buildDirectory ? { buildDirectory: opts.buildDirectory } : {}),
     apiSemantic: Boolean(opts.apiXml),
-    producer: producerRecord(opts.zephyr, opts.apiXml),
+    producer,
   });
   const version = descriptor.zephyrVersion;
   if (opts.requirePinned && (!lock['commit'] || descriptor.sourceKind !== 'pinned-upstream')) {
@@ -360,8 +425,16 @@ function main(): void {
   const started = Date.now();
 
   // ---------------------------------------------------------------- collect --
+  // The declared input set. Every collector reads through it, so the file set and
+  // its order are values that were declared rather than answers the disk gave.
+  const tManifest = Date.now();
+  const manifest = SourceManifest.forRoot(opts.zephyr);
+  log(
+    `  manifest  ${manifest.entries.length} files, ${manifest.addressed ? 'content-addressed' : 'UNADDRESSED'} (${Date.now() - tManifest} ms)`,
+  );
+
   const t0 = Date.now();
-  const { pages: docs, report: docsReport } = collectDocs(opts.zephyr, docBaseUrl);
+  const { pages: docs, report: docsReport } = collectDocs(manifest, docBaseUrl);
   const chunkCount = docs.reduce((n, d) => n + d.chunks.length, 0);
   log(`  docs      ${docs.length} pages, ${chunkCount} sections (${Date.now() - t0} ms)`);
 
@@ -393,8 +466,8 @@ function main(): void {
   );
 
   const t3 = Date.now();
-  const boards = collectBoards(opts.zephyr);
-  const socs = collectSocs(opts.zephyr);
+  const boards = collectBoards(manifest);
+  const socs = collectSocs(manifest);
   const targetCount = boards.reduce((n, b) => n + b.targets.length, 0);
   log(
     `  boards    ${boards.length} boards, ${targetCount} targets, ${socs.length} SoCs (${Date.now() - t3} ms)`,
@@ -402,9 +475,9 @@ function main(): void {
 
   const t4 = Date.now();
   const socDirByName = new Map(socs.map((soc) => [soc.name, soc.dir]));
-  const westCommands = collectWestCommands(opts.zephyr);
+  const westCommands = collectWestCommands(manifest);
   const boardRunnerExport = collectBoardRunners(
-    opts.zephyr,
+    manifest,
     boards.map((board) => ({
       name: board.name,
       dir: board.dir,
@@ -428,11 +501,21 @@ function main(): void {
   );
 
   const t5s = Date.now();
-  const samples = collectSamples(opts.zephyr);
+  const samples = collectSamples(manifest);
   log(`  samples   ${samples.length} (${Date.now() - t5s} ms)`);
 
   const t5 = Date.now();
-  const api = collectApi(opts.zephyr, opts.apiXml);
+  const api = collectApi(manifest, opts.apiXml);
+  const apiXmlManifest = opts.apiXml ? SourceManifest.forRoot(opts.apiXml) : null;
+  const derivationInput = inputHash({
+    tree: manifest,
+    modules: opts.modules.map((root) => SourceManifest.forRoot(root)),
+    apiXml: apiXmlManifest,
+    adapters: [KCONFIG_EXPORTER_TEXT, BINDING_EXPORTER_TEXT, API_EXPORTER_TEXT, RUNNER_EXPORTER_TEXT],
+    lock,
+    producer,
+    environment: declaredEnvironmentIdentity(hermeticEnvironment(process.env)),
+  });
   log(
     `  api       ${api.symbols.length} symbols, ${api.groups.length} groups, ${api.mode} (${Date.now() - t5} ms)`,
   );
@@ -1018,7 +1101,9 @@ function main(): void {
   const digest = contentDigest(db);
   const insertMeta = db.prepare('INSERT INTO meta (key, value) VALUES (?, ?)');
   insertMeta.run('table_hashes', canonicalJson(perTable));
+  insertMeta.run('input_hash', derivationInput);
   insertMeta.run('content_hash', digest);
+  log(`  inputs    ${derivationInput.slice(0, 16)}…`);
   log(`  content   ${digest.slice(0, 16)}…`);
 
   const tFts = Date.now();
@@ -1089,6 +1174,12 @@ function main(): void {
     }
   }
 }
+
+// Before anything reads the environment, including parseArgs, replace it with the
+// declared one. Every subprocess this build starts is a descendant of the re-exec,
+// so hermeticity is a property of the process rather than a rule each spawn site
+// has to follow.
+if (!isHermetic()) reExecHermetically(process.argv.slice(1));
 
 try {
   main();

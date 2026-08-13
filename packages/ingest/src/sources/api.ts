@@ -7,7 +7,7 @@ import API_EXPORTER from '../adapters/api-export.py';
 import { type ApiGroup, type ApiSymbol, parseHeader } from '../parsers/doxygen.ts';
 import { standardPython } from '../python.ts';
 import type { SourceReport } from '../report.ts';
-import { walk } from '../walk.ts';
+import type { SourceManifest } from '../../../shared/source-manifest.ts';
 import { byField } from '../../../shared/ordering.ts';
 
 export interface CollectedApi {
@@ -102,28 +102,25 @@ function collectDoxygenXml(root: string, xmlDirectory: string): CollectedApi {
  * and the arch-private trees describe implementation detail an application must
  * not call, and indexing them would let a model reach for private functions.
  */
-export function collectApi(root: string, xmlDirectory?: string): CollectedApi {
-  if (xmlDirectory) return collectDoxygenXml(root, xmlDirectory);
-  const base = join(root, 'include', 'zephyr');
+export function collectApi(manifest: SourceManifest, xmlDirectory?: string): CollectedApi {
+  if (xmlDirectory) return collectDoxygenXml(manifest.root, xmlDirectory);
   const symbols: ApiSymbol[] = [];
   const groups: ApiGroup[] = [];
   const intentionallyExcluded: SourceReport['intentionallyExcluded'] = [];
 
-  // Sorted: unsorted, filesystem order decided the order headers were parsed and
-  // so the order symbols were emitted before the final sort below.
-  const headers = [
-    ...walk(base, {
-      skipPrefixes: ['internal', 'arch/arm/internal'],
-      match: (name) => name.endsWith('.h'),
-    }),
-  ].sort();
-  for (const rel of headers) {
+  const headers = manifest.select({
+    under: 'include/zephyr',
+    skip: ['include/zephyr/internal', 'include/zephyr/arch/arm/internal'],
+    match: (name) => name.endsWith('.h'),
+  });
+  for (const path of headers) {
+    const rel = path.slice('include/zephyr/'.length);
     let text: string;
     try {
-      text = readFileSync(join(base, rel), 'utf8');
+      text = manifest.read(path);
     } catch (error) {
       throw new Error(
-        `Cannot read public API header ${join(base, rel)}: ${error instanceof Error ? error.message : String(error)}`,
+        `Cannot read public API header ${path}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
 

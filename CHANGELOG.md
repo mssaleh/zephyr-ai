@@ -3,6 +3,48 @@
 All notable user-visible changes are recorded here. The format follows Keep a
 Changelog, and releases use semantic versioning.
 
+## [0.7.0] - 2026-08-13
+
+Rebuild the index with the `zephyr-index` skill after upgrading. The schema is
+unchanged at 9 and the catalogue this produces is byte-identical to 0.6.2's; what
+changed is that it is now reproducible on purpose rather than by inspection.
+
+### Changed
+
+- **The index is a derivation with declared inputs.** Four releases each fixed a
+  machine dependency where it was found — a locale-dependent sort, an unsorted
+  directory walk, a Doxygen traversal that decided which of two records survived a
+  merge, an environment variable inherited from the caller's shell — and three
+  tags went out with a red release gate. Each fix was correct and none closed
+  anything, because the ingest had never declared what it consumes. It does now.
+- Collectors read a `SourceManifest`: an ordered, content-addressed list built
+  from `git ls-files -s`, reconciled against the worktree for modified and
+  untracked files, and hashed directly when a root is not a repository — in which
+  case the index records that its source was not addressable rather than implying
+  otherwise. A read the manifest does not vouch for, or one whose bytes changed
+  under the build, is an error. The directory walker is gone: its contract asked
+  callers to sort and three of its four callers did not.
+- The ingest re-execs once into an environment built from a declaration and
+  inherits nothing, so every descendant is hermetic without knowing it. That
+  closed the `ZEPHYR_TOOLCHAIN_VARIANT` leak and, without anyone looking for them,
+  `PYTHONHASHSEED`, `TZ` and the system git configuration.
+- `zephyr.lock.json` is resolved from where the ingest is installed rather than
+  from the working directory. The same tree indexed as `pinned-upstream` from the
+  repository root and as `explicit-tree` from anywhere else.
+
+### Added
+
+- Every index records `input_hash` beside `content_hash`, covering the tree and
+  module manifests, the Doxygen XML, the adapter sources, the lockfile, the tool
+  versions and the declared environment. The pair makes a disagreement between two
+  machines answerable: a differing `input_hash` means the inputs differ and names
+  which, and a matching one with differing content means the derivation is impure.
+  Every failure of the last four releases is one of those two lines.
+- `quality:reproducible` varies nine environment variables and the working
+  directory at once and checks that one property, instead of sampling the axes
+  someone had already thought of. It found the lockfile dependency above on its
+  first run.
+
 ## [0.6.2] - 2026-08-13
 
 Rebuild the index with the `zephyr-index` skill after upgrading.

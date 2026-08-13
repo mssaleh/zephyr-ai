@@ -180,7 +180,7 @@ validate ./plugin --strict` catches this; run it.
 | --- | --- |
 | `packages/ingest/src/adapters/` | Embedded Python exporters for target-tree Kconfiglib, edtlib, west runner classes, and Doxygen XML |
 | `packages/ingest/src/parsers/` | RST and conservative fallback/fixture parsers; pure functions, no I/O |
-| `packages/ingest/src/sources/` | Filesystem walkers that feed the parsers and shape records |
+| `packages/ingest/src/sources/` | Collectors that read the declared input manifest and shape records |
 | `packages/ingest/src/schema.ts` | DDL and the FTS population statement |
 | `packages/ingest/src/cli.ts` | Orchestration and all SQL writes |
 | `packages/mcp-server/src/protocol.ts` | JSON-RPC/MCP 2025-11-25 over stdio |
@@ -203,6 +203,13 @@ Markdown already provides.
 **A new indexed source.** Parser in `parsers/` (pure, tested against inline
 fixtures *and* the real tree), collector in `sources/`, tables in `schema.ts`,
 writes in `cli.ts`, then bump `SCHEMA_VERSION` and rebuild.
+
+A collector reads through the `SourceManifest` it is given and never touches the
+filesystem: the file set and its order are a declared value, and a read the
+manifest does not vouch for is an error. Anything a collector needs that is not
+in the tree — a tool version, an environment variable — is an input, and belongs
+in `input_hash` so that a mismatch between two machines says which of the inputs
+differed instead of leaving a search.
 
 **A new skill.** Directory under `plugin/skills/` with `SKILL.md`, frontmatter
 `name` matching the directory. Depth that only some sessions need goes in

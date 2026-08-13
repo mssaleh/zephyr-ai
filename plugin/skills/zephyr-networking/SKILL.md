@@ -4,7 +4,7 @@ description: Build networked Zephyr firmware. Use when adding Wi-Fi, Ethernet, T
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.6.2"
+  version: "0.7.0"
 ---
 
 # Networking

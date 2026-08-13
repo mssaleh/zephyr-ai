@@ -5,6 +5,7 @@ import { describe, it } from 'node:test';
 
 import { collectBoards } from '../src/sources/boards.ts';
 import { collectSamples } from '../src/sources/samples.ts';
+import { SourceManifest } from '../../shared/source-manifest.ts';
 
 const ZEPHYR = process.env.ZEPHYR_BASE ?? join(process.cwd(), '..', '..', '.cache', 'zephyr');
 const haveTree = existsSync(join(ZEPHYR, 'boards'));
@@ -14,7 +15,7 @@ if (process.env.ZEPHYR_AI_RELEASE_TEST === '1' && !haveTree) {
 
 describe('boards and samples against the real Zephyr tree', { skip: !haveTree && 'Zephyr tree not fetched' }, () => {
   it('enumerates all targets derived from board qualifiers and Twister metadata', () => {
-    const boards = collectBoards(ZEPHYR);
+    const boards = collectBoards(SourceManifest.forRoot(ZEPHYR));
     const audited = [
       'adafruit_feather_esp32s2',
       'cdns_swerv',
@@ -34,7 +35,7 @@ describe('boards and samples against the real Zephyr tree', { skip: !haveTree &&
   });
 
   it('applies common Twister metadata and stores every eligible sample file', () => {
-    const samples = collectSamples(ZEPHYR);
+    const samples = collectSamples(SourceManifest.forRoot(ZEPHYR));
     ok(samples.some((sample) => sample.tags.length > 0));
     for (const sample of samples) {
       strictEqual(sample.files.length, sample.contents.length, `eligible/stored mismatch for ${sample.path}`);
@@ -50,7 +51,7 @@ describe('boards and samples against the real Zephyr tree', { skip: !haveTree &&
     // parser needs no special case — but the tree has testcase.yaml under
     // samples/ and a sample.yaml under tests/, so a path prefix would mislabel
     // both. The filename is the honest discriminator.
-    const samples = collectSamples(ZEPHYR);
+    const samples = collectSamples(SourceManifest.forRoot(ZEPHYR));
     const tests = samples.filter((sample) => sample.kind === 'test');
     ok(tests.length > 0, 'no testcase.yaml was indexed');
     ok(tests.some((sample) => sample.path.startsWith('tests/')));

@@ -6,7 +6,7 @@ compatibility: Requires Node.js 24+ and Python 3.12+; the toolchain and host fla
 allowed-tools: Bash(west:*) Bash(python3:*) Bash(uv:*) Bash(command:*) Bash(node:*) Read
 metadata:
   author: zephyr-ai
-  version: "0.6.2"
+  version: "0.7.0"
 ---
 
 # Build prerequisites
