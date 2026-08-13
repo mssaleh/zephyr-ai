@@ -35,7 +35,7 @@ export function canonicalJson(value) {
       return Object.fromEntries(
         Object.entries(item)
           .filter(([, child]) => child !== undefined)
-          .sort(([left], [right]) => left.localeCompare(right))
+          .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
           .map(([key, child]) => [key, normalise(child)]),
       );
     }
@@ -45,11 +45,15 @@ export function canonicalJson(value) {
 }
 
 export function descriptorFingerprint(descriptor) {
+  // Must strip exactly what packages/shared/index-descriptor.ts strips. The hook
+  // has no build step and cannot import it, so the two are kept in step by
+  // test/version.test.mjs rather than by the type system.
   const {
     createdAt: _createdAt,
     contextFingerprint: _contextFingerprint,
     zephyrRoot: _zephyrRoot,
     projectRoot: _projectRoot,
+    producer: _producer,
     ...semantic
   } = descriptor;
   return createHash('sha256').update(canonicalJson(semantic)).digest('hex');

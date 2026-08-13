@@ -9,6 +9,7 @@ import RUNNER_EXPORTER from '../adapters/runner-export.py';
 import { standardPython } from '../python.ts';
 import type { SourceReport } from '../report.ts';
 import { toPosix, walk } from '../walk.ts';
+import { byField } from '../../../shared/ordering.ts';
 
 export interface RunnerRecord {
   name: string;
@@ -437,7 +438,7 @@ export function collectWestCommands(zephyrRoot: string): WestCommandRecord[] {
       });
     }
   }
-  return records.sort((a, b) => a.name.localeCompare(b.name));
+  return records.sort(byField((record) => record.name));
 }
 
 export function collectBoardRunners(

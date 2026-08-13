@@ -4,7 +4,7 @@ description: Reduce power consumption in Zephyr firmware. Use when targeting bat
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.5.0"
+  version: "0.6.0"
 ---
 
 # Power management

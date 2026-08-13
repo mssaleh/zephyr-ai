@@ -125,22 +125,33 @@ def main():
         kc.GREATER_EQUAL: "greater_equal",
     }
 
+    def unexpand(text):
+        """Restore $(ZEPHYR_BASE) in a value kconfiglib expanded to an absolute path.
+
+        Upstream writes `default "$(ZEPHYR_BASE)/boards/qemu/x86/qemu_x86_tiny.ld"`.
+        Kconfiglib resolves that against this machine's tree, so storing the result
+        put a home directory into an answer get_kconfig renders, and made two
+        machines' catalogues differ over nothing. Un-expanding restores what the
+        Kconfig source actually says.
+        """
+        return text.replace(zephyr, "$(ZEPHYR_BASE)") if zephyr in text else text
+
     def expression(value):
         if value is None:
             return None
         if isinstance(value, tuple):
             op = operators.get(value[0], "unknown")
             children = [expression(child) for child in value[1:]]
-            return {"kind": op, "children": children, "display": kc.expr_str(value)}
+            return {"kind": op, "children": children, "display": unexpand(kc.expr_str(value))}
         if isinstance(value, kc.Symbol):
             return {
                 "kind": "constant" if value.is_constant else "symbol",
-                "value": value.name,
-                "display": kc.expr_str(value),
+                "value": unexpand(value.name),
+                "display": unexpand(kc.expr_str(value)),
             }
         if isinstance(value, kc.Choice):
             return {"kind": "choice", "value": choice_id(value), "display": kc.expr_str(value)}
-        return {"kind": "literal", "value": str(value), "display": str(value)}
+        return {"kind": "literal", "value": unexpand(str(value)), "display": unexpand(str(value))}
 
     roots = [(Path(zephyr), "")]
     roots.extend((Path(root).resolve(), "modules/{}/".format(Path(root).name)) for root in args.module)

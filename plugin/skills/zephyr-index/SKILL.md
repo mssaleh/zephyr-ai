@@ -6,7 +6,7 @@ compatibility: Requires Node.js 24+, Python 3.12+ with PyYAML, and a complete Ze
 allowed-tools: Bash(node:*) Bash(west:*) Bash(ls:*) Bash(test:*) Bash(python3:*) Bash(command:*) Read
 metadata:
   author: zephyr-ai
-  version: "0.5.0"
+  version: "0.6.0"
 ---
 
 # Build the Zephyr index

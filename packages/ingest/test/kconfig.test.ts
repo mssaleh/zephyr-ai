@@ -259,7 +259,7 @@ describe('against the real Zephyr tree', () => {
   }, () => {
     const semantic = collectKconfig(ZEPHYR);
     const selected = [...semantic.symbols]
-      .sort((left, right) => left.name.localeCompare(right.name))
+      .sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0))
       .filter((_symbol, index) => index % 317 === 0)
       .slice(0, 64);
     const db = new DatabaseSync(INDEX, { readOnly: true });

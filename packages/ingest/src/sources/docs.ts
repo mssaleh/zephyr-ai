@@ -211,7 +211,12 @@ function preprocessRst(
 function collectFrom(root: string, subdir: string, baseUrl: string, report: SourceReport): DocPage[] {
   const pages: DocPage[] = [];
   const base = join(root, subdir);
-  for (const rel of walk(base, { skipDirs: DOC_SKIP, match: (name) => name.endsWith('.rst') })) {
+  // Sorted: walk() follows filesystem order, and unsorted it decided the id every
+  // doc row got, so two machines produced the same pages in different positions.
+  const found = [
+    ...walk(base, { skipDirs: DOC_SKIP, match: (name) => name.endsWith('.rst') }),
+  ].sort();
+  for (const rel of found) {
     const relPath = `${subdir}/${rel}`;
     const absolute = join(base, rel);
     report.discovered++;

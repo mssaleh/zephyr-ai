@@ -28,6 +28,7 @@ import {
 } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 
 import { BUILD_FTS, DDL, SCHEMA_VERSION } from './schema.ts';
@@ -41,7 +42,8 @@ import { collectBoardRunners, collectRunners, collectWestCommands } from './sour
 import type { KconfigExpr } from './sources/kconfig.ts';
 import { buildIndexDescriptor } from './identity.ts';
 import { semanticPython } from './python.ts';
-import { canonicalJson, projectId } from '../../shared/index-descriptor.ts';
+import { canonicalJson, projectId, type ProducerRecord } from '../../shared/index-descriptor.ts';
+import { contentDigest } from '../../shared/content-digest.ts';
 import { parseRequirements, type Requirement } from '../../shared/python-interpreters.ts';
 import { fetchPinnedZephyr, PINNED_ZEPHYR_LOCK } from './fetch.ts';
 import packageMetadata from '../package.json' with { type: 'json' };
@@ -187,6 +189,37 @@ function buildRequirements(zephyrRoot: string): Requirement[] {
   return parseRequirements(readFileSync(path, 'utf8'));
 }
 
+/**
+ * What produced this index, measured at build time.
+ *
+ * Recorded, never gated on. scripts/toolchain.json pins the one tool whose
+ * version provably changes stored content; this exists so a digest mismatch
+ * between two machines is answered by reading two descriptors.
+ */
+function producerRecord(zephyrRoot: string, apiXml: string | undefined): ProducerRecord {
+  const version = (command: string, args: string[]): string | undefined => {
+    const run = spawnSync(command, args, { encoding: 'utf8', timeout: 5000 });
+    if (run.status !== 0) return undefined;
+    return `${run.stdout}${run.stderr}`.trim().split('\n')[0] ?? undefined;
+  };
+  let python: string | undefined;
+  try {
+    python = version(semanticPython(zephyrRoot), ['--version']);
+  } catch {
+    // The interpreter probe throws when nothing usable exists; the ingest will
+    // fail on its own terms shortly, and a missing entry says so honestly.
+  }
+  return {
+    node: process.version,
+    sqlite: String(
+      new DatabaseSync(':memory:').prepare('SELECT sqlite_version() AS v').get()?.['v'] ?? '',
+    ),
+    ...(python ? { python } : {}),
+    ...(apiXml ? { doxygen: version('doxygen', ['--version']) ?? 'unknown' } : {}),
+    collator: new Intl.Collator().resolvedOptions().locale,
+  };
+}
+
 function fsyncPath(path: string): void {
   const fd = openSync(path, 'r');
   try {
@@ -291,6 +324,7 @@ function main(): void {
     ...(opts.applicationRoot ? { applicationRoot: opts.applicationRoot } : {}),
     ...(opts.buildDirectory ? { buildDirectory: opts.buildDirectory } : {}),
     apiSemantic: Boolean(opts.apiXml),
+    producer: producerRecord(opts.zephyr, opts.apiXml),
   });
   const version = descriptor.zephyrVersion;
   if (opts.requirePinned && (!lock['commit'] || descriptor.sourceKind !== 'pinned-upstream')) {
@@ -977,6 +1011,12 @@ function main(): void {
 
   db.exec('COMMIT');
   log(`  written   (${Date.now() - tWrite} ms)`);
+
+  // Computed before the FTS tables exist, and written last, so the digest covers
+  // every assertion the index makes and nothing derived from them.
+  const digest = contentDigest(db);
+  db.prepare('INSERT INTO meta (key, value) VALUES (?, ?)').run('content_hash', digest);
+  log(`  content   ${digest.slice(0, 16)}…`);
 
   const tFts = Date.now();
   db.exec(BUILD_FTS);

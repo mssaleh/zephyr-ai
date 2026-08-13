@@ -1,4 +1,5 @@
 import { type Index, clampLimit, json } from '../db.ts';
+import { byField } from '../../../shared/ordering.ts';
 import { ToolError } from '../protocol.ts';
 import {
   type ToolFactory,
@@ -136,7 +137,7 @@ function nearTwins(
       ].filter(Boolean),
     });
   }
-  return twins.sort((a, b) => a.name.localeCompare(b.name));
+  return twins.sort(byField((twin) => twin.name));
 }
 
 interface BoardRunner {

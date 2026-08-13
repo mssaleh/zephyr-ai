@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 
 import {
   INDEX_BUILDER_VERSION,
+  type ProducerRecord,
   INDEX_DESCRIPTOR_VERSION,
   INDEX_SCHEMA_VERSION,
   descriptorFingerprint,
@@ -24,6 +25,7 @@ export interface IdentityOptions {
   buildDirectory?: string;
   apiSemantic?: boolean;
   westComplete?: boolean;
+  producer?: ProducerRecord;
 }
 
 function git(root: string, args: string[]): string | null {
@@ -137,6 +139,7 @@ export function buildIndexDescriptor(options: IdentityOptions): IndexDescriptor 
     ...(options.boardTarget ? { boardTarget: options.boardTarget } : {}),
     ...(options.applicationRoot ? { applicationRoot: realpathSync(options.applicationRoot) } : {}),
     ...(options.buildDirectory ? { buildDirectory: realpathSync(options.buildDirectory) } : {}),
+    ...(options.producer ? { producer: options.producer } : {}),
     coverage: {
       docs: { complete: options.modules.length === 0, note: options.modules.length ? 'Module documentation is not indexed.' : undefined },
       kconfig: { complete: false, note: 'Catalogue index covering the application and sysbuild namespaces; generated and application-local symbols require resolved context.' },

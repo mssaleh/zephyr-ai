@@ -151,15 +151,20 @@ def main():
 
     for compound_id, indexed_kind in compound_refs:
         source = os.path.join(args.xml, compound_id + ".xml")
+        # Reported relative to the XML directory. The absolute path is this
+        # machine's Doxygen output directory, and writing it into the index makes
+        # two machines' reports differ for a reason that has nothing to do with
+        # the catalogue -- and puts a home directory in a file users may share.
+        reported = compound_id + ".xml"
         if not os.path.isfile(source):
             discovered += 1
-            errors.append({"path": source, "code": "missing-compound", "message": "Referenced by index.xml"})
+            errors.append({"path": reported, "code": "missing-compound", "message": "Referenced by index.xml"})
             continue
         root = ET.parse(source).getroot()
         compound = root.find("compounddef")
         if compound is None:
             discovered += 1
-            errors.append({"path": source, "code": "missing-compounddef", "message": "No compounddef element"})
+            errors.append({"path": reported, "code": "missing-compounddef", "message": "No compounddef element"})
             continue
         compound_kind = compound.get("kind", indexed_kind)
         compound_name = text(compound.find("compoundname"))
@@ -194,13 +199,13 @@ def main():
         for member in compound.findall(".//memberdef"):
             kind = member.get("kind", "")
             if kind not in KINDS:
-                exclusion_id = member.get("id", "") or source + ":" + kind
+                exclusion_id = member.get("id", "") or reported + ":" + kind
                 if exclusion_id not in excluded_ids:
                     excluded_ids.add(exclusion_id)
                     discovered += 1
                     excluded.append({
                         "id": exclusion_id,
-                        "path": source,
+                        "path": reported,
                         "reason": "unsupported-doxygen-kind:" + (kind or "unknown"),
                     })
                 continue
@@ -211,7 +216,7 @@ def main():
                 # They carry no name to look up, so they are excluded by rule
                 # rather than reported as a defect in the source.
                 discovered += 1
-                excluded.append({"path": source, "reason": "unnamed-member"})
+                excluded.append({"path": reported, "reason": "unnamed-member"})
                 continue
             add_symbol(record)
             if kind == "enum":

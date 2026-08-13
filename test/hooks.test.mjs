@@ -82,12 +82,14 @@ function rewriteDescriptor(path, mutate) {
   const row = db.prepare("SELECT value FROM meta WHERE key = 'index_descriptor'").get();
   const descriptor = JSON.parse(String(row.value));
   mutate(descriptor);
-  const { createdAt, contextFingerprint, zephyrRoot, projectRoot, ...semantic } = descriptor;
+  // Strips what packages/shared/index-descriptor.ts strips, including producer.
+  const { createdAt, contextFingerprint, zephyrRoot, projectRoot, producer, ...semantic } =
+    descriptor;
   const canonical = (value) => {
     const normalise = (item) => Array.isArray(item)
       ? item.map(normalise)
       : item && typeof item === 'object'
-        ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b)).map(([key, child]) => [key, normalise(child)]))
+        ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([key, child]) => [key, normalise(child)]))
         : item;
     return JSON.stringify(normalise(value));
   };

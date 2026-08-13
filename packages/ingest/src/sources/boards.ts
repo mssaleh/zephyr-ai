@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { parse as parseYaml } from 'yaml';
 
 import { toPosix, walk } from '../walk.ts';
+import { byCodeUnits, byField } from '../../../shared/ordering.ts';
 
 export interface BoardTarget {
   /** Fully qualified target, e.g. `esp32s3_devkitc/esp32s3/procpu`. */
@@ -168,7 +169,7 @@ function readTargets(boardDir: string): BoardTarget[] {
     }
   }
 
-  targets.sort((a, b) => a.identifier.localeCompare(b.identifier));
+  targets.sort(byField((target) => target.identifier));
   return targets;
 }
 
@@ -198,7 +199,9 @@ export function collectBoards(root: string): BoardRecord[] {
     const boardDir = dirname(abs);
     const relDir = toPosix(join('boards', dirname(rel)));
     const targets = readTargets(boardDir);
-    const documentation = [...walk(join(boardDir, 'doc'), { match: (name) => name.endsWith('.rst') })];
+    const documentation = [
+      ...walk(join(boardDir, 'doc'), { match: (name) => name.endsWith('.rst') }),
+    ].sort();
     const preferredDoc = documentation.includes('index.rst') ? 'index.rst' : documentation.sort()[0];
     const docPath = preferredDoc ? `${relDir}/doc/${preferredDoc}` : undefined;
 
@@ -253,7 +256,7 @@ export function collectBoards(root: string): BoardRecord[] {
         targetByName.set(target.identifier, existing ? { ...existing, ...target } : target);
       }
       const effective = [...targetByName.values()].sort((left, right) =>
-        left.identifier.localeCompare(right.identifier),
+        byCodeUnits(left.identifier, right.identifier),
       );
 
       const record: BoardRecord = {
@@ -280,7 +283,7 @@ export function collectBoards(root: string): BoardRecord[] {
     }
   }
 
-  boards.sort((a, b) => a.name.localeCompare(b.name));
+  boards.sort(byField((board) => board.name));
   return boards;
 }
 
@@ -346,6 +349,6 @@ export function collectSocs(root: string): SocRecord[] {
     }
   }
 
-  socs.sort((a, b) => a.name.localeCompare(b.name));
+  socs.sort(byField((soc) => soc.name));
   return socs;
 }

@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 
 import { toPosix, walk } from '../walk.ts';
+import { byField } from '../../../shared/ordering.ts';
 
 /**
  * Whether a record came from a `sample.yaml` or a `testcase.yaml`.
@@ -135,9 +136,9 @@ function interestingFiles(sampleDir: string): string[] {
     if (!existsSync(abs)) continue;
     try {
       out.push(
-        ...[...walk(abs, { match: (name) => shouldStore(`${dir}/${name}`) })].map(
-          (path) => `${dir}/${path}`,
-        ),
+        ...[...walk(abs, { match: (name) => shouldStore(`${dir}/${name}`) })]
+          .sort()
+          .map((path) => `${dir}/${path}`),
       );
     } catch {
       /* unreadable directory */
@@ -237,6 +238,6 @@ export function collectSamples(root: string): SampleRecord[] {
     }
   }
 
-  samples.sort((a, b) => a.path.localeCompare(b.path));
+  samples.sort(byField((sample) => sample.path));
   return samples;
 }

@@ -7,6 +7,7 @@ import { findWestWorkspace, westZephyrBase } from '../db.ts';
 import { type ToolFactory, joinSections, result, section } from './common.ts';
 import { publicDescriptor } from '../../../shared/index-descriptor.ts';
 import { gitTreeIdentity } from '../../../shared/source-identity.ts';
+import { byCodeUnits } from '../../../shared/ordering.ts';
 
 const ORIGIN_LABEL: Record<string, string> = {
   explicit: 'explicitly selected via ZEPHYR_AI_INDEX',
@@ -166,13 +167,21 @@ export const indexStatus: ToolFactory = (index) => ({
       section(
         'Coverage',
         Object.entries(idx.descriptor.coverage)
-          .sort(([left], [right]) => left.localeCompare(right))
+          .sort(([left], [right]) => byCodeUnits(left, right))
           .map(
             ([corpus, coverage]) =>
               `${corpus}: ${coverage.complete ? 'complete' : 'incomplete'}` +
               (coverage.note ? ` — ${coverage.note}` : ''),
           ),
       ),
+      idx.descriptor.producer
+        ? section('Built by', [
+            `Node ${idx.descriptor.producer.node} · SQLite ${idx.descriptor.producer.sqlite}` +
+              (idx.descriptor.producer.python ? ` · ${idx.descriptor.producer.python}` : '') +
+              (idx.descriptor.producer.doxygen ? ` · Doxygen ${idx.descriptor.producer.doxygen}` : ''),
+            `collator: ${idx.descriptor.producer.collator} — recorded because ordering must not depend on it`,
+          ])
+        : undefined,
       'Coverage describes the indexed Zephyr tree and the modules named when it was built. ' +
         "It never describes this project's own Kconfig or devicetree bindings, which are outside " +
         'the index, so a symbol or compatible missing here may still be valid in this workspace.',

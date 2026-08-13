@@ -18,6 +18,8 @@
  * definition records its defining file and its *in-file* menu context instead.
  */
 
+import { byField } from '../../../shared/ordering.ts';
+
 export type KconfigType = 'bool' | 'tristate' | 'int' | 'hex' | 'string';
 
 const TYPE_KEYWORDS = new Set<string>(['bool', 'tristate', 'int', 'hex', 'string']);
@@ -540,7 +542,7 @@ export function aggregate(defs: KconfigDef[], choices: KconfigChoice[]): Kconfig
     out.push(merged);
   }
 
-  out.sort((a, b) => a.name.localeCompare(b.name));
+  out.sort(byField((symbol) => symbol.name));
   return out;
 }
 

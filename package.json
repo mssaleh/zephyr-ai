@@ -1,6 +1,6 @@
 {
   "name": "zephyr-ai",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "description": "Claude Code plugin and MCP server for Zephyr RTOS firmware development on STM32 and ESP32",
   "license": "Apache-2.0",
@@ -39,10 +39,11 @@
     "verify:artifacts": "node scripts/quality/verify-artifacts.mjs",
     "check:post-build": "npm run typecheck && npm run test:release && npm run quality && npm run quality:semantic && npm run quality:performance && npm run validate:plugin && npm run validate:marketplace && npm run verify:artifacts",
     "check:quick": "npm run preflight quick && npm run typecheck && npm run build && npm run test:quick && npm run validate:plugin && npm run validate:marketplace",
-    "check": "npm run preflight check && npm run fetch:zephyr && npm run build:index && npm run build && npm run quality:baseline && npm run check:post-build",
-    "check:extended": "npm run preflight release && npm run fetch:zephyr && npm run fetch:modules && npm run build:api-xml && npm run build:index:semantic && npm run build && npm run quality:baseline && npm run check:post-build && npm run test:skill-examples && npm run test:clean-room",
+    "check": "npm run preflight check && npm run fetch:zephyr && npm run build:index && npm run build && npm run quality:baseline && npm run quality:reproducible && npm run check:post-build",
+    "check:extended": "npm run preflight release && npm run fetch:zephyr && npm run fetch:modules && npm run build:api-xml && npm run build:index:semantic && npm run build && npm run quality:baseline && npm run quality:reproducible && npm run check:post-build && npm run test:skill-examples && npm run test:clean-room",
     "check:release": "npm run check:extended",
-    "preflight": "node scripts/preflight.mjs"
+    "preflight": "node scripts/preflight.mjs",
+    "quality:reproducible": "node --disable-warning=ExperimentalWarning scripts/quality/reproducible.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",

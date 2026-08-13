@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 
+import { byCodeUnits } from './ordering.ts';
+
 export const INDEX_SCHEMA_VERSION = 9;
 export const INDEX_DESCRIPTOR_VERSION = 2;
 export const INDEX_BUILDER_VERSION = '0.7.0';
@@ -9,6 +11,26 @@ export type SourceKind = 'pinned-upstream' | 'west-workspace' | 'explicit-tree';
 export interface CorpusCoverage {
   complete: boolean;
   note?: string;
+}
+
+/**
+ * What produced the index, measured rather than declared.
+ *
+ * Not gated on: scripts/toolchain.json already pins the one tool whose version
+ * provably changes stored content, and a second enforcement point would
+ * contradict it. This exists so that a content-digest mismatch between two
+ * machines is diagnosable by reading two descriptors, instead of by bisecting.
+ *
+ * `collator` is here because ordering used to depend on it. Its presence is the
+ * standing evidence that it no longer does: two indexes with different collators
+ * and the same digest is the proof.
+ */
+export interface ProducerRecord {
+  node: string;
+  sqlite: string;
+  python?: string;
+  doxygen?: string;
+  collator: string;
 }
 
 export interface IndexDescriptor {
@@ -30,6 +52,8 @@ export interface IndexDescriptor {
   buildDirectory?: string;
   contextFingerprint: string;
   coverage: Record<string, CorpusCoverage>;
+  /** Absent in indexes built before this was recorded; never required. */
+  producer?: ProducerRecord;
 }
 
 /** JSON with stable key ordering, used for identities and checked-in fixtures. */
@@ -40,7 +64,7 @@ export function canonicalJson(value: unknown): string {
       return Object.fromEntries(
         Object.entries(item as Record<string, unknown>)
           .filter(([, child]) => child !== undefined)
-          .sort(([left], [right]) => left.localeCompare(right))
+          .sort(([left], [right]) => byCodeUnits(left, right))
           .map(([key, child]) => [key, normalise(child)]),
       );
     }
@@ -60,7 +84,16 @@ export function projectId(projectRoot: string): string {
 export function descriptorFingerprint(
   descriptor: Omit<IndexDescriptor, 'createdAt' | 'contextFingerprint'>,
 ): string {
-  const { zephyrRoot: _privateZephyrRoot, projectRoot: _privateProjectRoot, ...semantic } = descriptor;
+  // The producer is diagnostic, not identity. Including it would mean a Node
+  // patch upgrade changed the fingerprint, and the session hook would report a
+  // context mismatch and demand a rebuild of an index whose contents are
+  // identical — the paths are stripped for the same reason.
+  const {
+    zephyrRoot: _privateZephyrRoot,
+    projectRoot: _privateProjectRoot,
+    producer: _diagnosticProducer,
+    ...semantic
+  } = descriptor;
   return fingerprint(semantic);
 }
 
@@ -154,6 +187,7 @@ export function publicDescriptor(descriptor: IndexDescriptor): Record<string, un
     descriptorVersion: descriptor.descriptorVersion,
     schemaVersion: descriptor.schemaVersion,
     builderVersion: descriptor.builderVersion,
+    producer: descriptor.producer ?? null,
     createdAt: descriptor.createdAt,
     sourceKind: descriptor.sourceKind,
     zephyrVersion: descriptor.zephyrVersion,

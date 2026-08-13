@@ -1,5 +1,6 @@
 {
   "schemaVersion": 9,
+  "contentHash": "79929c9765ac5d8ea73d2c1ea62a74d13f3803d0e3688fe58da49d50235e68af",
   "zephyrVersion": "4.4.2",
   "zephyrCommit": "dccb09599635bdff17633fa7e9dab014b91dce90",
   "counts": {
@@ -11,7 +12,7 @@
     "board": 1014,
     "soc": 1475,
     "sample": 1729,
-    "sample_file": 16292,
+    "sample_file": 16303,
     "api_symbol": 37464,
     "api_group": 1006,
     "runner": 49,

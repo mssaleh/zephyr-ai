@@ -1,4 +1,4 @@
-import { ok, strictEqual } from 'node:assert/strict';
+import { deepStrictEqual, ok, strictEqual } from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { describe, it } from 'node:test';
@@ -28,6 +28,27 @@ describe('release version', () => {
       const skill = readFileSync(join(ROOT, 'plugin', 'skills', entry.name, 'SKILL.md'), 'utf8');
       strictEqual(skill.match(/^\s+version:\s+"([^"]+)"$/m)?.[1], version, entry.name);
     }
+  });
+
+  it('strips the same fields from the fingerprint in the hook as in the shared code', () => {
+    // The hook has no build step and cannot import the shared descriptor, so it
+    // reimplements descriptorFingerprint. When `producer` was added and stripped
+    // in one and not the other, every hook silently refused every index — which
+    // looks exactly like a clean file, the same failure mode the schema check
+    // below exists for. Nothing else ties the two field lists together.
+    const stripped = (source) => {
+      const body = source.match(/descriptorFingerprint\([\s\S]*?\{([\s\S]*?)\.\.\.semantic/);
+      ok(body, 'could not find the destructuring in descriptorFingerprint');
+      return [...body[1].matchAll(/^\s*(\w+)\s*:/gm)].map((match) => match[1]).sort();
+    };
+    const shared = stripped(readFileSync(join(ROOT, 'packages', 'shared', 'index-descriptor.ts'), 'utf8'));
+    const hook = stripped(readFileSync(join(ROOT, 'plugin', 'scripts', 'index-paths.mjs'), 'utf8'));
+    // The hook also strips contextFingerprint, which the shared signature already
+    // excludes by type; everything else must match exactly.
+    deepStrictEqual(
+      shared,
+      hook.filter((name) => name !== 'contextFingerprint' && name !== 'createdAt'),
+    );
   });
 
   it('keeps the hooks in step with the index schema they refuse to read', () => {

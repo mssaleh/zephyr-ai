@@ -4,7 +4,7 @@ description: Create and structure a Zephyr project. Use when starting a new firm
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.5.0"
+  version: "0.6.0"
 ---
 
 # Project setup

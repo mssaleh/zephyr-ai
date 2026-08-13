@@ -49,6 +49,9 @@ db.close();
 // tree identity is pinned with them.
 const pinned = {
   schemaVersion: Number(meta.schema_version),
+  // Counts cannot see ordering or within-row drift; the digest can, and every
+  // defect this gate has caught late was one or the other.
+  contentHash: meta.content_hash,
   zephyrVersion: meta.zephyr_version,
   zephyrCommit: meta.zephyr_commit,
   counts,

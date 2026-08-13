@@ -3,6 +3,48 @@
 All notable user-visible changes are recorded here. The format follows Keep a
 Changelog, and releases use semantic versioning.
 
+## [0.6.0] - 2026-08-13
+
+Rebuild the index with the `zephyr-index` skill after upgrading. The schema is
+unchanged at 9 and old indexes still load, but they were built before the ordering
+below was made deterministic, so their contents differ from what this version
+produces.
+
+### Fixed
+
+- **The locale decided the order of the index.** Eleven sorts used
+  `localeCompare`, which resolves against the environment's collator. Building
+  with a Turkish collator moved 20,968 of 84,934 API symbols, because the corpus
+  mixes `acpi_current_resource_free` with `ACPI_DMAR_FLAG_*` and Turkish `i`/`I`
+  collation cascades. Every count stayed identical, so every gate passed while two
+  machines produced measurably different catalogues. Ordering is now by code
+  units, which depends on nothing outside the data and agrees with the `BINARY`
+  collation `ORDER BY` already used — the two disagreed before.
+- **Kconfig defaults stored absolute paths.** Upstream writes
+  `default "$(ZEPHYR_BASE)/boards/qemu/x86/qemu_x86_tiny.ld"`; kconfiglib expanded
+  it against the local tree and `get_kconfig` rendered the result, putting the
+  builder's home directory into an answer. The expansion is undone, so the value
+  reads as the Kconfig source wrote it.
+- **The Doxygen report stored absolute paths.** All 198 API exclusions recorded
+  the full path of the XML file they came from.
+- Four `walk()` callers consumed filesystem order without sorting it, which
+  decided the position of every documentation row and the order of the file list
+  `get_sample` renders.
+
+### Added
+
+- Every index records a `content_hash`: a digest of every stored assertion, in
+  order. It is pinned beside the corpus counts and verified by `quality:baseline`,
+  which is the only check that can see ordering or within-row drift — counts
+  cannot see either, and both defects above left counts untouched.
+- `quality:reproducible` builds the index twice and requires the two digests to
+  match, which catches an ingest that does not agree with itself.
+- The descriptor records what produced the index — Node, SQLite, Python, Doxygen,
+  and the resolved collator — so a digest mismatch between two machines is
+  answered by reading two descriptors. It is recorded, never gated on, and
+  deliberately excluded from the context fingerprint: a Node upgrade must not
+  invalidate an index whose contents are identical.
+
 ## [0.5.0] - 2026-08-13
 
 Indexes built by earlier versions are not readable by this one: the index schema is

@@ -13,6 +13,7 @@
  */
 
 import { parse as parseYaml } from 'yaml';
+import { byField } from '../../../shared/ordering.ts';
 
 export interface BindingProperty {
   name: string;
@@ -170,7 +171,7 @@ function mergeProperties(
     if (!p.description && existing.description) merged.description = existing.description;
     byName.set(p.name, merged);
   }
-  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+  return [...byName.values()].sort(byField((property) => property.name));
 }
 
 /**

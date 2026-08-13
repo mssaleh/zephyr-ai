@@ -8,6 +8,7 @@ import { type ApiGroup, type ApiSymbol, parseHeader } from '../parsers/doxygen.t
 import { standardPython } from '../python.ts';
 import type { SourceReport } from '../report.ts';
 import { walk } from '../walk.ts';
+import { byField } from '../../../shared/ordering.ts';
 
 export interface CollectedApi {
   symbols: ApiSymbol[];
@@ -95,10 +96,15 @@ export function collectApi(root: string, xmlDirectory?: string): CollectedApi {
   const groups: ApiGroup[] = [];
   const intentionallyExcluded: SourceReport['intentionallyExcluded'] = [];
 
-  for (const rel of walk(base, {
-    skipPrefixes: ['internal', 'arch/arm/internal'],
-    match: (name) => name.endsWith('.h'),
-  })) {
+  // Sorted: unsorted, filesystem order decided the order headers were parsed and
+  // so the order symbols were emitted before the final sort below.
+  const headers = [
+    ...walk(base, {
+      skipPrefixes: ['internal', 'arch/arm/internal'],
+      match: (name) => name.endsWith('.h'),
+    }),
+  ].sort();
+  for (const rel of headers) {
     let text: string;
     try {
       text = readFileSync(join(base, rel), 'utf8');
@@ -150,7 +156,7 @@ export function collectApi(root: string, xmlDirectory?: string): CollectedApi {
     groups.push(...parsed.groups);
   }
 
-  symbols.sort((a, b) => a.name.localeCompare(b.name));
+  symbols.sort(byField((symbol) => symbol.name));
 
   const groupById = new Map<string, ApiGroup>();
   for (const g of groups) {
