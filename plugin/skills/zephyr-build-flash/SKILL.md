@@ -4,7 +4,7 @@ description: Build, flash, and run Zephyr firmware with west. Use when compiling
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.7.0"
+  version: "0.8.0"
 ---
 
 # Building and flashing
@@ -20,7 +20,7 @@ nothing in the application is wrong, and editing it will not help.
 
 ## The workspace
 
-Zephyr applications live in a **west workspace** — Zephyr plus its modules,
+Zephyr applications live in a **west workspace**: Zephyr plus its modules,
 managed together:
 
 ```bash
@@ -48,8 +48,8 @@ If `.west/config` exists but a manifest project required by the target is missin
 run `west update` in that workspace. Do not borrow a `modules/` directory from a
 different topdir; its revisions may not match the selected manifest.
 
-`references/west-commands.md` covers the wider command surface — `sign`, `twister`,
-`blobs`, `shields`, `sdk` — and which of them a given Zephyr version ships.
+`references/west-commands.md` covers the other commands (`sign`, `twister`,
+`blobs`, `shields`, `sdk`) and which of them a given Zephyr version ships.
 
 ## Building
 
@@ -73,7 +73,7 @@ Options worth knowing:
 | `-p auto` | Pristine only when the build system thinks it is needed |
 | `-d build-h7` | Alternate build directory, so several targets coexist |
 | `-t menuconfig` | Interactive Kconfig browser |
-| `-t rom_report` / `-t ram_report` | Where flash and RAM actually went |
+| `-t rom_report` / `-t ram_report` | Where flash and RAM were used |
 | `--` | Everything after is passed to CMake |
 
 ```bash
@@ -141,7 +141,7 @@ They register no flash runner, so `west flash` is not the way to start them.
 west build --sysbuild -b <target> .
 ```
 
-Sysbuild builds several images as one system — application plus MCUboot, or the
+Sysbuild builds several images as one system: application plus MCUboot, or the
 two cores of a dual-core SoC. Its Kconfig lives in `sysbuild.conf` under the `SB_`
 prefix, and with a bootloader the artefact to flash is the *signed* image.
 `references/sysbuild-and-signing.md` has the layout, the flashing consequences,
@@ -166,14 +166,90 @@ Artefacts land in `build/zephyr/`: `zephyr.elf` for debugging, `zephyr.bin` and
 `zephyr.hex` for flashing, `.config` for the resolved Kconfig, `zephyr.dts` for
 the resolved devicetree.
 
+## A successful build is not always a runnable artifact
+
+Exit code zero means the compiler and linker succeeded. On a target with
+post-link steps it does not mean the device will accept the result.
+
+Signing, padding, encryption, image-header insertion, partition-table assembly
+and bootloader concatenation all run after the link. Each depends on a host tool
+that may not be installed, and several warn rather than fail when their tool is
+missing. The build succeeds, the artifact is incomplete, and the device rejects
+it. The console shows nothing, which looks like firmware that is not running.
+
+Check the artifact, not the exit code:
+
+```bash
+# 1. Is the tool the post-link step needs installed?
+which <post-link-tool>          # imgtool, a vendor signing CLI, esptool, ...
+
+# 2. Did the artifact the runner will flash get produced, and is it newer
+#    than the elf it is supposed to derive from?
+ls -l build/zephyr/<expected-artifact> build/zephyr/zephyr.elf
+```
+
+If the expected artifact is missing, or older than `zephyr.elf`, the post-link
+step did not run, whatever the build reported.
+
+Then search the configure and link output for the step by name. A line saying a
+signing tool was not found is easy to miss among thousands of lines of
+compilation output, and it usually explains a board that does not boot.
+
+Know which artifact your runner flashes before you start. `get_board` lists the
+runners a board registers and `get_runner` reports what each one accepts.
+
+## Confirm a file was used; no error does not mean it was read
+
+Zephyr selects board overlays, board `.conf` fragments, shield files and suffixed
+configs by constructing filenames and testing whether the file exists. A file
+that matches nothing produces no warning, because from the build's point of view
+nothing happened.
+
+This matters most when adding a build variant. A file that worked for the default
+target is ignored for a qualified target, because Zephyr constructs a different
+name:
+
+```
+app/boards/<board>.overlay                    <- applies to every target
+app/boards/<board>_<soc>_<cluster>.overlay    <- what a qualified target looks for
+```
+
+The failure appears later and elsewhere, usually as an undefined devicetree
+symbol such as `__device_dts_ord_..._ORD undeclared`, which looks like an error
+in the C rather than a file that was not read.
+
+`get_board` lists, per qualified target, the exact overlay and `.conf` filenames
+that target uses. Use it when adding a variant rather than guessing the
+separator.
+
+Then confirm the file was read by looking for the positive signal in the
+configure output:
+
+```
+-- Found devicetree overlay: /path/to/app/boards/<name>.overlay
+-- Merged configuration '/path/to/app/boards/<name>.conf'
+```
+
+Check again after changing the target, not only after changing the file.
+Changing the target changes which names are constructed.
+
+The general rule applies beyond Zephyr: when a build system selects files by
+naming convention, confirm the file was read rather than assuming it from the
+absence of an error. Silence from such a selector means nothing matched as often
+as it means everything is correct.
+
 ## Validation checklist
 
 - [ ] `west topdir` prints the workspace you intend to build in.
 - [ ] The target came from `search_boards`, qualified, not from a product name.
 - [ ] The build was pristine (`-p always`) after any Kconfig, devicetree, or CMake change.
 - [ ] The memory report shows the image fits, with headroom you are willing to defend.
+- [ ] Every board overlay and `.conf` you added appeared in the configure output as
+      found or merged, for the qualified target you are building.
+- [ ] Every post-link step's tool is installed, and the artifact the runner flashes
+      exists and is newer than `zephyr.elf`.
 - [ ] The runner you passed to `-r` appears in `get_board` output for this board.
-- [ ] After flashing, the console showed the firmware running — not just a successful flash.
+- [ ] After flashing, the console showed the firmware running, not only that the flash succeeded.
 
 ## Workflow
 

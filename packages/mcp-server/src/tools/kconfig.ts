@@ -119,12 +119,12 @@ export const searchKconfig: ToolFactory = (index) => ({
   title: 'Search Kconfig symbols',
   description:
     'Search Zephyr Kconfig symbols by name or by what they do. Use this before writing any ' +
-    'CONFIG_ line in prj.conf, a defconfig, or a Kconfig file: symbol names are renamed between ' +
-    'Zephyr releases and are the single most common thing to get wrong. Accepts names with or ' +
-    'without the CONFIG_ prefix, and plain-language queries such as "bluetooth peripheral role" ' +
-    'or "spi dma". Returns each symbol with its type and prompt; follow up with get_kconfig for ' +
-    'defaults and dependencies. A Zephyr tree has two Kconfig namespaces: pass scope="sysbuild" ' +
-    '(or write SB_CONFIG_) to search the sysbuild.conf options instead of the application ones.',
+    'CONFIG_ line in prj.conf, a defconfig, or a Kconfig file. Symbol names change between Zephyr ' +
+    'releases, so a name recalled from memory is often wrong. Accepts names with or without the ' +
+    'CONFIG_ prefix, and plain-language queries such as "bluetooth peripheral role" or "spi dma". ' +
+    'Returns each symbol with its type and prompt. Call get_kconfig for defaults and dependencies. ' +
+    'A Zephyr tree has two Kconfig namespaces: pass scope="sysbuild", or write SB_CONFIG_, to ' +
+    'search the sysbuild.conf options instead of the application ones.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -212,6 +212,40 @@ function kconfigMissText(idx: Index, name: string, scope: KconfigScope): string 
   // Before offering spelling matches, check whether the symbol simply lives in
   // the other namespace. A user who drops the SB_ from a sysbuild option gets a
   // near-miss list of unrelated names otherwise, when the exact symbol exists.
+  // A symbol declared under an SoC series is not missing, it is out of reach:
+  // the tree sources a series' Kconfig only once that series is selected, and a
+  // catalogue has selected none. Answering "not found" there was a true
+  // statement about the index and a false impression about Zephyr — and it was
+  // being made about symbols that get_board cites by name.
+  const scoped = idx.get(
+    'SELECT name, series, type, prompt, help, file, line FROM soc_kconfig WHERE name = ? ORDER BY series LIMIT 1',
+    name,
+  );
+  if (scoped && scope === 'zephyr') {
+    const others = idx
+      .all('SELECT DISTINCT series FROM soc_kconfig WHERE name = ? ORDER BY series', name)
+      .map((row) => String(row['series']))
+      .filter((value) => value !== String(scoped['series']));
+    return [
+      `Kconfig symbol \`${SCOPE_PREFIX[scope]}${name}\` is declared under SoC series ` +
+        `\`${String(scoped['series'])}\`${others.length > 0 ? ` (also ${others.map((s) => `\`${s}\``).join(', ')})` : ''}. ` +
+        'This index cannot evaluate it. Zephyr sources a series\' Kconfig only when that series is ' +
+        'selected, and no SoC is selected here.',
+      '',
+      `- **Type**: ${String(scoped['type'] || 'unknown')}`,
+      scoped['prompt'] ? `- **Prompt**: ${String(scoped['prompt'])}` : '',
+      `- **Declared at**: \`${String(scoped['file'])}:${String(scoped['line'])}\``,
+      scoped['help'] ? `\n${String(scoped['help']).trim()}` : '',
+      '',
+      '_Parsed from the series Kconfig at declaration level, not evaluated. The type, prompt and ' +
+        'location are accurate. Dependencies, defaults and what selects it are not available here: ' +
+        'read the file with get_source, or build a project index for a board on this series, which ' +
+        'resolves the symbol fully._',
+    ]
+      .filter((line, index, all) => line !== '' || (index > 0 && all[index - 1] !== ''))
+      .join('\n');
+  }
+
   const other: KconfigScope = scope === 'zephyr' ? 'sysbuild' : 'zephyr';
   if (idx.get('SELECT 1 FROM kconfig WHERE name = ? AND scope = ?', name, other)) {
     return (
@@ -235,13 +269,104 @@ function kconfigMissText(idx: Index, name: string, scope: KconfigScope): string 
     'name',
   );
   const candidates = [...new Set([...near.map((r) => String(r['name'])), ...byPrefix])];
-  return catalogueMissText(
-    'Kconfig symbol',
-    `${SCOPE_PREFIX[scope]}${name}`,
-    idx.meta['zephyr_version'] ?? 'unknown',
-    candidates.map((value) => `${SCOPE_PREFIX[scope]}${value}`),
-    'Generated, application-local, board/SoC-derived, and external-module symbols may not be covered.',
+  return (
+    catalogueMissText(
+      'Kconfig symbol',
+      `${SCOPE_PREFIX[scope]}${name}`,
+      idx.meta['zephyr_version'] ?? 'unknown',
+      candidates.map((value) => `${SCOPE_PREFIX[scope]}${value}`),
+      'Generated, application-local, board/SoC-derived, and external-module symbols may not be covered.',
+    ) + scopedMissHint(idx, name)
   );
+}
+
+/**
+ * Name the context a miss belongs to, when the catalogue can identify one.
+ *
+ * A hedge that says only "not found, and no close spelling" is honest and nearly
+ * useless. Most of these misses are not typos and not absences: they are symbols
+ * declared in a per-SoC Kconfig that the tree sources only once an SoC is
+ * selected, so the catalogue — which has selected none — never sees them.
+ * `STM32N6_BOOT_SERIAL` is the case that cost a session: `get_board` cites it by
+ * name, `get_kconfig` cannot resolve it, and the file it lives in is one
+ * `get_source` call away. A miss that names its own remedy is worth several
+ * times one that does not.
+ *
+ * The claim is deliberately narrow. Matching a symbol's leading token against an
+ * indexed SoC series or board says where a symbol of that name *would* be
+ * declared; it never asserts that this symbol exists.
+ */
+function scopedMissHint(idx: Index, name: string): string {
+  const token = name.split('_')[0]?.toLowerCase() ?? '';
+  if (token.length < 4) return '';
+  const soc = idx.get(
+    `SELECT series, dir FROM soc
+      WHERE series IS NOT NULL AND series <> ''
+        AND (LOWER(series) = ? OR LOWER(REPLACE(series, 'x', '')) = ? OR LOWER(name) LIKE ? || '%')
+      ORDER BY LENGTH(series) LIMIT 1`,
+    token,
+    token,
+    token,
+  );
+  if (soc) {
+    const series = String(soc['series']);
+    // `soc.dir` is the family directory, and the series sits under it — but the
+    // layout is a convention, not a guarantee, so the directory is taken from a
+    // file the index actually read. `Kconfig.soc` is sourced unconditionally, so
+    // its symbols are present even when the rest of the series' Kconfig is not,
+    // which is exactly why this miss happens and exactly what locates it.
+    const declared = idx.get(
+      `SELECT d.file AS file FROM kconfig_definition d
+        WHERE d.file LIKE 'soc/%/' || ? || '/%' ORDER BY LENGTH(d.file) LIMIT 1`,
+      series,
+    );
+    const file = String(declared?.['file'] ?? '');
+    const dir = file ? file.slice(0, file.lastIndexOf('/')) : String(soc['dir'] ?? '');
+    return (
+      `\n\nThe name matches the indexed SoC series \`${series}\`. Symbols under a series are declared ` +
+      "in that SoC's own Kconfig, which the tree sources only when an SoC is selected. This " +
+      'catalogue has no SoC selected, so such symbols are missing from the index rather than from ' +
+      'Zephyr. ' +
+      (dir ? `Read \`${dir}/Kconfig\` with get_source, ` : 'Read the SoC Kconfig with get_source, ') +
+      'or build a project index for a board on that series so the symbol resolves here.'
+    );
+  }
+  const board = idx.get(
+    'SELECT name, dir FROM board WHERE LOWER(name) LIKE ? || \'%\' ORDER BY LENGTH(name) LIMIT 1',
+    token,
+  );
+  if (board) {
+    return (
+      `\n\nThe name matches the indexed board \`${String(board['name'])}\`. Board-scoped symbols are declared ` +
+      `in the board's own Kconfig, which is reachable with get_source under \`${String(board['dir'])}\`.`
+    );
+  }
+  return '';
+}
+
+/**
+ * What this symbol actually came out as, when a build has been ingested.
+ *
+ * The tree says what a symbol is and what it depends on; only the build says
+ * what it resolved to. That gap is where "I set it and it did not take" lives —
+ * an assignment with an unmet `depends on` is dropped in silence, and the
+ * declaration alone cannot show it. Rendered next to the declaration rather than
+ * instead of it, because the two are different claims and the resolved one is
+ * true of exactly one board, one application, and one moment.
+ */
+function resolvedNote(idx: Index, name: string): string | undefined {
+  let row;
+  try {
+    row = idx.get('SELECT value, is_set FROM resolved_config WHERE name = ?', name);
+  } catch {
+    // An index built before resolved builds were ingested has nothing to add.
+    return undefined;
+  }
+  if (!row) return undefined;
+  return Number(row['is_set']) === 1
+    ? `**In the ingested build:** \`${name}=${String(row['value'])}\`.`
+    : '**In the ingested build:** not set. If the application assigns it, the assignment did not ' +
+        'take effect. Check the dependencies listed above.';
 }
 
 /**
@@ -323,6 +448,7 @@ function kconfigSummary(idx: Index, requested: string): BatchEntry {
   const text = joinSections([
     `### ${key}`,
     `\`${type}\`${row['prompt'] ? ` — ${String(row['prompt'])}` : ''}`,
+    resolvedNote(idx, name),
     otherNamespaceNote(idx, name, scope),
     condition !== 'y' ? `**Depends on:** \`${condition}\`` : undefined,
     defaults.length > 0 ? `**Defaults:** ${defaults.join(', ')}` : undefined,
@@ -365,12 +491,12 @@ export const getKconfig: ToolFactory = (index) => ({
     'conditions that select them, what it depends on, what it selects and implies, valid ranges, ' +
     'help text, the files that define it, and which other symbols select or imply it. Use this to ' +
     'confirm a symbol exists before relying on it, and to diagnose a setting that appears to be ' +
-    'ignored. Pass "names" to check many symbols in one call — checking a whole prj.conf should ' +
-    'cost one call, not one per line — which returns type, prompt, dependencies, defaults and ' +
-    'choice alternatives for each. The tool shows catalogue-level dependency information; use the ' +
-    'resolved build configuration to determine whether a setting is visible and effective. ' +
-    'Prefixes select the namespace: CONFIG_ is prj.conf, SB_CONFIG_ is sysbuild.conf. Ten symbol ' +
-    'names exist in both and mean different things, so pass the prefix the file actually uses.',
+    'ignored. Pass "names" to check many symbols in one call, which returns type, prompt, ' +
+    'dependencies, defaults and choice alternatives for each; checking a whole prj.conf costs one ' +
+    'call rather than one per line. The dependency information is catalogue-level. To confirm a ' +
+    'setting is visible and took effect, read the resolved build configuration. Prefixes select ' +
+    'the namespace: CONFIG_ is prj.conf, SB_CONFIG_ is sysbuild.conf. Ten symbol names exist in ' +
+    'both namespaces with different meanings, so pass the prefix the file uses.',
   inputSchema: {
     type: 'object',
     properties: {

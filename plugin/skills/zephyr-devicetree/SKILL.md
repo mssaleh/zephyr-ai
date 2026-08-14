@@ -4,7 +4,7 @@ description: Describe hardware to Zephyr with devicetree. Use when writing or ed
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.7.0"
+  version: "0.8.0"
 ---
 
 # Devicetree in Zephyr
@@ -18,13 +18,39 @@ a `CONFIG_` for a driver without a matching enabled node does nothing at all.
 ## Always read the binding first
 
 A binding file is almost never self-contained. `st,stm32-spi.yaml` declares no
-properties whatsoever — it includes `st,stm32-spi-common.yaml`, which reaches
+properties at all. It includes `st,stm32-spi-common.yaml`, which reaches
 `spi-controller.yaml`, which reaches `base.yaml`, and the node ends up accepting
 about forty properties. Reading the binding file tells you nothing useful.
 
 Call `get_binding` with the compatible. It returns the **flattened** property set
 with types, requiredness, allowed values, and which file each property came from.
 Use `search_bindings` when you know the hardware but not the compatible.
+
+## A compatible that exists may not fit your silicon
+
+A binding tells you a driver exists and what properties it accepts. It does not
+tell you the driver was written for your part. Vendors reuse peripheral names
+across incompatible implementations more often than they reuse implementations.
+The same name, such as "digital temperature sensor", "quad SPI", or "timer", can
+refer to a different register block on the next part in the same family.
+
+A node using the wrong compatible passes devicetree validation, compiles, links,
+and does nothing. No stage of the build compares the driver against your silicon.
+
+Before using a driver on a part you have not used it on, especially a newer
+member of a family you have used, run two checks:
+
+1. **Where does upstream use it?** `get_binding` and `search_bindings` report
+   which SoC and board devicetree name the compatible. If it is used only in SoC
+   directories that do not include your part, that is not proof of
+   incompatibility, but it is the strongest available signal.
+2. **Do the registers exist on your part?** Read the driver with `get_source`,
+   list the register and macro names it uses, and look for them in your SoC
+   vendor header. `get_source` reads the HAL module trees as well. Missing
+   register definitions are strong evidence.
+
+Check the register contract, not the family name. Where a driver is used
+indicates what it was written for. That a driver exists indicates nothing.
 
 ## Overlay syntax
 
@@ -87,7 +113,29 @@ Rules that trip people up:
 | `--  -DEXTRA_DTC_OVERLAY_FILE=x.overlay` | Explicitly, composes with the above |
 
 For a qualified target such as `esp32s3_devkitc/esp32s3/procpu`, the overlay file
-is `boards/esp32s3_devkitc_esp32s3_procpu.overlay` — slashes become underscores.
+is `boards/esp32s3_devkitc_esp32s3_procpu.overlay`: slashes become underscores.
+
+**An overlay whose filename does not match is skipped without a warning.** Zephyr
+constructs these names and tests whether the file exists. A file that matches
+nothing produces no message. The build then fails later with an undefined
+devicetree symbol such as `__device_dts_ord_..._ORD undeclared`, which looks like
+an error in the C rather than an overlay that was not read.
+
+This matters most when adding a build variant: the file that worked for the
+default target does not apply to the qualified target, because the name differs.
+
+Two checks prevent it:
+
+- Ask `get_board` for the exact filenames each qualified target uses. It lists
+  them per target.
+- Look for the positive signal in the configure output rather than assuming the
+  file was read because there was no error:
+
+  ```
+  -- Found devicetree overlay: /path/to/app/boards/<name>.overlay
+  ```
+
+  Check again after changing the target, not only after changing the file.
 
 ## Reaching devicetree from C
 
@@ -98,7 +146,7 @@ the build rather than returning `NULL` at 3am:
 #include <zephyr/device.h>
 #include <zephyr/drivers/sensor.h>
 
-/* By alias — the portable choice, keeps C free of board specifics */
+/* By alias: portable, and keeps board specifics out of the C */
 static const struct device *const sensor = DEVICE_DT_GET(DT_ALIAS(env_sensor));
 
 /* By compatible, when exactly one such node exists */
@@ -142,30 +190,30 @@ confusion in one step:
 # The fully merged, human-readable tree for this build
 less build/zephyr/zephyr.dts
 
-# The generated macros — grep here when a DT_ macro will not expand
+# The generated macros. Grep here when a DT_ macro does not expand
 grep -i bme280 build/zephyr/include/generated/zephyr/devicetree_generated.h
 
 # Which bindings were found
 west build -t dts
 ```
 
-If a node is missing from `zephyr.dts`, the overlay did not apply — check the
+If a node is missing from `zephyr.dts`, the overlay did not apply. Check the
 filename against the build target, and confirm the build was pristine.
 
 ## Reading build errors
 
 | Error | Cause |
 | --- | --- |
-| `'xyz' is not a valid property name` | Property not in the binding — call `get_binding` |
+| `'xyz' is not a valid property name` | Property not in the binding. Call `get_binding` |
 | `Unable to find binding for compatible 'x,y'` | Typo, or the binding lives in a module that is not in the workspace |
-| `undefined node label 'spiN'` | That label does not exist on this SoC — read the board `.dtsi` |
+| `undefined node label 'spiN'` | That label does not exist on this SoC. Read the board `.dtsi` |
 | `duplicate unit-address` | Two children share a `reg` on the same bus |
 | `_DT_N_... undeclared` | The node exists but is not `status = "okay"` |
 
 ## Workflow
 
 1. `get_board` to find the board directory, then read its `.dts` for the labels
-   and pinctrl groups that actually exist.
+   and pinctrl groups that exist on that package.
 2. `search_bindings` / `get_binding` for the device you are adding.
 3. Write the overlay using only properties the binding lists.
 4. Build pristine (`-p always`) and confirm the node in `build/zephyr/zephyr.dts`.

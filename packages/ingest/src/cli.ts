@@ -39,6 +39,10 @@ import { collectDocs } from './sources/docs.ts';
 import { collectKconfig, type CollectedKconfig, type KconfigScope } from './sources/kconfig.ts';
 import { collectSamples } from './sources/samples.ts';
 import { collectBoardRunners, collectRunners, collectWestCommands } from './sources/west.ts';
+import { collectModules, moduleNameForRoot } from './sources/modules.ts';
+import { collectDevicetreeInstances } from './sources/devicetree-instances.ts';
+import { collectSocKconfig } from './sources/soc-kconfig.ts';
+import { collectResolvedBuild } from './sources/resolved-build.ts';
 import type { KconfigExpr } from './sources/kconfig.ts';
 import { buildIndexDescriptor } from './identity.ts';
 import { semanticPython } from './python.ts';
@@ -473,6 +477,37 @@ function main(): void {
     `  boards    ${boards.length} boards, ${targetCount} targets, ${socs.length} SoCs (${Date.now() - t3} ms)`,
   );
 
+  const tSoc = Date.now();
+  const socKconfig = collectSocKconfig(
+    manifest,
+    socs,
+    new Set(kconfig.symbols.map((symbol) => symbol.name)),
+  );
+  log(
+    `  soc kconf ${socKconfig.symbols.length} series-scoped symbols from ` +
+      `${socKconfig.report.discovered} files (${Date.now() - tSoc} ms)`,
+  );
+
+  const resolved = opts.buildDirectory
+    ? collectResolvedBuild(opts.buildDirectory)
+    : { configs: [], nodes: [], files: [], report: { discovered: 0, indexed: 0, intentionallyExcluded: [], warnings: [], errors: [] } };
+  if (opts.buildDirectory) {
+    log(
+      `  resolved  ${resolved.configs.length} config values, ${resolved.nodes.length} devicetree nodes ` +
+        `from ${resolved.files.length} build artefact(s)`,
+    );
+  }
+
+  const tInstances = Date.now();
+  const instanceExport = collectDevicetreeInstances(
+    manifest,
+    boards.map((board) => ({ name: board.name, dir: board.dir })),
+  );
+  log(
+    `  dt uses   ${instanceExport.instances.length} instantiations across ` +
+      `${instanceExport.report.discovered} devicetree files (${Date.now() - tInstances} ms)`,
+  );
+
   const t4 = Date.now();
   const socDirByName = new Map(socs.map((soc) => [soc.name, soc.dir]));
   const westCommands = collectWestCommands(manifest);
@@ -490,14 +525,29 @@ function main(): void {
       ],
     })),
   );
+  // Kconfig collection above ran with exactly `opts.modules`, so those are the
+  // modules whose own declarations this index resolved. Every other module in the
+  // manifest is a name and a path and nothing more, and the difference is what
+  // keeps a mirrored symbol from being reported as a build error.
+  const declaredModules = collectModules(manifest, []);
+  const modules = collectModules(
+    manifest,
+    opts.modules
+      .map((root) => moduleNameForRoot(root, declaredModules))
+      .filter((name): name is string => Boolean(name))
+      .map((name) => ({ name, kconfig: true, source: true })),
+  );
   const west = {
     runners: runnerExport.runners,
     commands: westCommands,
     boardRunners: boardRunnerExport.boardRunners,
+    modules,
   };
   log(
     `  west      ${west.runners.length} runners, ${west.commands.length} commands, ` +
-      `${west.boardRunners.length} board bindings${runnerExport.complete ? '' : ', incomplete'} (${Date.now() - t4} ms)`,
+      `${west.boardRunners.length} board bindings, ${west.modules.length} modules ` +
+      `(${west.modules.filter((module) => module.kconfigIngested).length} resolved)` +
+      `${runnerExport.complete ? '' : ', incomplete'} (${Date.now() - t4} ms)`,
   );
 
   const t5s = Date.now();
@@ -760,6 +810,42 @@ function main(): void {
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
 
+  const insSocKconfig = db.prepare(
+    `INSERT INTO soc_kconfig (name, series, file, line, type, prompt, help)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  );
+  for (const symbol of socKconfig.symbols) {
+    insSocKconfig.run(
+      symbol.name,
+      symbol.series,
+      symbol.file,
+      symbol.line,
+      symbol.type,
+      symbol.prompt,
+      symbol.help,
+    );
+  }
+
+  const insResolvedConfig = db.prepare(
+    'INSERT INTO resolved_config (name, value, is_set) VALUES (?, ?, ?)',
+  );
+  for (const entry of resolved.configs) {
+    insResolvedConfig.run(entry.name, entry.value, entry.set ? 1 : 0);
+  }
+  const insResolvedNode = db.prepare(
+    'INSERT INTO resolved_node (path, label, compatible, status) VALUES (?, ?, ?, ?)',
+  );
+  for (const node of resolved.nodes) {
+    insResolvedNode.run(node.path, node.label, node.compatible, node.status);
+  }
+
+  const insInstance = db.prepare(
+    'INSERT INTO dt_instance (compatible, file, board) VALUES (?, ?, ?)',
+  );
+  for (const instance of instanceExport.instances) {
+    insInstance.run(instance.compatible, instance.file, instance.board);
+  }
+
   // Intern property descriptions; see the note on `text_pool` in schema.ts.
   const insText = db.prepare('INSERT INTO text_pool (text) VALUES (?)');
   const textIds = new Map<string, number>();
@@ -829,8 +915,9 @@ function main(): void {
   const insBoard = db.prepare(
     `INSERT INTO board
        (name, full_name, vendor, dir, arch, ram, flash, socs, socs_text, targets,
-        targets_text, revisions, default_revision, supported, supported_text, doc_path)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        targets_text, revisions, default_revision, supported, supported_text, doc_path,
+        no_xip_targets)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   for (const board of boards) {
     const socNames = board.socs.map((s) => s.name);
@@ -851,6 +938,7 @@ function main(): void {
       JSON.stringify(board.supported),
       board.supported.join(' '),
       board.docPath ?? null,
+      JSON.stringify(board.noXipTargets),
     );
   }
 
@@ -887,6 +975,21 @@ function main(): void {
   );
   for (const command of west.commands) {
     insWestCommand.run(command.name, command.className, command.file, command.help ?? null);
+  }
+
+  const insWestModule = db.prepare(
+    `INSERT INTO west_module (name, path, revision, glue_dir, kconfig_ingested, source_ingested)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  );
+  for (const module of west.modules) {
+    insWestModule.run(
+      module.name,
+      module.path,
+      module.revision,
+      module.glueDir,
+      module.kconfigIngested ? 1 : 0,
+      module.sourceIngested ? 1 : 0,
+    );
   }
 
   const insBoardRunner = db.prepare(
@@ -1030,6 +1133,13 @@ function main(): void {
       errors: [],
     }),
     count_bindings: String(bindings.length),
+    count_dt_instances: String(instanceExport.instances.length),
+    report_dt_instances: canonicalJson(instanceExport.report),
+    count_soc_kconfig: String(socKconfig.symbols.length),
+    report_soc_kconfig: canonicalJson(socKconfig.report),
+    count_resolved_configs: String(resolved.configs.length),
+    count_resolved_nodes: String(resolved.nodes.length),
+    report_resolved_build: canonicalJson(resolved.report),
     count_dt_properties: String(propCount),
     report_bindings: canonicalJson(bindingReport),
     count_boards: String(boards.length),
@@ -1053,6 +1163,7 @@ function main(): void {
     count_runners: String(west.runners.length),
     count_west_commands: String(west.commands.length),
     count_board_runners: String(west.boardRunners.length),
+    count_west_modules: String(west.modules.length),
     report_west: canonicalJson({
       discovered:
         runnerExport.report.discovered + west.commands.length + boardRunnerExport.report.discovered,

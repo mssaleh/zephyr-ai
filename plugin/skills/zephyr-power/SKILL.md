@@ -4,19 +4,29 @@ description: Reduce power consumption in Zephyr firmware. Use when targeting bat
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.7.0"
+  version: "0.8.0"
 ---
 
 # Power management
 
 > Example status: fenced snippets are illustrative unless an immediately preceding `zephyr-ai-example` metadata comment names a verified target and build command.
 
+Power symbols and power states are both version- and SoC-specific, so check them
+against the indexed tree rather than from memory:
+
+- `search_kconfig` and `get_kconfig` for which PM symbols exist here, what they
+  depend on, and what selects them.
+- `get_binding` on `zephyr,power-state` for the properties a power-state node
+  accepts, including the residency and latency values a state requires.
+- `get_source` on the SoC `.dtsi` for the states your part defines. Which states
+  exist is a property of the silicon, not of Zephyr.
+
 ## The two layers
 
-- **System PM** (`CONFIG_PM`) — the idle thread picks a low-power state when no
-  thread is runnable. Entirely automatic once configured; the application does
+- **System PM** (`CONFIG_PM`): the idle thread selects a low-power state when no
+  thread is runnable. This is automatic once configured; the application does
   nothing.
-- **Device PM** (`CONFIG_PM_DEVICE`) — individual peripherals suspend and resume.
+- **Device PM** (`CONFIG_PM_DEVICE`): individual peripherals suspend and resume.
   Needed because a peripheral left clocked will hold current high, and on many
   SoCs will block the deepest system states outright.
 
@@ -112,14 +122,14 @@ and then never wakes.
 Work down this list in order; the answer is almost always in the first three:
 
 1. **Something is not blocking.** Enable `CONFIG_THREAD_ANALYZER` and confirm the
-   idle thread actually runs. Any busy-wait or short `k_sleep` in a loop keeps the
+   idle thread runs. A busy-wait or a short `k_sleep` in a loop keeps the
    CPU at full current.
 2. **A pin is still driving.** Floating inputs and outputs left high leak through
    whatever is attached. Define `sleep` pinctrl states and apply them.
 3. **A peripheral is still clocked.** `CONFIG_PM_DEVICE_RUNTIME` plus a leaked
    `pm_device_runtime_get` keeps a whole clock domain alive.
 4. **Debug is enabled.** `CONFIG_DEBUG=y` and an attached debugger keep debug
-   clocks running — often several milliamps. Measure with the probe detached.
+   clocks running, often several milliamps. Measure with the probe detached.
 5. **A timer is too frequent.** Every wake costs the exit latency plus the work.
    Batch periodic work onto one timer rather than several.
 6. **Logging.** A UART transmitting is a peripheral that cannot suspend. Buffer and
@@ -146,5 +156,5 @@ The largest wins are architectural, not configuration:
   awake when there is something to do.
 - Batch radio traffic. A BLE connection interval of 1 s costs far less than 50 ms,
   and sending ten readings at once costs little more than sending one.
-- Choose the peripheral that can run in the low-power domain — an LPUART or
+- Choose a peripheral that can run in the low-power domain, such as an LPUART or
   low-power timer keeps working in states where the normal one does not.

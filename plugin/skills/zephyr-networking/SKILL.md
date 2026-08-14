@@ -4,7 +4,7 @@ description: Build networked Zephyr firmware. Use when adding Wi-Fi, Ethernet, T
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.7.0"
+  version: "0.8.0"
 ---
 
 # Networking
@@ -149,7 +149,7 @@ zsock_setsockopt(sock, SOL_TLS, TLS_SEC_TAG_LIST, tags, sizeof(tags));
 zsock_setsockopt(sock, SOL_TLS, TLS_HOSTNAME, "example.com", sizeof("example.com"));
 ```
 
-Set `TLS_HOSTNAME` — without it the certificate's name is not verified, which
+Set `TLS_HOSTNAME`. Without it the certificate's name is not verified, which
 defeats most of the point. TLS handshakes need several kilobytes of stack in the
 calling thread; a handshake that faults is usually stack, not crypto.
 
@@ -159,7 +159,7 @@ RTC and no NTP will reject valid certificates as not-yet-valid.
 ## Application protocols
 
 Zephyr ships MQTT, HTTP client and server, CoAP, LwM2M, and WebSocket. Each has a
-sample that is CI-built — `search_samples` for it and copy the `prj.conf`, because
+sample that is CI-built. Use `search_samples` to find it and copy the `prj.conf`, because
 the buffer and stack sizing in those samples is tuned.
 
 ## Diagnosing a device that will not connect
@@ -169,7 +169,7 @@ In order:
 1. **Is the interface up?** `net iface` in the shell. Down means a driver or
    devicetree problem, not a network one.
 2. **Is there an address?** `net iface` shows it. No address means DHCP never
-   completed — check the association first.
+   completed. Check the association first.
 3. **Does DNS resolve?** `net dns google.com`. Failure here with a valid address
    means `CONFIG_DNS_RESOLVER` is off or no server was supplied.
 4. **Does the route work?** `net ping 8.8.8.8`.

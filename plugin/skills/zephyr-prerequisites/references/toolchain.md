@@ -41,7 +41,7 @@ several SDKs are installed and one must be selected.
 
 ## Other toolchains
 
-`ZEPHYR_TOOLCHAIN_VARIANT` selects something other than the Zephyr SDK — a vendor
+`ZEPHYR_TOOLCHAIN_VARIANT` selects something other than the Zephyr SDK, such as a vendor
 toolchain, a distribution cross-compiler, or LLVM. Each has its own variables and
 its own supported architectures. Prefer the Zephyr SDK unless a specific target
 requires otherwise; it is the combination upstream CI exercises.
@@ -54,7 +54,7 @@ which ST distributes separately; `jlink` needs the SEGGER tools; `esp32` wraps
 esptool.
 
 Zephyr does not declare these in a machine-readable form, so this plugin does not
-claim to check them. What it can tell you is which runner a board actually uses:
+claim to check them. It can tell you which runner a board uses:
 
 ```
 get_board board=<name>       # every registered runner, and which command picks it
@@ -67,7 +67,7 @@ Two facts from that output matter before installing anything:
   Espressif board flashes with `esp32` and debugs with `openocd`, so a working
   flash setup does not imply a working debug setup.
 - A board can name a default runner it never registers, in which case the
-  corresponding command has nothing to run — `get_board` says so explicitly.
+  corresponding command has nothing to run. `get_board` reports this.
 
 For what each host program is and where it comes from, read Zephyr's own page:
 

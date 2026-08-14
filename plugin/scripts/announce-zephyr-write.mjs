@@ -17,7 +17,7 @@
  * The bar is the one `check-build-failure` sets: a hook that becomes noise gets
  * ignored along with everything else the plugin says. That is why this covers
  * devicetree and Kconfig only. They are the two error classes with a tool that
- * prevents them outright, and they are where the file's kind alone is enough to
+ * prevents them, and they are where the file's kind alone is enough to
  * know what to say. A pointer on every C file would fire constantly and carry no
  * comparable claim.
  */
@@ -28,19 +28,20 @@ import { firstTimeThisSession, readHookInput, resolveIndexPath } from './index-p
 const ADVICE = {
   devicetree: {
     text:
-      'Before writing devicetree: confirm every `compatible` with get_binding, which returns the ' +
-      'flattened property set. A binding file lists almost nothing itself — most properties arrive ' +
-      'through `include:` chains, so reading the file is not the answer. get_binding takes a list ' +
-      'of `compatibles`, and check_config takes the whole overlay and returns a verdict per line. ' +
-      'For anything beyond a small edit, the devicetree-specialist agent does this end to end.',
+      'Before writing devicetree, check every `compatible` with get_binding, which returns the ' +
+      'flattened property set. A binding file lists few properties itself; most arrive through ' +
+      '`include:` chains, so reading the file is not enough. get_binding also reports which SoC ' +
+      'devicetree name the compatible, which indicates whether the driver targets your part. It ' +
+      'takes a list of `compatibles`, and check_config takes the whole overlay and returns a ' +
+      'verdict per line. For more than a small edit, use the devicetree-specialist agent.',
   },
   kconfig: {
     text:
-      'Before writing Kconfig: confirm every symbol with get_kconfig, which returns its type, ' +
-      'prompt, dependencies and defaults — a symbol that exists is not the same as one that is ' +
-      'assignable here. get_kconfig takes a list of `names`, and check_config takes the whole ' +
-      'file and returns a verdict per line, so grounding it costs one call rather than one per ' +
-      'setting.',
+      'Before writing Kconfig, check every symbol with get_kconfig, which returns its type, ' +
+      'prompt, dependencies and defaults. A symbol that exists is not necessarily one you can ' +
+      'assign: a symbol with no prompt is set by a select from another symbol, and assigning it ' +
+      'fails the build. get_kconfig takes a list of `names`, and check_config takes the whole file ' +
+      'and returns a verdict per line, so checking it costs one call rather than one per setting.',
   },
 };
 

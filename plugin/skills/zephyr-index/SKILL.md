@@ -6,7 +6,7 @@ compatibility: Requires Node.js 24+, Python 3.12+ with PyYAML, and a complete Ze
 allowed-tools: Bash(node:*) Bash(west:*) Bash(ls:*) Bash(test:*) Bash(python3:*) Bash(command:*) Read
 metadata:
   author: zephyr-ai
-  version: "0.7.0"
+  version: "0.8.0"
 ---
 
 # Build the Zephyr index
@@ -39,13 +39,13 @@ command -v west || echo "west absent"
 
 What to do with each result:
 
-- **Node older than 24** — the bundled server and indexer both target it; nothing
+- **Node older than 24**: the bundled server and indexer both require it. Nothing
   here works until it is upgraded. Stop and say so.
-- **Python older than 3.12, or PyYAML missing** — if the project has a west
+- **Python older than 3.12, or PyYAML missing**: if the project has a west
   workspace, its virtual environment usually has both, and the indexer prefers
   that interpreter. Otherwise point `PYTHON_EXECUTABLE` at one that has them; the
   `zephyr-prerequisites` skill covers the layouts and their trade-offs.
-- **`west` absent** — only needed to *discover* an existing workspace and to run
+- **`west` absent**: needed only to discover an existing workspace and to run
   `west update`. The pinned fetch in step 2 does not need it, so an empty project
   can proceed without it.
 
@@ -60,7 +60,7 @@ that the machine can build.
 
 ## 2. Find the Zephyr tree
 
-**Starting from an empty directory, there is nothing to discover — fetch the
+**Starting from an empty directory there is nothing to discover. Fetch the
 pinned revision.** This is the common first-run case, and the discovery commands
 below cannot succeed in it. The fetch is a large network download, so ask first.
 Only after the user agrees:
@@ -93,14 +93,28 @@ If none resolves, offer the pinned fetch above, ask for a path to an existing
 checkout, or use the `zephyr-project-setup` skill to create a complete west
 workspace.
 
-## 3. Find the HAL modules worth including
-
-Vendor HALs carry their own bindings and Kconfig. Include the ones relevant to
-the project's targets:
+## 3. Find the modules worth including
 
 ```bash
 west list -f '{name} {posixpath}' 2>/dev/null
 ```
+
+Two reasons to pass a module, and the second is easy to miss.
+
+**Vendor HALs carry their own bindings and Kconfig**, so a target's HAL belongs in
+the index if you want its symbols and compatibles resolvable.
+
+**A module that redeclares a Zephyr symbol leaves that symbol's prompt status
+undecidable until the module is read.** Zephyr ships in-tree glue for many
+modules under `modules/<name>/`. Some of it mirrors symbols the module itself
+declares with prompts: `LV_USE_LOG` is declared without a prompt in Zephyr's tree
+and with one in LVGL's. Reading only the Zephyr tree, the mirror appears
+promptless, so the tools do not judge assignments to it rather than report an
+error that is not real. Passing the module resolves this.
+
+Include the HALs for the targets you build, plus any module whose `CONFIG_`
+symbols the application sets. Every other module is still readable with
+`get_source` at its manifest revision without being passed here.
 
 ## 4. Build it
 
@@ -164,6 +178,22 @@ fingerprint, coverage map, and no project mismatch.
 The server resolves the index on each call, so a freshly built index is picked up
 without restarting Claude Code. If `index_status` still shows an old fingerprint,
 inspect the project-root and plugin-data variables it reports before rebuilding.
+
+## 6. Hand off to `zephyr-prerequisites`
+
+Do this before the first build. A successful index shows the tree can be read and
+parsed. It does not show that this machine can build. Indexing needs Node and a
+Python with PyYAML. A build also needs the Zephyr SDK or another toolchain,
+CMake, ninja, the devicetree and Kconfig packages in the interpreter CMake
+selects, and per-board host tools for flashing and signing.
+
+Indexing succeeding while building fails is the case `zephyr-prerequisites`
+covers. Checking now takes a few minutes; the alternative is diagnosing a CMake
+error that names a Python package.
+
+Run `check_environment`. It reports every interpreter on this machine and which
+of the packages this Zephyr version needs each one has. Follow
+`zephyr-prerequisites` for anything it reports as missing.
 
 ## Notes
 

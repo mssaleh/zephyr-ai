@@ -2,16 +2,14 @@
 /**
  * PostToolUse signal for a failed Zephyr build.
  *
- * Agent and skill descriptions already name "a build has failed" as their
- * trigger, and it is not enough: nothing tells the session the event happened.
- * A `west build` is an ordinary Bash call, so without this hook a failure is
- * invisible to the plugin and `build-triage` is never reached for.
+ * Agent and skill descriptions name "a build has failed" as a trigger, but
+ * nothing otherwise tells the session that it happened. A `west build` is an
+ * ordinary Bash call, so without this hook the failure is invisible to the
+ * plugin.
  *
- * The bar for speaking is deliberately high. Two independent conditions must
- * hold — the command has to be a Zephyr build, and the output has to carry a
- * recognised failure signature — because a hook that fires on any failed
- * command is noise, and a hook that is noise gets ignored along with everything
- * else this plugin says.
+ * Two conditions must both hold before this hook speaks: the command has to be a
+ * Zephyr build, and the output has to carry a recognised failure signature. A
+ * hook that fires on any failed command is noise, and noise gets ignored.
  */
 import { readHookInput } from './index-paths.mjs';
 
@@ -27,68 +25,120 @@ const BUILD_COMMAND =
 
 /**
  * Failure signatures, most specific first. The classification decides which
- * lookup to name, which is what makes the message worth reading twice.
+ * lookup the message names.
+ *
+ * Every pattern here must satisfy two requirements:
+ *
+ * 1. Match across line breaks. Zephyr's `err()` puts the whole message through
+ *    `textwrap.fill(..., 100)`, which discards the line breaks in the source
+ *    string and re-wraps at column 100. The break position depends on the length
+ *    of the symbol name and its `(defined at …)` location, so it differs per
+ *    symbol. A pattern written against one sample's line breaks matches only
+ *    that sample.
+ * 2. Use upstream's wording, not a paraphrase. `assigned to.*but has no prompt`
+ *    matched nothing, because upstream says "is assigned in a configuration
+ *    file, but is not directly user-configurable (has no prompt)". The corpus in
+ *    `test/fixtures/build-failures/` is the source of truth for these patterns.
+ *    A class with no fixture has not been checked.
+ *
+ * Order matters. Every Kconfig and devicetree failure also prints `CMake Error`,
+ * because CMake invoked the script that failed, so the specific classes must be
+ * tested before `cmake`.
  */
 const FAILURES = [
   {
-    // First, because these surface as a CMake error and would otherwise be
-    // classified as one and answered with advice about symbols. Nothing in the
-    // file the user is editing is wrong: the interpreter CMake selected is
-    // missing a package Zephyr needs, which happens whenever west lives in an
-    // environment of its own and the build resolves python3 from PATH instead.
+    // First, because these appear as a CMake error and would otherwise be
+    // classified as one and answered with advice about symbols. The file being
+    // edited is not wrong: the interpreter CMake selected is missing a package
+    // Zephyr needs. This happens when west runs from its own environment and the
+    // build resolves python3 from PATH.
     kind: 'environment',
     pattern:
       /Missing \w[\w.-]* dependency|ModuleNotFoundError: No module named|ImportError: No module named|Could NOT find Python3|A suitable Python3 (?:interpreter|version) could not be found/,
     advice:
-      'This is a host environment failure, not a mistake in the source. Call check_environment: it ' +
-      'reports every Python interpreter on this machine and which of the packages this Zephyr ' +
-      'version requires each one carries, and names the command that fixes the gap. The usual cause ' +
-      'is that west runs from its own environment while CMake resolves python3 from PATH, so the ' +
-      'index builds cleanly and the build does not.',
+      'This is a host environment failure, not an error in the source. Call check_environment. It ' +
+      'lists every Python interpreter on this machine, which of the packages this Zephyr version ' +
+      'requires each one has, and the command that fixes the gap. The usual cause is that west runs ' +
+      'from its own environment while CMake resolves python3 from PATH, so indexing works and the ' +
+      'build does not.',
+  },
+  {
+    // Before the general devicetree class. A node that binds to nothing is a
+    // different error from a property a binding does not declare, and needs
+    // different advice.
+    kind: 'binding',
+    pattern: /lacks binding|has no binding|no binding found|Unable to find binding|binding.*not found for compatible/i,
+    advice:
+      'A node whose compatible resolves to no binding is dropped, along with every property on it, so ' +
+      'the first symptom is usually an undefined DT_ macro elsewhere. Call search_bindings to confirm ' +
+      'the compatible exists at this Zephyr version, then get_binding to read what it accepts. If the ' +
+      'binding is your own, check that its directory is on DTS_ROOT.',
   },
   {
     kind: 'devicetree',
-    pattern: /devicetree error|dtc: Error|Error: (?:\S+\.dtsi?|\S+\.overlay):|'[^']+' is not a valid property|node '[^']+' is not/i,
+    pattern:
+      /devicetree error|dtc: Error|Error: (?:\S+\.dtsi?|\S+\.overlay):|'[^']+'\s+appears in\s+\S+[\s\S]{0,200}?is not declared in|'[^']+' is not a valid property|node '[^']+' is not/i,
     advice:
-      'Devicetree failures are usually an invented property or a compatible that does not exist at this ' +
-      'Zephyr version. Call get_binding for the node\'s compatible before editing the overlay — bindings ' +
-      'inherit most of their properties through include: chains, so reading the binding file is not enough.',
+      'Devicetree failures are usually a property or compatible that does not exist at this Zephyr ' +
+      'version. Call get_binding for the node\'s compatible before editing the overlay. Bindings ' +
+      'inherit most of their properties through include: chains, so reading the binding file is not ' +
+      'enough.',
   },
   {
+    // The promptless message is split across a line break at an unpredictable
+    // column, so it is matched as two anchors with bounded text between them
+    // rather than as one phrase.
     kind: 'kconfig',
-    pattern: /Kconfig(?:lib)?[^\n]*\berror\b|error: Aborting due to Kconfig warnings|is not a valid setting|assigned to.*but has no prompt/i,
+    pattern:
+      /is assigned in a configuration file,[\s\S]{0,120}?(?:is not directly[\s\S]{0,40}?user-configurable|has no prompt)|attempt to assign the value[\s\S]{0,80}?to the undefined symbol|Aborting due to Kconfig warnings|Kconfig(?:lib)?[^\n]*\berror\b|is not a valid setting|assigned to[\s\S]{0,80}?but has no prompt/i,
     advice:
-      'Call get_kconfig for each symbol the error names before changing prj.conf. A symbol that does not ' +
-      'exist in this Zephyr version is silently ignored rather than reported, and a promptless symbol ' +
-      'cannot be assigned from an application configuration at all.',
+      'Call get_kconfig for each symbol the error names before changing prj.conf. A symbol that does ' +
+      'not exist in this Zephyr version is ignored without a warning. A promptless symbol cannot be ' +
+      'assigned from an application configuration at all; enable the symbol that selects it instead. ' +
+      'check_config takes the whole file and returns a verdict per line, which checks every other ' +
+      'assignment in the same call.',
   },
   {
     kind: 'board',
     pattern: /board .* not found|Invalid BOARD|No board named|could not find board/i,
     advice:
-      'Call search_boards for the board name. Targets are qualified — esp32s3_devkitc/esp32s3/procpu, ' +
-      'not esp32s3_devkitc — and the qualifier differs per SoC revision and core.',
+      'Call search_boards for the board name. Targets are qualified: esp32s3_devkitc/esp32s3/procpu, ' +
+      'not esp32s3_devkitc. The qualifier differs per SoC revision and core.',
+  },
+  {
+    // Split from the undefined-reference case. The two share only the linker.
+    // Enabling a subsystem fixes one and makes the other worse.
+    kind: 'overflow',
+    pattern: /region `[^']+' overflowed by|will not fit in region|not enough room for program headers/i,
+    advice:
+      'The image does not fit the region the linker was given. Check what the region is before trimming ' +
+      'code. get_board reports the Twister flash and RAM figures for the target, which are test metadata ' +
+      'rather than the memory the application gets. On a target whose defconfig sets CONFIG_XIP=n the ' +
+      'image is not executed from internal flash, and the limit comes from the devicetree partition it ' +
+      'is linked into.',
   },
   {
     kind: 'link',
-    pattern: /undefined reference to|region `[^']+' overflowed by|will not fit in region/i,
+    pattern: /undefined reference to/i,
     advice:
-      'An undefined reference in Zephyr is usually a subsystem that was never enabled rather than a ' +
-      'missing source file. Search for the CONFIG_ symbol that provides the function with search_kconfig ' +
-      'before adding code.',
+      'An undefined reference in Zephyr is usually a subsystem that was not enabled, not a missing ' +
+      'source file. Use search_kconfig to find the CONFIG_ symbol that provides the function before ' +
+      'adding code. An undefined `__device_dts_ord_…` symbol is the devicetree form of the same problem: ' +
+      'the node it names is not in the merged tree, usually because an overlay whose filename did not ' +
+      'match the qualified build target was skipped without a warning.',
   },
   {
     kind: 'cmake',
     pattern: /CMake Error/,
     advice:
-      'Read the first CMake error, not the last: later ones are usually consequences. Verify any symbol, ' +
+      'Read the first CMake error, not the last. Later ones are usually consequences. Check any symbol, ' +
       'board target, or binding it names against the index before changing the build files.',
   },
   {
     kind: 'compile',
     pattern: /^\s*\S+:\d+:\d+:\s*error:|^FAILED:|ninja: build stopped/m,
     advice:
-      'Verify any Zephyr API the failing code calls with get_api, including its parameter order and ' +
+      'Check any Zephyr API the failing code calls with get_api, including its parameter order and ' +
       'return contract, before rewriting it.',
   },
 ];
@@ -144,13 +194,15 @@ async function main() {
 
   const advice =
     failure?.advice ??
-    'Verify every CONFIG_ symbol, devicetree property, and board target the error names against the ' +
+    'Check every CONFIG_ symbol, devicetree property, and board target the error names against the ' +
       'index before changing anything.';
 
   process.stderr.write(
-    'The Zephyr build failed. Run the build-triage agent before editing: it reads the build output and ' +
-      'the generated artefacts, verifies each symbol against the indexed Zephyr version, and reports a ' +
-      `root cause rather than a guess.\n\n${advice}\n`,
+    'The Zephyr build failed.\n\n' +
+      `${advice}\n\n` +
+      'If the cause is not one line in one file, run the build-triage agent. It reads the build output ' +
+      'and the generated artefacts, checks each symbol against the indexed Zephyr version, and reports ' +
+      'a root cause.\n',
   );
   return 2;
 }

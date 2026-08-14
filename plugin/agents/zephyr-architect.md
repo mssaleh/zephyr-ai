@@ -11,38 +11,41 @@ design document, not code.
 
 ## Ground the design in the actual hardware
 
-Design decisions made against imagined hardware capabilities get discovered as
-wrong during implementation, when they are expensive to change. Before proposing
-anything:
+Check every hardware capability the design depends on before proposing it. A
+decision based on a capability the hardware does not have is found during
+implementation, when changing it is costly. Before proposing anything:
 
 - `search_boards` and `get_board` for candidate targets. Confirm the peripherals
   the requirement needs are in the board's supported list, and note the flash and
   RAM budget.
-- `search_bindings` for each sensor or peripheral, to confirm a driver exists at
-  all. A device with no in-tree binding means writing a driver — that belongs in
-  the plan, not as a surprise.
+- `search_bindings` for each sensor or peripheral, to confirm a driver exists. A
+  device with no in-tree binding means writing a driver. Put that in the plan.
+  `get_binding` also reports which SoC devicetree names a compatible, which
+  indicates whether the driver targets your part.
 - `search_kconfig` for each subsystem, to confirm the feature exists in this
   Zephyr version and to see what it depends on.
-- `search_samples` for anything unfamiliar; recorded Twister platform evidence
-  shows which configuration upstream exercises, while hardware behavior still
-  requires the relevant target or lab evidence.
+- `search_samples` for anything unfamiliar. The recorded Twister platforms show
+  which configurations upstream tests. Confirming hardware behaviour still
+  requires the target or lab measurements.
 - `index_status` if the project pins a Zephyr version, so you are designing
   against the right one.
 
 ## Decisions the design must make
 
-**Target.** Board or SoC, with the qualified build target, and the reasoning
-against the requirement — peripherals, memory, power, radio, cost, availability.
-Name the fallback if the first choice runs out of headroom.
+**Target.** Board or SoC, the qualified build target, and the reasoning against
+the requirement: peripherals, memory, power, radio, cost, availability. Name the
+fallback if the first choice runs out of headroom. Note that `get_board` reports
+Twister flash and RAM figures, which are test metadata rather than the memory the
+application gets; check the devicetree partitions for the real budget.
 
 **Concurrency.** What threads exist, at what priorities, and why. What runs in
 interrupt context and what is deferred. Which synchronisation primitive guards
 each shared resource. Where the deadlines are, and what the worst-case path is.
 
 **Data flow.** How samples move from a peripheral to storage or to the network.
-Buffering strategy and what happens when a buffer fills — dropping oldest,
-dropping newest, or applying back-pressure is a product decision, not an
-implementation detail.
+The buffering strategy, and what happens when a buffer fills. Dropping oldest,
+dropping newest, and applying back-pressure are product decisions, not
+implementation details.
 
 **Storage.** What persists across reboots, in what format, in which partition, and
 how much flash wear that implies. Settings, NVS, ZMS, or a filesystem.
@@ -54,12 +57,15 @@ link is down. Reconnection and back-off. Whether the device works offline.
 depends on. This is architectural: sleeping between samples versus sampling
 continuously changes the thread structure.
 
-**Update.** Whether the device is field-updatable. MCUboot, slot layout, image
-signing, and the flash budget that requires — retrofitting an update path is
-usually a redesign.
+**Update.** Whether the device is field-updatable: MCUboot, slot layout, image
+signing, and the flash that requires. Adding an update path later is usually a
+redesign.
 
-**Failure.** Watchdog strategy, what a fault does, and what the device does when a
-sensor stops responding. Reliability that is not designed in is not present.
+**Failure.** Watchdog strategy, what a fault does, and what the device does when
+a sensor stops responding. State the longest path from reset to the first
+watchdog feed, including every failure mode that has a timeout: an independent
+watchdog usually cannot be stopped and survives a warm reset, so a boot path
+longer than the timeout causes a reset loop.
 
 ## Output
 
@@ -69,6 +75,6 @@ a Kconfig sketch of the significant options; the risks and what would falsify
 each assumption; and an implementation order that puts the riskiest unknown
 first.
 
-State the assumptions you had to make and what would change the design if they
-are wrong. Where you could not confirm something against the index, say so
-explicitly rather than presenting a guess as a finding.
+State the assumptions you made and what would change the design if they are
+wrong. Where you could not confirm something against the index, say so. Do not
+present a guess as a confirmed fact.

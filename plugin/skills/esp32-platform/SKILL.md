@@ -1,10 +1,10 @@
 ---
 name: esp32-platform
-description: Zephyr firmware on Espressif ESP32 microcontrollers. Use when an Espressif build fails to configure or link, when esptool is missing or refuses to flash, when a board target is rejected as unqualified, when the console prints nothing or drops on reset over native USB, when Wi-Fi or Bluetooth will not initialise, when a partition or PSRAM change does not take effect, or when targeting any ESP32 variant (ESP32, S2, S3, C2, C3, C5, C6, H2) or DevKit board. Covers the qualified build targets these boards require, the dual-core appcpu/procpu image model, sysbuild and bootloader handling, partition tables, pinctrl via the IO matrix, and Espressif-specific pitfalls.
+description: Zephyr firmware on Espressif ESP32 microcontrollers. Use when an Espressif build fails to configure or link, when esptool is missing or refuses to flash, when a board target is rejected as unqualified, when the console prints nothing or drops on reset over native USB, when Wi-Fi or Bluetooth will not initialise, when a partition or PSRAM change does not take effect, or when targeting any ESP32 variant (ESP32, S2, S3, C2, C3, C5, C6, H2) or DevKit board. Covers the qualified build targets these boards require, the dual-core appcpu/procpu image model, sysbuild and bootloader handling, partition tables, pinctrl via the IO matrix, and Espressif-specific behaviour.
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.7.0"
+  version: "0.8.0"
 ---
 
 # ESP32 on Zephyr
@@ -70,12 +70,12 @@ west espressif monitor -p /dev/ttyUSB0
 
 If flashing fails to sync, the board is not in download mode: hold BOOT, tap
 EN/RST, release BOOT. Boards with a native-USB variant (S2, S3, C3) expose a USB
-CDC port that disappears on reset — target the UART bridge port instead while
+CDC port that disappears on reset. Use the UART bridge port instead while
 bringing up, or the flash tool will lose the device mid-write.
 
 ## Partitions
 
-The flash layout is devicetree, and it must accommodate everything you enable —
+The flash layout is devicetree, and it must fit everything you enable:
 bootloader, application, and any storage partition:
 
 ```dts
@@ -102,7 +102,7 @@ bootloader, application, and any storage partition:
 ```
 
 An image that overflows its partition flashes and then fails to boot with a
-checksum error rather than failing at build time — check sizes against the
+checksum error rather than failing at build time. Check sizes against the
 partition map, not just against total flash.
 
 ## Pinctrl through the IO matrix
@@ -134,7 +134,7 @@ so pinctrl is written explicitly rather than picked from pre-generated names:
 };
 ```
 
-The `pinmux` macros come from the variant's header — an ESP32-S3 macro will not
+The `pinmux` macros come from the variant's header. An ESP32-S3 macro will not
 exist on a C3. Strapping pins and the pins wired to flash and PSRAM are not
 usable as GPIO; the board documentation page (via `get_board`, then `get_doc`)
 lists them.
@@ -156,7 +156,7 @@ CONFIG_MAIN_STACK_SIZE=4096
 
 Wi-Fi is memory-hungry. Under-provisioning the heap produces association
 failures and allocation errors rather than an obvious out-of-memory report. Start
-from `search_samples` for a Wi-Fi sample and copy its `prj.conf` — the working
+from `search_samples` for a Wi-Fi sample and copy its `prj.conf`. The working
 combination is not something to derive.
 
 ## Bluetooth
@@ -187,7 +187,7 @@ variant. Keep hot data and DMA buffers internal.
 
 ## Checklist
 
-1. `get_board` for the exact qualified target — never construct it by hand.
+1. `get_board` for the exact qualified target. Do not construct it by hand.
 2. Decide `procpu` only, or sysbuild for multi-image.
 3. `get_binding` before writing peripheral nodes; ESP32 property sets differ from
    other vendors.

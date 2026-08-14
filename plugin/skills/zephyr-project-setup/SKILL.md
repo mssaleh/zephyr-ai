@@ -4,7 +4,7 @@ description: Create and structure a Zephyr project. Use when starting a new firm
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.7.0"
+  version: "0.8.0"
 ---
 
 # Project setup
@@ -41,7 +41,7 @@ my-workspace/               # west topdir; not a Git repository
 ```
 
 ```yaml
-# west.yml — pin Zephyr by tag, never by branch
+# west.yml: pin Zephyr by tag, not by branch
 manifest:
   remotes:
     - name: upstream
@@ -134,7 +134,7 @@ endmenu
 source "Kconfig.zephyr"
 ```
 
-The trailing `source "Kconfig.zephyr"` is required — without it the application
+The trailing `source "Kconfig.zephyr"` is required. Without it the application
 Kconfig replaces Zephyr's instead of extending it.
 
 ## Out-of-tree modules
@@ -169,7 +169,7 @@ drivers/
 ```
 
 Implement Zephyr's existing driver API (sensor, GPIO, ...) rather than exposing a
-bespoke one — the subsystem, shell commands, and logging then work unchanged.
+bespoke one, so the subsystem, shell commands, and logging work unchanged.
 
 ## Version control
 
@@ -203,4 +203,4 @@ stops working quietly.
 2. Create the T2 manifest pinned to a Zephyr tag, with a HAL allowlist.
 3. From the non-repository workspace parent, `west init -l <application-repo> && west update && west zephyr-export`.
 4. Build the empty application for every target before writing features.
-5. Rebuild the reference index for this Zephyr version — see the `zephyr-index` skill.
+5. Rebuild the reference index for this Zephyr version. See the `zephyr-index` skill.

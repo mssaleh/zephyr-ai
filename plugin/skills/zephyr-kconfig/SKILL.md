@@ -4,7 +4,7 @@ description: Configure a Zephyr application with Kconfig. Use when editing prj.c
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.7.0"
+  version: "0.8.0"
 ---
 
 # Kconfig in Zephyr
@@ -13,16 +13,14 @@ metadata:
 
 ## The failure mode to understand first
 
-Setting a symbol that does not exist, or whose `depends on` is unsatisfied, is
-**not an error**. The line is dropped and the build succeeds with the feature
-missing. There is no warning by default. This is why "I set the CONFIG and
-nothing happened" is the most common Zephyr complaint, and why every symbol
-should be verified before it is written.
+Setting a symbol whose `depends on` is unsatisfied is not an error. The line is
+dropped and the build succeeds with the feature missing. There is no warning by
+default. This is why a setting can appear to have no effect, and why every symbol
+should be checked before it is written.
 
-Use `get_kconfig`. It returns the type, defaults with their conditions,
-`depends on`, and — critically — **what selects the symbol**, which is how you
-find out why it is on when you did not ask for it, or what to enable to make it
-available.
+Use `get_kconfig`. It returns the type, the defaults with their conditions,
+`depends on`, and what selects the symbol. The last one tells you why a symbol is
+on when you did not enable it, and what to enable to make it available.
 
 ## Where a setting belongs
 
@@ -40,8 +38,8 @@ Extra fragments compose explicitly:
 west build -b nucleo_h743zi . -- -DEXTRA_CONF_FILE="debug.conf;prod.conf"
 ```
 
-Never edit files under the Zephyr tree to configure an application. It works
-until the next `west update` and it breaks every other application in the
+Never edit files under the Zephyr tree to configure an application. The change is
+lost at the next `west update` and it affects every other application in the
 workspace.
 
 ## Syntax that actually matters
@@ -53,23 +51,55 @@ CONFIG_BT_BUF_ACL_RX_SIZE=251  # int: bare number
 CONFIG_HEAP_MEM_POOL_SIZE=0x2000  # hex where the symbol is hex
 ```
 
-Setting `CONFIG_FOO=n` explicitly turns a symbol **off** even if something would
-otherwise default it on — but it cannot defeat a `select`.
+Setting `CONFIG_FOO=n` turns a symbol off even when something would default it
+on. It cannot override a `select`.
 
 ## depends on versus select
 
-This distinction causes most Kconfig confusion:
+These two behave differently:
 
-- **`depends on X`** — this symbol is invisible and unsettable unless `X` is on.
+- **`depends on X`**: the symbol is invisible and cannot be set unless `X` is on.
   You must enable `X` yourself. If you assign the symbol without `X`, Kconfig
-  reports that the requested value could not be honored and the resolved value
-  remains off; warnings are fatal in the standard Zephyr application flow.
-- **`select X`** — enabling this symbol forces `X` on, *ignoring X's own
-  dependencies*. This is why a symbol you never enabled shows up in the build.
+  reports that the value could not be applied and the resolved value stays off.
+  Warnings are fatal in the standard Zephyr application flow.
+- **`select X`**: enabling this symbol forces `X` on, ignoring X's own
+  dependencies. This is why a symbol you did not enable can appear in the
+  build.
 
 When a symbol will not turn on, read its `depends on` from `get_kconfig` and
 enable the chain from the bottom up. When a symbol is on and you do not know why,
 read the "Selected by" list.
+
+## Symbols you may not assign at all
+
+A symbol with no prompt is set by a `select` from another symbol. Assigning one
+in `prj.conf` is not ignored and is not a warning. Zephyr's configuration step
+fails the build:
+
+```
+error: <SYM> (defined at <file>:<line>) is assigned in a configuration file, but
+is not directly user-configurable (has no prompt). It gets its value indirectly
+from other symbols.
+```
+
+Vendor HAL component switches are the most common case, because their names look
+like something you would enable. Check a symbol's type and prompt before writing
+it into a config file rather than assuming any `CONFIG_` name is assignable.
+`get_kconfig` reports both, and `check_config` checks a whole file in one call.
+
+Do not try to force the value. Either enable the symbol that selects it, which
+`get_kconfig` lists under "Selected by", or declare an application symbol that
+selects it:
+
+```kconfig
+# In the application's own Kconfig
+config APP_NEEDS_THAT_HAL_COMPONENT
+	bool "Pull in the HAL component this application needs"
+	select USE_VENDOR_HAL_COMPONENT
+```
+
+Then set your own symbol in `prj.conf`, which is prompted and therefore
+assignable.
 
 ## Inspecting what you actually got
 
@@ -100,9 +130,9 @@ CONFIG_LOG_DEFAULT_LEVEL=3      # 0 none, 1 err, 2 wrn, 3 inf, 4 dbg
 CONFIG_LOG_BUFFER_SIZE=2048
 ```
 
-Deferred mode matters: with `CONFIG_LOG_MODE_IMMEDIATE=y` a log call formats and
-writes synchronously, which can take milliseconds and will wreck real-time
-behaviour if it happens in an ISR or a high-priority thread.
+Use deferred mode. With `CONFIG_LOG_MODE_IMMEDIATE=y` a log call formats and
+writes synchronously, which can take milliseconds and breaks real-time behaviour
+in an ISR or a high-priority thread.
 
 A shell for interactive debugging:
 
@@ -124,8 +154,8 @@ CONFIG_STACK_SENTINEL=y
 CONFIG_HW_STACK_PROTECTION=y    # MPU-backed, catches overflow at the fault
 ```
 
-Turn `CONFIG_ASSERT` and the analyzers off for production; they cost flash, RAM,
-and time.
+Turn `CONFIG_ASSERT` and the analyzers off for production. They cost flash, RAM,
+and run time.
 
 ## Changing configuration safely
 
@@ -140,6 +170,6 @@ west build -b <target> -p always .
 
 1. `search_kconfig` with plain language to find candidate symbols.
 2. `get_kconfig` on each to confirm the name, type, and dependency chain.
-3. Write the minimum set — enable the feature, not every symbol that mentions it.
+3. Write the minimum set: enable the feature, not every symbol that mentions it.
 4. Build, then check `build/zephyr/.config` for each symbol you set.
 5. If a symbol is missing there, its `depends on` was unmet. Fix the chain.

@@ -6,6 +6,7 @@ import { parse as parseYaml } from 'yaml';
 
 import type { SourceManifest } from '../../../shared/source-manifest.ts';
 import { byCodeUnits, byField } from '../../../shared/ordering.ts';
+import { buildStrings } from '../../../shared/build-string.ts';
 
 export interface BoardTarget {
   /** Fully qualified target, e.g. `esp32s3_devkitc/esp32s3/procpu`. */
@@ -36,6 +37,17 @@ export interface BoardRecord {
   ram?: number;
   flash?: number;
   docPath?: string;
+  /**
+   * Build targets whose `_defconfig` sets `CONFIG_XIP=n`.
+   *
+   * `ram` and `flash` above come from `twister.yaml`, where they size a test
+   * runner's expectations rather than the parts on the board. On a target that
+   * does not execute in place the flash figure describes no internal part at
+   * all: upstream's NUCLEO-N657X0-Q reports 1024 KB of each while the
+   * application gets 511 KB of SRAM and no internal flash. Rendering the pair
+   * without that qualification reads as a memory budget and is used as one.
+   */
+  noXipTargets: string[];
 }
 
 export interface SocRecord {
@@ -173,6 +185,29 @@ function readTargets(manifest: SourceManifest, boardDir: string): BoardTarget[] 
   return targets;
 }
 
+/**
+ * Whether this target executes in place, as its `_defconfig` files leave it.
+ *
+ * Zephyr merges every defconfig whose constructed name matches, least specific
+ * first, so the last assignment wins. `null` means no defconfig mentions XIP,
+ * which is not the same as `true` — the default depends on the SoC, and claiming
+ * a default the tree does not state here is how the flash figure became a memory
+ * budget in the first place.
+ */
+function resolvedXip(manifest: SourceManifest, boardDir: string, identifier: string): boolean | null {
+  let resolved: boolean | null = null;
+  for (const basename of buildStrings(identifier)) {
+    const path = `${boardDir}/${basename}_defconfig`;
+    if (!manifest.has(path)) continue;
+    for (const line of manifest.read(path).split('\n')) {
+      const match = /^\s*CONFIG_XIP\s*=\s*(\S)/.exec(line);
+      if (match) resolved = match[1] === 'y';
+      else if (/^\s*#\s*CONFIG_XIP\s+is\s+not\s+set\s*$/.test(line)) resolved = false;
+    }
+  }
+  return resolved;
+}
+
 export function collectBoards(manifest: SourceManifest): BoardRecord[] {
   const boards: BoardRecord[] = [];
   const root = manifest.root;
@@ -267,6 +302,9 @@ export function collectBoards(manifest: SourceManifest): BoardRecord[] {
         targets: effective,
         revisions: officialBoard.revisions,
         supported: [...new Set(effective.flatMap((t) => t.supported))].sort(),
+        noXipTargets: effective
+          .filter((target) => resolvedXip(manifest, relDir, target.identifier) === false)
+          .map((target) => target.identifier),
       };
       if (typeof entry['full_name'] === 'string') record.fullName = entry['full_name'];
       if (typeof entry['vendor'] === 'string') record.vendor = entry['vendor'];

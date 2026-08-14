@@ -1,0 +1,14 @@
+-- Found Python3: /usr/bin/python3 (found suitable version "3.12.3", minimum required is "3.10")
+-- Zephyr version: 4.4.2 (/home/dev/zephyrproject/zephyr), build: v4.4.2
+-- Board: nucleo_n657x0_q, qualifiers: stm32n657xx
+-- Found devicetree overlay: /home/dev/app/app.overlay
+devicetree error: 'sampling-interval' appears in /soc/temperature@580a0000 in /home/dev/app/build/zephyr/zephyr.dts.pre, but is not declared in 'properties:' in /home/dev/zephyrproject/zephyr/dts/bindings/sensor/st,stm32-digi-temp.yaml
+
+CMake Error at /home/dev/zephyrproject/zephyr/cmake/modules/dts.cmake:277 (message):
+  gen_defines.py failed with return code: 1
+Call Stack (most recent call first):
+  /home/dev/zephyrproject/zephyr/cmake/modules/zephyr_default.cmake:129 (include)
+  CMakeLists.txt:5 (find_package)
+
+-- Configuring incomplete, errors occurred!
+FATAL ERROR: command exited with status 1: /usr/bin/cmake -DWEST_PYTHON=/usr/bin/python3 -B/home/dev/app/build -S/home/dev/app

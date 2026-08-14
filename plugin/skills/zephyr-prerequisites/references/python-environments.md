@@ -8,17 +8,17 @@ Three separate things choose a Python interpreter, and they do not have to agree
 
 | Chooser | How it chooses | What it needs |
 | --- | --- | --- |
-| CMake, during `west build` | `find_package(Python3)` — **PATH order** | everything in `scripts/requirements-base.txt` |
+| CMake, during `west build` | `find_package(Python3)`, by **PATH order** | everything in `scripts/requirements-base.txt` |
 | `west` itself | its own shebang | west's dependencies only |
 | This plugin's indexer | `PYTHON_EXECUTABLE`, then west's interpreter, then `python3` | PyYAML, plus the tree's kconfiglib and python-devicetree |
 
 The indexer prefers west's interpreter deliberately: west depends on PyYAML, so
 that interpreter usually satisfies indexing. CMake never consults it.
 
-## The tool-scoped west trap
+## Installing west as an isolated tool
 
-Installing west as an isolated tool — `uv tool install west`, `pipx install west`,
-or any equivalent — puts it in a virtual environment containing west and its
+Installing west as an isolated tool with `uv tool install west`, `pipx install
+west`, or an equivalent puts it in a virtual environment containing west and its
 dependencies and nothing else. That environment is enough to index and not enough
 to build:
 
@@ -36,7 +36,7 @@ CMake Error at cmake/modules/zephyr_module.cmake:73 (message):
 ```
 
 The error names a package, not an interpreter, so it reads as "install
-jsonschema" — and installing it into the wrong interpreter changes nothing. Run
+jsonschema". Installing it into the wrong interpreter changes nothing. Run
 `check_environment`; it reports each interpreter separately and says which one
 CMake will use.
 
@@ -90,7 +90,7 @@ Some requirements are conditional: `windows-curses` is required only on win32,
 and is not missing on Linux. `check_environment` evaluates those markers rather
 than reporting them as gaps.
 
-A few runners import packages no Zephyr requirements file names at all — the
+A few runners import packages that no Zephyr requirements file lists. The
 `rtsflash` runner needs `pyusb`. Those runners are simply unavailable until the
 package is installed, which is a property of upstream rather than of this machine.
 

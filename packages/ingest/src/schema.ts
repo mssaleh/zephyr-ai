@@ -106,6 +106,51 @@ CREATE INDEX kconfig_scope_idx ON kconfig(scope);
 
 -- Semantic Kconfig graph exported by the target tree's own Kconfiglib. The
 -- legacy JSON columns above are a denormalised search/read projection only.
+-- Symbols reachable only once an SoC is selected. Zephyr sources a series'
+-- Kconfig from inside a conditional on that series, so a catalogue index -- which
+-- has selected no SoC -- cannot see them, while Kconfig.soc next door is sourced
+-- unconditionally and is fully indexed. That asymmetry is why the catalogue knows
+-- SOC_STM32N657XX and cannot resolve STM32N6_BOOT_SERIAL, the symbol that board's
+-- flash arguments are guarded on.
+--
+-- These come from the fallback parser rather than the tree's own Kconfiglib, so
+-- they carry a declaration and not an evaluated dependency graph. The separate
+-- table is what keeps the weaker claim from being read as the stronger one.
+CREATE TABLE soc_kconfig (
+  id     INTEGER PRIMARY KEY,
+  name   TEXT NOT NULL,
+  series TEXT NOT NULL,
+  file   TEXT NOT NULL,
+  line   INTEGER NOT NULL DEFAULT 0,
+  type   TEXT NOT NULL DEFAULT '',
+  prompt TEXT NOT NULL DEFAULT '',
+  help   TEXT NOT NULL DEFAULT '',
+  UNIQUE(name, series)
+);
+CREATE INDEX soc_kconfig_name_idx ON soc_kconfig(name);
+
+-- What one build actually resolved to, layered over the catalogue rather than
+-- replacing it. The catalogue says what a symbol is and what it depends on; this
+-- says what it came out as, for one board, one application, one moment.
+CREATE TABLE resolved_config (
+  id    INTEGER PRIMARY KEY,
+  name  TEXT NOT NULL UNIQUE,
+  value TEXT NOT NULL DEFAULT '',
+  -- 0 records an explicitly unset symbol, which is a resolved value and not an
+  -- absence: "I set this and it did not take" is unanswerable without it.
+  is_set INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE resolved_node (
+  id         INTEGER PRIMARY KEY,
+  path       TEXT NOT NULL,
+  label      TEXT NOT NULL DEFAULT '',
+  compatible TEXT NOT NULL DEFAULT '',
+  status     TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX resolved_node_path_idx ON resolved_node(path);
+CREATE INDEX resolved_node_label_idx ON resolved_node(label);
+
 CREATE TABLE kconfig_expr (
   id       INTEGER PRIMARY KEY,
   kind     TEXT NOT NULL,
@@ -233,6 +278,20 @@ CREATE INDEX dt_property_binding_idx ON dt_property(binding_id, child_level);
 CREATE INDEX dt_property_name_idx ON dt_property(name);
 
 -- Hides the interning from every consumer: query this, not dt_property.
+-- Where the tree *uses* a compatible, as against where it declares one. A
+-- binding cannot say whether a driver fits your silicon; the set of boards and
+-- SoC devicetree files upstream instantiates it on is the strongest signal that
+-- exists, and answering it by grepping a vendor header costs a dozen calls.
+CREATE TABLE dt_instance (
+  id         INTEGER PRIMARY KEY,
+  compatible TEXT NOT NULL,
+  file       TEXT NOT NULL,
+  -- Empty when the file is SoC or shared devicetree rather than a board's.
+  board      TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX dt_instance_compatible_idx ON dt_instance(compatible);
+CREATE INDEX dt_instance_board_idx ON dt_instance(board);
+
 CREATE VIEW dt_property_v AS
   SELECT p.id, p.binding_id, p.child_level, p.name, p.type, p.required,
          COALESCE(t.text, '') AS description,
@@ -266,7 +325,11 @@ CREATE TABLE board (
   default_revision TEXT,
   supported        TEXT NOT NULL DEFAULT '[]',
   supported_text   TEXT NOT NULL DEFAULT '',
-  doc_path         TEXT
+  doc_path         TEXT,
+  -- Build targets whose _defconfig sets CONFIG_XIP=n. ram and flash above
+  -- are Twister metadata, not a memory budget, and on a target that does not
+  -- execute in place the flash figure describes no internal part at all.
+  no_xip_targets   TEXT NOT NULL DEFAULT '[]'
 );
 CREATE INDEX board_vendor_idx ON board(vendor);
 CREATE INDEX board_arch_idx ON board(arch);
@@ -325,6 +388,38 @@ CREATE TABLE west_command (
   file       TEXT NOT NULL DEFAULT '',
   help       TEXT
 );
+
+-- The modules the manifest declares, and how much of each this index actually
+-- read. Two questions depend on the distinction and both were answered wrongly
+-- without it.
+--
+-- Zephyr keeps in-tree glue for many modules under modules/, and the shape of
+-- the path says who owns the symbols. modules/Kconfig.stm32 is upstream's own
+-- file: it declares USE_STM32_HAL_* outright and hal_stm32 ships no Kconfig at
+-- all, so nothing outside the tree can ever give those symbols a prompt.
+-- modules/lvgl/Kconfig is a directory named after the lvgl module, and it
+-- mirrors symbols that the module's own Kconfig declares *with* prompts. Reading
+-- only the tree, the mirror looks promptless and an assignment to it looks like
+-- an error — which is why glue_dir is stored per module rather than guessed
+-- from the modules/ prefix, and why kconfig_ingested records whether the
+-- module's own Kconfig was actually read.
+CREATE TABLE west_module (
+  id               INTEGER PRIMARY KEY,
+  name             TEXT NOT NULL UNIQUE,
+  -- Workspace-relative, as the manifest declares it: modules/hal/stm32.
+  path             TEXT NOT NULL DEFAULT '',
+  revision         TEXT NOT NULL DEFAULT '',
+  -- The single path segment Zephyr's in-tree glue uses for this module, when it
+  -- has one: modules/<glue_dir>/Kconfig. Empty when the tree carries no glue
+  -- directory for it.
+  glue_dir         TEXT NOT NULL DEFAULT '',
+  -- 1 when this index evaluated the module's own Kconfig, so prompt status for
+  -- its symbols is settled rather than a mirror of it.
+  kconfig_ingested INTEGER NOT NULL DEFAULT 0,
+  -- 1 when get_source can read files from this module's tree.
+  source_ingested  INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX west_module_glue_idx ON west_module(glue_dir);
 
 -- ------------------------------------------------------------- samples -----
 -- Samples and Twister test suites share one table because upstream validates

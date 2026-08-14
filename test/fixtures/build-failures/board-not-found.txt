@@ -1,0 +1,16 @@
+-- Found Python3: /usr/bin/python3 (found suitable version "3.12.3", minimum required is "3.10")
+-- Zephyr version: 4.4.2 (/home/dev/zephyrproject/zephyr), build: v4.4.2
+No board named 'nucleo_n657x0' found. Did you mean:
+
+nucleo_n657x0_q
+nucleo_h7s3l8
+
+Run 'west boards' for the full list.
+CMake Error at /home/dev/zephyrproject/zephyr/cmake/modules/boards.cmake:221 (message):
+  Invalid BOARD; see above.
+Call Stack (most recent call first):
+  /home/dev/zephyrproject/zephyr/cmake/modules/zephyr_default.cmake:113 (include)
+  CMakeLists.txt:5 (find_package)
+
+-- Configuring incomplete, errors occurred!
+FATAL ERROR: command exited with status 1: /usr/bin/cmake -DWEST_PYTHON=/usr/bin/python3 -B/home/dev/app/build -S/home/dev/app

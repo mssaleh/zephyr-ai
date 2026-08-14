@@ -93,11 +93,11 @@ export const indexStatus: ToolFactory = (index) => ({
   name: 'index_status',
   title: 'Index status',
   description:
-    'Report which Zephyr version is indexed, where the index came from, and how much it covers. ' +
-    'Call this when an answer looks wrong for the version in use, when a symbol or board that ' +
-    'should exist is missing, or at the start of work on an unfamiliar project — it also detects ' +
-    "whether the project has its own west workspace pinned to a different Zephyr than the one " +
-    'indexed, which is the usual explanation for advice that does not compile.',
+    'Report which Zephyr version is indexed, where the index came from, and what it covers. Call ' +
+    'this when an answer looks wrong for the version in use, when a symbol or board that should ' +
+    'exist is missing, or at the start of work on an unfamiliar project. It also detects whether ' +
+    'the project has a west workspace pinned to a different Zephyr version than the index, which ' +
+    'is the common reason advice does not compile.',
   inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   handler: () => {
@@ -157,6 +157,27 @@ export const indexStatus: ToolFactory = (index) => ({
         (indexedCommit ? `\nCommit: \`${indexedCommit}\`` : '') +
         `\nFingerprint: \`${idx.descriptor.contextFingerprint}\`` +
         (meta['built_at'] ? `\nBuilt: ${meta['built_at']}` : ''),
+      // Three hashes that answer three different questions, and rendering only
+      // the first left the other two unusable: the release that started storing
+      // them described a two-machine diagnosis that no tool could carry out.
+      // Fingerprint says which context the index describes. Inputs and content
+      // are what separate "we indexed different things" from "we indexed the
+      // same things and got different answers", and only the second is a bug in
+      // this indexer.
+      section('Reproducibility', [
+        ...(meta['input_hash']
+          ? [
+              `inputs: \`${meta['input_hash']}\` covers the declared inputs. If this differs between two ` +
+                'machines, they read different files, tool versions, or environment. Compare those first.',
+            ]
+          : []),
+        ...(meta['content_hash']
+          ? [
+              `content: \`${meta['content_hash']}\` covers the stored rows. Matching inputs with differing ` +
+                'content means the indexer is not deterministic, not that the source differs.',
+            ]
+          : []),
+      ]),
       section(
         'Indexed rows',
         counts.map(([label, value]) => `${label}: ${value}`),

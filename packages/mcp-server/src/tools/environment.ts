@@ -141,13 +141,13 @@ export const checkEnvironment: ToolFactory = (index) => ({
   name: 'check_environment',
   title: 'Check the build environment',
   description:
-    'Check whether this machine can actually build the indexed Zephyr version, and name the one ' +
-    'command that fixes each gap. Use before the first `west build` in a session, and whenever a ' +
-    'build fails with a missing Python module, a missing toolchain, or a CMake error about ' +
-    'jsonschema, pykwalify, or elftools. It reports every Python interpreter it can see and what ' +
-    'each carries, because the interpreter that satisfies the indexer is often not the one CMake ' +
-    'picks for a build — a west installed in its own environment is the usual cause. Reports ' +
-    'only; it never installs anything.',
+    'Check whether this machine can build the indexed Zephyr version, and give the command that ' +
+    'fixes each gap. Use before the first `west build` in a session, and whenever a build fails ' +
+    'with a missing Python module, a missing toolchain, or a CMake error naming jsonschema, ' +
+    'pykwalify, or elftools. It lists every Python interpreter it can find and which required ' +
+    'packages each one has. The interpreter that satisfies the indexer is often not the one CMake ' +
+    'selects for a build; a west installed in its own environment is the common cause. This tool ' +
+    'only reports. It does not install anything.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -174,11 +174,11 @@ export const checkEnvironment: ToolFactory = (index) => ({
     for (const candidate of interpreterCandidates(process.env)) {
       const role =
         candidate === process.env['PYTHON_EXECUTABLE']
-          ? 'PYTHON_EXECUTABLE — the indexer prefers this'
+          ? 'PYTHON_EXECUTABLE, which the indexer prefers'
           : candidate === westPython
-            ? "west's own interpreter — used by the indexer, not by a build"
+            ? "west's own interpreter, used by the indexer and not by a build"
             : candidate === 'python3'
-              ? 'python3 on PATH — this is what CMake selects for a build'
+              ? 'python3 on PATH, which is what CMake selects for a build'
               : 'fallback on PATH';
       roles.set(candidate, role);
     }

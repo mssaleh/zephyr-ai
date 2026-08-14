@@ -15,13 +15,12 @@
  * about the file's contents. SessionStart already reports a missing or unusable
  * index once per session.
  *
- * A check that finds nothing is otherwise indistinguishable from a check that
- * never ran, both to someone reading a transcript and to a user wondering
- * whether the plugin is alive — and that blindness is exactly what hid an
- * unreachable devicetree branch for a whole release. So a clean file is
- * acknowledged once per file per session, on exit 0, as JSON on stdout:
- * `hookSpecificOutput.additionalContext` reaches the model and `systemMessage`
- * reaches the user, and neither is framed as a blocking error.
+ * A check that finds nothing looks the same as a check that never ran, both in a
+ * transcript and to a user. That ambiguity hid an unreachable devicetree branch
+ * for a whole release. So a clean file is acknowledged once per file per
+ * session, on exit 0, as JSON on stdout: `hookSpecificOutput.additionalContext`
+ * reaches the model and `systemMessage` reaches the user. Neither is a blocking
+ * error.
  */
 import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { basename, join, relative, resolve, sep } from 'node:path';
@@ -36,7 +35,7 @@ import {
   validIndexDescriptor,
 } from './index-paths.mjs';
 
-const EXPECTED_SCHEMA = 9;
+const EXPECTED_SCHEMA = 10;
 const EXPECTED_DESCRIPTOR = 2;
 const MAX_REPORTED = 12;
 
@@ -273,20 +272,37 @@ function valueProblem(type, value) {
  * checked would be worth less than the silence it replaces.
  */
 function acknowledge(sessionId, path, kind, checked, version) {
-  if (checked === 0) return;
+  const total = checked.verified + checked.uncatalogued + checked.undecided;
+  if (total === 0) return;
   if (!firstTimeThisSession(sessionId, `validated:${path}`)) return;
-  const subject = kind === 'kconfig' ? 'Kconfig assignment' : 'devicetree compatible';
+  const subject = kind === 'kconfig' ? 'assignment' : 'compatible';
+  // Three populations, because they are three different claims. Counting them as
+  // one reported "checked 24 assignments, no problems found" about a file where
+  // three of the 24 were not judged, and one of those three failed the build.
+  const parts = [`${checked.verified} verified`];
+  if (checked.uncatalogued > 0) parts.push(`${checked.uncatalogued} outside the catalogue`);
+  if (checked.undecided > 0) parts.push(`${checked.undecided} not judged`);
   const summary =
-    `Zephyr: checked ${checked} ${subject}${checked === 1 ? '' : 's'} in ${basename(path)} ` +
-    `against indexed Zephyr ${version} — no problems found.`;
+    `Zephyr: read ${total} ${subject}${total === 1 ? '' : 's'} in ${basename(path)} against ` +
+    `indexed Zephyr ${version} — ${parts.join(', ')}` +
+    `${checked.verified > 0 ? ', no problems in what could be judged' : ''}.`;
+  const why = [];
+  if (checked.uncatalogued > 0) {
+    why.push(
+      'A name absent from the catalogue is not reported as wrong, because an application may declare ' +
+        'its own Kconfig and bindings through DTS_ROOT and out-of-tree module roots.',
+    );
+  }
+  if (checked.undecided > 0 && checked.reasons.length > 0) {
+    why.push(`Not judged: ${[...new Set(checked.reasons)].join('; ')}.`);
+  }
   process.stdout.write(
     `${JSON.stringify({
       hookSpecificOutput: {
         hookEventName: 'PostToolUse',
         additionalContext:
-          `${summary} Names absent from the catalogue are not reported: an application may ` +
-          'declare its own Kconfig and bindings. Property names are never checked here — ' +
-          'get_binding is the only reliable source for them.',
+          `${summary} ${why.join(' ')} Property names are not checked here. ` +
+          'Use get_binding for those.',
       },
       systemMessage: summary,
     })}\n`,
@@ -336,7 +352,7 @@ async function main() {
   const { db, descriptor, version } = opened;
   const sessionId = payload.session_id;
   const problems = [];
-  let checked = 0;
+  const checked = { verified: 0, uncatalogued: 0, undecided: 0, reasons: [] };
   try {
     if (!looksLikeZephyrProject(file.root, descriptor)) return 0;
     if (kind === 'devicetree') {
@@ -349,7 +365,10 @@ async function main() {
     const prefix = kconfigPrefix(file.path);
     const scope = prefix === 'SB_CONFIG_' ? 'sysbuild' : 'zephyr';
     const parsed = extractConfigs(file.text, prefix);
-    checked = parsed.assignments.length + parsed.malformed.length + parsed.foreign.length;
+    // A malformed line and a wrong-namespace line are both fully decided here,
+    // so they count as verified; only the assignments have a population the
+    // catalogue may be unable to judge.
+    checked.verified = parsed.malformed.length + parsed.foreign.length;
     for (const entry of parsed.malformed) {
       problems.push(`  line ${entry.line}: malformed Kconfig assignment: ${entry.text}`);
     }
@@ -365,40 +384,96 @@ async function main() {
           `${prefix} settings apply. The build ignores it silently.${suggestion}`,
       );
     }
-    // Zephyr's own build refuses an assignment to a promptless symbol, and it
-    // decides promptlessness across *every* definition. This catalogue holds
-    // only the definitions reachable in the context it was built for, so its
-    // view is incomplete in three knowable ways, and each one produced a false
+    // Zephyr's build rejects an assignment to a promptless symbol, and decides
+    // promptlessness across every definition of that symbol. This catalogue
+    // holds only the definitions reachable in the context it was built for, so
+    // its view is incomplete in three known ways, each of which produced a false
     // positive on Zephyr's own samples:
     //   - no type: the declaration itself was never indexed;
-    //   - a definition under modules/: the real declaration lives in a module
-    //     Kconfig that is only present when that module is;
+    //   - a definition in the in-tree glue directory of a module whose own
+    //     Kconfig this index did not read. `modules/lvgl/Kconfig` declares
+    //     LV_USE_LOG without a prompt to mirror the lvgl module, which declares
+    //     it with one, and Zephyr's own samples assign it;
     //   - only Kconfig.defconfig definitions: a defconfig sets a value, it does
     //     not declare the symbol.
     // Where the view is incomplete the check stays quiet, for the same reason a
     // missing symbol is never reported as absent.
+    //
+    // The glue directory is the discriminator, and it comes from the manifest
+    // rather than from the `modules/` prefix. Upstream keeps its own files
+    // there too: `modules/Kconfig.stm32` declares the USE_STM32_HAL_* family,
+    // hal_stm32 ships no Kconfig, and no file outside the tree can give any of
+    // them a prompt. Assigning one fails the build, and a prefix test reported
+    // it as clean.
+    const glue = new Set(
+      db
+        .prepare("SELECT glue_dir FROM west_module WHERE glue_dir <> '' AND kconfig_ingested = 0")
+        .all()
+        .map((row) => String(row.glue_dir)),
+    );
     const stmt = db.prepare(`
       SELECT k.type AS type, k.has_prompt AS has_prompt,
              (SELECT COUNT(*) FROM kconfig_definition d WHERE d.symbol_id = k.id) AS defs,
-             (SELECT COUNT(*) FROM kconfig_definition d WHERE d.symbol_id = k.id
-               AND d.file LIKE 'modules/%') AS module_defs,
+             (SELECT group_concat(DISTINCT d.file) FROM kconfig_definition d
+               WHERE d.symbol_id = k.id) AS files,
              (SELECT COUNT(*) FROM kconfig_definition d WHERE d.symbol_id = k.id
                AND d.file LIKE '%Kconfig.defconfig%') AS defconfig_defs
         FROM kconfig k WHERE k.name = ? AND k.scope = ?`);
+    const mirrored = (files) =>
+      String(files ?? '')
+        .split(',')
+        .some((file) => {
+          const match = /^modules\/([^/]+)\//.exec(file);
+          return match ? glue.has(match[1]) : false;
+        });
     const promptStatusIsKnown = (row) =>
-      row.type !== null && Number(row.defs) > 0 && Number(row.module_defs) === 0 &&
+      row.type !== null && Number(row.defs) > 0 && !mirrored(row.files) &&
       Number(row.defconfig_defs) < Number(row.defs);
+    const isDefconfig = file.path.endsWith('_defconfig');
     for (const entry of parsed.assignments) {
       const row = stmt.get(entry.name, scope);
       // A miss is not evidence of absence: generated, application-local, and
       // out-of-tree module symbols are outside this catalogue by construction.
-      if (!row) continue;
-      if (!file.path.endsWith('_defconfig') && Number(row.has_prompt) === 0 && promptStatusIsKnown(row)) {
+      if (!row) {
+        checked.uncatalogued++;
+        continue;
+      }
+      if (!isDefconfig && Number(row.has_prompt) === 0 && promptStatusIsKnown(row)) {
+        // Naming the symbols that select it gives the reader an edit to make,
+        // rather than a symbol they have to go and find.
+        const selectors = db
+          .prepare(
+            'SELECT DISTINCT from_sym FROM kconfig_edge WHERE to_sym = ? AND kind = ? AND scope = ? ORDER BY from_sym LIMIT 4',
+          )
+          .all(entry.name, 'select', scope)
+          .map((edge) => `${prefix}${edge.from_sym}`);
         problems.push(
-          `  line ${entry.line}: ${prefix}${entry.name} has no prompt and cannot be assigned from an application configuration. Enable the symbol that selects it instead.`,
+          `  line ${entry.line}: ${prefix}${entry.name} has no prompt and cannot be assigned from an ` +
+            'application configuration; Zephyr rejects the build outright. ' +
+            (selectors.length > 0
+              ? `Enable one of the symbols that selects it — ${selectors.join(', ')} — instead.`
+              : 'Enable whatever selects it instead, or declare an application symbol that selects it.'),
         );
         continue;
       }
+      // The value check needs a type and the prompt check needs every
+      // declaration. Where either is missing, the line was read but not judged.
+      // Report that rather than counting it as checked.
+      if (row.type === null) {
+        checked.undecided++;
+        checked.reasons.push('the declaration is not in this index, so neither type nor prompt could be checked');
+        continue;
+      }
+      if (!isDefconfig && Number(row.has_prompt) === 0 && !promptStatusIsKnown(row)) {
+        checked.undecided++;
+        checked.reasons.push(
+          mirrored(row.files)
+            ? 'a module this index did not read also declares the symbol, so its prompt status is undecided'
+            : 'every indexed definition is a Kconfig.defconfig, which sets a value rather than declaring the symbol',
+        );
+        continue;
+      }
+      checked.verified++;
       const mismatch = valueProblem(String(row.type ?? ''), entry.value);
       if (mismatch) problems.push(`  line ${entry.line}: ${prefix}${entry.name} ${mismatch}.`);
     }
@@ -476,8 +551,9 @@ function nearestCompatible(value, candidates) {
  * skips symbols it cannot see.
  */
 function validateDevicetree(db, file) {
+  const empty = { verified: 0, uncatalogued: 0, undecided: 0, reasons: [] };
   const nodes = extractCompatibles(file.text);
-  if (nodes.length === 0) return { code: 0, checked: 0 };
+  if (nodes.length === 0) return { code: 0, checked: empty };
 
   const local = localCompatibles(file.root);
   const exact = db.prepare('SELECT 1 FROM dt_binding WHERE compatible = ?');
@@ -486,7 +562,7 @@ function validateDevicetree(db, file) {
   const resolves = (value) => local.has(value) || exact.get(value) !== undefined;
 
   const problems = [];
-  let checked = 0;
+  const checked = { verified: 0, uncatalogued: 0, undecided: 0, reasons: [] };
   for (const node of nodes) {
     // A node binds through the FIRST of its compatibles that has a binding, so a
     // fallback list is correct as long as one entry resolves. Upstream ships
@@ -496,11 +572,14 @@ function validateDevicetree(db, file) {
     // — a false positive on Zephyr's own sample, and a validator that cries wolf
     // gets ignored along with everything else this plugin says.
     if (node.values.some(resolves)) {
-      checked += node.values.length;
+      checked.verified += node.values.length;
       continue;
     }
     for (const value of node.values) {
-      checked++;
+      // Nothing here resolved, so the node is outside the catalogue. That is not
+      // a finding, because an application may declare its own bindings, but it
+      // is also not a check that passed.
+      checked.uncatalogued++;
       catalogue ??= db.prepare('SELECT compatible FROM dt_binding').all().map((row) => row.compatible);
       const near = nearestCompatible(value, catalogue);
       if (!near) continue;

@@ -120,7 +120,7 @@ function renderRunner(idx: Index, name: string): BatchEntry {
         (where.debugDefaultFor > 0 ? `, the debug default for ${where.debugDefaultFor}` : '') +
         `.\nFor example: ${boundedList(where.examples, 6)}`
       : '**No board in this tree registers this runner.**',
-    `_Implementation: \`${String(row['module'])}\` — read it with get_source._`,
+    `_Implementation: \`${String(row['module'])}\`. Read it with get_source._`,
   ]);
 
   return {
@@ -142,11 +142,11 @@ export const getRunner: ToolFactory = (index) => ({
   name: 'get_runner',
   title: 'Get a west runner',
   description:
-    'Get what a Zephyr flash/debug runner actually supports in this Zephyr version: which west ' +
-    'commands it implements, which options it accepts, and which boards select it. Use before ' +
-    'passing `west flash -r <runner>` or an option like `--dev-id`, `--erase`, or `--reset-type`: ' +
-    'runners differ in what they accept and west rejects an unsupported option outright. ' +
-    'Capabilities are read from the runner classes in the indexed tree, not from a fixed list. ' +
+    'Get what a Zephyr flash or debug runner supports in this Zephyr version: which west commands ' +
+    'it implements, which options it accepts, and which boards select it. Use it before passing ' +
+    '`west flash -r <runner>` or an option such as `--dev-id`, `--erase`, or `--reset-type`. ' +
+    'Runners accept different options, and west rejects one the runner does not declare. ' +
+    'Capabilities come from the runner classes in the indexed tree, not from a fixed list. ' +
     'Accepts one name or a list.',
   inputSchema: {
     type: 'object',

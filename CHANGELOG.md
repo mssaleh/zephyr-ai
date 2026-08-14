@@ -3,6 +3,143 @@
 All notable user-visible changes are recorded here. The format follows Keep a
 Changelog, and releases use semantic versioning.
 
+## [0.8.0] - 2026-08-14
+
+Rebuild the index with the `zephyr-index` skill after upgrading; the schema moves
+to 10 and the server and hooks refuse an older one.
+
+### Fixed
+
+- **The write validator gave a clean bill to a `prj.conf` that cannot build.**
+  `CONFIG_USE_STM32_HAL_DTS=y` is rejected outright by Zephyr's
+  `check_no_promptless_assign`, and `validate-zephyr-edit` reported "checked 24
+  Kconfig assignments … no problems found". A guard suppressed the promptless
+  check for any symbol with a definition under `modules/`, on the reasoning that
+  such a declaration ships with an absent module. `modules/` holds two unrelated
+  kinds of file and the guard could not tell them apart: `modules/Kconfig.stm32`
+  is upstream's own file, it declares the whole `USE_STM32_HAL_*` family, and no
+  module redeclares any of it — while `modules/lvgl/Kconfig` mirrors symbols the
+  lvgl module itself declares *with* prompts. Measured on the catalogue index, the
+  guard silenced 745 symbols to avoid 16 real false positives, all of them LVGL.
+  The index now records each module's in-tree glue directory and whether its own
+  Kconfig was read, so the two cases are separated by the manifest rather than by
+  a path prefix: 729 symbols become reportable, the 16 stay suppressed, and both
+  `check_config` and the write hook make the corrected claim.
+- **The build-failure hook did not recognise Zephyr's promptless error.** The same
+  mistake, missed a second time after the build, and answered with generic CMake
+  advice while the correct Kconfig advice sat unused in the same table. The
+  patterns were written from paraphrase and could not cross a line break;
+  Zephyr's `err()` puts the message through `textwrap.fill(…, 100)`, so the source
+  line breaks are discarded and the text is re-wrapped at column 100 — the break
+  falls in a different place for every symbol, because the symbol's name and
+  location are inside the wrapped text. Classification is now driven by a corpus
+  of real Zephyr output in `test/fixtures/build-failures/`, one file per class,
+  with the routing asserted for each. Missing-binding and region-overflow became
+  their own classes, because the advice that helps differs from the neighbours
+  they were folded into.
+- **"No problems found" claimed more than the check knew.** Lines the validator
+  skipped were counted as lines it had checked. It now reports three populations —
+  verified, outside the catalogue, and not judged with the reason — so the
+  reassurance is as narrow as the check.
+- **SessionStart was silent in a first-day firmware project.** It spoke only when
+  the project root held nothing but dot-entries, so a single `docs/` folder of
+  board manuals silenced it. The predicate is now "holds nothing that identifies
+  it as another kind of project"; documentation, `.git`, and editor state do not
+  disqualify.
+
+### Added
+
+- **`get_source` reads module trees.** A third of the grounding lookups in the
+  evaluation that produced this release went to `modules/hal/stm32/stm32cube/**` —
+  CMSIS headers and HAL sources the index could not see at any activation rate.
+  Module files are now readable by their workspace-relative path at the revision
+  the manifest pins, with the module and revision named in the answer. This is not
+  an STM32 quirk: "does this driver work on my silicon" is answered in the vendor
+  HAL for every vendor Zephyr supports.
+- **Bindings report where upstream instantiates them.** `get_binding` and
+  `search_bindings` now say which boards and SoC series actually use a compatible,
+  from a new corpus of every `compatible` in the tree's devicetree sources. This is
+  the answer to the study's most expensive discovery: `st,stm32-digi-temp` is the
+  name of the peripheral an STM32N657 has, written for a different IP block, and a
+  node using it compiles and does nothing. Establishing that took roughly a dozen
+  shell calls; it is now one, and it reports H5 and H7 devicetree and no N6.
+- **Kconfig symbols scoped to an SoC series are indexed.** Zephyr sources a
+  series' Kconfig only once that series is selected, so a catalogue could not
+  resolve `STM32N6_BOOT_SERIAL` — the symbol every `stm32cubeprogrammer` argument
+  on that board is guarded on, and one `get_board` cites by name. These are now
+  carried as declaration-level records with their type, prompt and location, in
+  their own table, labelled as parsed rather than evaluated.
+- **A resolved build can be ingested.** `--build-dir` now reads
+  `build/zephyr/.config` and `build/zephyr/zephyr.dts` into their own tables rather
+  than only recording build identity. `get_kconfig` reports what a symbol actually
+  came out as beside what the tree says it is, which is where "I set it and it did
+  not take" lives. An explicitly unset symbol is stored as a resolved value, not
+  as an absence.
+- **`index_status` renders `input_hash` and `content_hash`.** 0.7.0 stored both and
+  described a two-machine diagnosis built on the pair; neither was reachable
+  through any tool, so the procedure could not be carried out.
+- **`get_board` renders the filenames each qualified target picks up.** A board
+  overlay whose name does not match the qualified target is skipped in silence and
+  fails much later as an undefined devicetree symbol, which reads as a mistake in
+  the C. The exact `overlay:` and `conf:` names are now listed per target.
+- **A `hardware-bringup` agent**, carrying the method the evaluated session
+  actually used: read the failure signature before the register map, divide the
+  clock before the archaeology, read the code behind an alarming message, prefer
+  the hypothesis with the cheapest disproof, and buy observability when each cycle
+  costs a physical action.
+- **A `zephyr-hardware-iteration` skill** for work where every test cycle costs a
+  jumper, a power cycle, or a trip to a lab. Its first rule is the one that pays
+  most: before adapting to a slow loop, check whether a faster one exists.
+  `get_board` and `get_runner` already enumerate every runner a board declares,
+  and they differ in whether they program flash, load through the probe, or use a
+  separate boot path — an alternate loop sitting unused in the board's own files
+  can mean every cycle of a project is paid at many times its necessary price.
+  `get_board` now says so where a board declares more than one option.
+- **The promptless finding names the symbols that select it.** "Enable whatever
+  selects it" is advice; `CONFIG_A`, `CONFIG_B` is an edit. Where nothing in the
+  catalogue selects the symbol, the message says to declare an application symbol
+  that does.
+
+### Changed
+
+- **`get_board` links boards by silicon, not only by name.** The confusable-boards
+  feature worked on the pair it was designed for and did not link
+  `nucleo_n657x0_q` with `stm32n6570_dk`, which share the `stm32n657xx` SoC, share
+  no near-miss name token, and differ on the external flash part, the `--extload`
+  file, the download address, and the declared RAM. SoC identity is now a second
+  predicate and the answer says which relation fired.
+- **Twister metadata is labelled as such.** `get_board` reported "1024 KB flash,
+  1024 KB RAM" for a board whose application gets 511 KB of SRAM and no internal
+  flash at all. The figures are correct as Twister metadata and were being read as
+  a memory budget; where a target's `_defconfig` sets `CONFIG_XIP=n`, the answer
+  now says the image is not executed from an internal flash that figure could be
+  describing, and points at the devicetree partitions for the real limit.
+- **A `get_kconfig` miss names its own context and remedy.** A miss whose leading
+  token matches an indexed SoC series or board now says where a symbol of that
+  name would be declared and how to reach it, instead of only that no close
+  spelling was found.
+- **`ZEPHYR_AI_INDEX` is named as the override.** `ZEPHYR_AI_PROJECT_ROOT` is set
+  from `${CLAUDE_PROJECT_DIR}`, which the CLI always overwrites with the session's
+  working directory, so exporting it before launching a session has no effect and
+  no index resolves. An evaluation run was voided by exactly this. The no-index
+  message and SessionStart now say so.
+- **`build-triage` no longer claims the easy failures.** Its trigger is narrowed to
+  failures that are genuinely non-local — a build that differs between pristine and
+  incremental, an error naming a file the developer did not write, a failure that
+  survived the obvious fix — and it is told to decline a one-line fix rather than
+  perform an investigation the caller does not need.
+- Skills gained the behavioural findings: verify the register contract rather than
+  the family name; the polled-succeeds/reply-fails signature and dividing the clock
+  before register archaeology; a green build is not a runnable artifact; time and
+  ordering as the bug class that actually bites; watchdog details that turn a
+  safety net into a brick; lossy early-boot output and competing serial readers;
+  boards whose debug port depends on strap state; and confirming a file was
+  consumed rather than inferring it from the absence of a complaint.
+- `zephyr-prerequisites` gained explicit trigger language for before the first
+  build in a new workspace, and `zephyr-index` hands off to it once an index
+  completes — indexing succeeding while building fails is the split that skill
+  exists for.
+
 ## [0.7.0] - 2026-08-13
 
 Rebuild the index with the `zephyr-index` skill after upgrading. The schema is

@@ -4,7 +4,7 @@ description: Test Zephyr firmware with ztest and twister. Use when writing unit 
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.7.0"
+  version: "0.8.0"
 ---
 
 # Testing
@@ -13,7 +13,18 @@ metadata:
 
 Most firmware logic can be tested without hardware. `native_sim` compiles the
 application for the host, so tests run in milliseconds, under a debugger, and in
-CI without a board attached. Reserve hardware runs for what genuinely needs it.
+CI without a board attached. Use hardware runs only for what requires hardware.
+
+Upstream's own tests are indexed and are a usable template:
+
+- `search_samples` with `kind: "test"` finds a Twister suite covering the
+  subsystem you are testing. Read its `testcase.yaml` and sources.
+- `get_sample` returns the file list, the platforms it declares, and the harness
+  it uses, so a new suite follows a structure upstream runs.
+- `search_boards` shows which targets support the peripheral under test, before
+  you write a `platform_allow` that matches nothing.
+- `search_kconfig` finds the test-only symbols a suite needs. Names change
+  between releases.
 
 ## A ztest suite
 
@@ -78,8 +89,8 @@ ZTEST_F(my_feature, test_accumulates)
 
 Useful assertions: `zassert_ok` (expects 0, the Zephyr success convention),
 `zassert_equal`, `zassert_true`, `zassert_not_null`, `zassert_mem_equal`,
-`zassert_within` for floating point. Every one takes an optional message —
-write it, because a bare assertion failure in CI tells you nothing.
+`zassert_within` for floating point. Each takes an optional message. Write one:
+an assertion failure in CI without a message is hard to interpret.
 
 ## testcase.yaml
 
@@ -105,8 +116,8 @@ tests:
         - "PROJECT EXECUTION SUCCESSFUL"
 ```
 
-`integration_platforms` is the subset run in a quick CI pass; `platform_allow`
-restricts what twister will attempt at all.
+`integration_platforms` is the subset run in a quick CI pass. `platform_allow`
+restricts which platforms twister will attempt.
 
 ## Running with twister
 
@@ -120,9 +131,9 @@ west twister -T tests -p nucleo_h743zi --device-testing \
 west twister -T tests --coverage -p native_sim
 ```
 
-Results land in `twister-out/`, with per-test build directories and logs. Read
-`twister-out/twister.log` for the actual failure; the summary table only says
-which test failed.
+Results are written to `twister-out/`, with per-test build directories and logs.
+Read `twister-out/twister.log` for the failure. The summary table gives only the
+name of the failing test.
 
 ## Testing code that touches hardware
 
@@ -153,15 +164,15 @@ ZTEST(my_feature, test_handles_fetch_failure)
 
 ## What is worth testing
 
-Prioritise the things that fail in the field and cannot be caught by inspection:
+Prioritise what fails in the field and cannot be found by reading the code:
 
 - Protocol encoders and decoders, against known-good byte sequences
 - State machines, including every error and timeout transition
 - Boundary conditions on anything that indexes a buffer
-- Error paths — deliberately fail each driver call and assert recovery
+- Error paths: make each driver call fail and assert the recovery
 - Persistence and settings across a simulated reboot
 
-Do not write tests that assert a peripheral register was written; that tests the
+Do not write tests that assert a peripheral register was written. That tests the
 mock. Test the behaviour the register produces.
 
 ## CI
@@ -171,5 +182,5 @@ mock. Test the behaviour the register produces.
 - run: west twister -T tests -p native_sim --coverage --coverage-tool gcovr
 ```
 
-`--inline-logs` puts failure output directly in the CI log, which saves
-downloading artefacts to find a one-line assertion message.
+`--inline-logs` puts failure output in the CI log, so you do not have to download
+artefacts to read a one-line assertion message.

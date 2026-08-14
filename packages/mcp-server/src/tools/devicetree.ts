@@ -172,7 +172,8 @@ export const searchBindings: ToolFactory = (index) => ({
       params.push(bus, bus);
     }
 
-    const rows = index().search(
+    const idx = index();
+    const rows = idx.search(
       `SELECT b.compatible, b.description, b.bus, b.on_bus, b.n_props, b.path
          FROM dt_fts f JOIN dt_binding b ON b.id = f.rowid
         WHERE dt_fts MATCH ? ${filters.join(' ')}
@@ -192,21 +193,81 @@ export const searchBindings: ToolFactory = (index) => ({
       );
     }
 
-    const results = rows.map((r) => ({
-      compatible: String(r['compatible']),
-      description: snippet(String(r['description'] ?? '').replace(/\n+/g, ' '), 200),
-      bus: (r['bus'] as string) ?? null,
-      onBus: (r['on_bus'] as string) ?? null,
-      propertyCount: Number(r['n_props']),
-      path: String(r['path']),
-    }));
+    // Where each candidate is used, in one query rather than one per row. This
+    // is the column that separates "a driver named after my peripheral" from "a
+    // driver written for my peripheral", and picking the wrong one costs a build
+    // that compiles and a device that does nothing.
+    const usage = new Map<string, { boards: number; files: number; dirs: string[] }>();
+    try {
+      for (const row of idx.all(
+        `SELECT compatible,
+                COUNT(DISTINCT NULLIF(board, '')) AS boards,
+                COUNT(DISTINCT file) AS files
+           FROM dt_instance
+          WHERE compatible IN (${rows.map(() => '?').join(',')})
+          GROUP BY compatible`,
+        ...rows.map((r) => String(r['compatible'])),
+      )) {
+        // SQLite has no dirname, so the directories come from the file paths in
+        // JS rather than from a substr expression that would break on depth.
+        const files = idx.all(
+          "SELECT DISTINCT file FROM dt_instance WHERE compatible = ? AND board = '' LIMIT 200",
+          String(row['compatible']),
+        );
+        const dirs = [
+          ...new Set(
+            files
+              .map((f) => String(f['file']))
+              .map((file) => (file.lastIndexOf('/') < 0 ? '' : file.slice(0, file.lastIndexOf('/'))))
+              .filter(Boolean),
+          ),
+        ].sort();
+        usage.set(String(row['compatible']), {
+          boards: Number(row['boards'] ?? 0),
+          files: Number(row['files'] ?? 0),
+          dirs,
+        });
+      }
+    } catch {
+      // An index predating the instance table adds no usage column.
+    }
+
+    const results = rows.map((r) => {
+      const compatible = String(r['compatible']);
+      const used = usage.get(compatible);
+      return {
+        compatible,
+        description: snippet(String(r['description'] ?? '').replace(/\n+/g, ' '), 200),
+        bus: (r['bus'] as string) ?? null,
+        onBus: (r['on_bus'] as string) ?? null,
+        propertyCount: Number(r['n_props']),
+        path: String(r['path']),
+        boardsUsing: used?.boards ?? 0,
+        filesUsing: used?.files ?? 0,
+        socDirectories: used?.dirs ?? [],
+      };
+    });
 
     const text = results
       .map((r) => {
         const tags = [r.bus ? `bus: ${r.bus}` : '', r.onBus ? `on-bus: ${r.onBus}` : '']
           .filter(Boolean)
           .join(', ');
-        return `### \`${r.compatible}\`${tags ? `  (${tags})` : ''}\n${r.description || '_no description_'}\n_${r.propertyCount} properties — ${r.path}_`;
+        // The directories of the SoC devicetree that names it are the silicon
+        // signal and are comparable across vendors. The board count is not: a
+        // board normally enables an SoC peripheral by label without repeating
+        // the compatible, so it measures devicetree style rather than use.
+        const where =
+          r.socDirectories.length > 0
+            ? `named under ${r.socDirectories.slice(0, 3).join(', ')}` +
+              `${r.socDirectories.length > 3 ? ` +${r.socDirectories.length - 3} more` : ''}` +
+              `${r.boardsUsing > 0 ? `, and in ${r.boardsUsing} board file(s)` : ''}`
+            : r.boardsUsing > 0
+              ? `named in ${r.boardsUsing} board file(s)`
+              : r.filesUsing > 0
+                ? `named in ${r.filesUsing} devicetree file(s)`
+                : 'not named in any devicetree here';
+        return `### \`${r.compatible}\`${tags ? `  (${tags})` : ''}\n${r.description || '_no description_'}\n_${r.propertyCount} properties · ${where} — ${r.path}_`;
       })
       .join('\n\n');
 
@@ -270,6 +331,96 @@ function bindingMissText(idx: Index, compatible: string): string {
  * table stays behind the singular form — one compatible can accept forty
  * properties, so fifty of them is not an answer anyone can read.
  */
+/**
+ * Where upstream actually instantiates a compatible, and on what silicon.
+ *
+ * A binding says a driver exists and describes what it accepts. It cannot say
+ * whether the driver fits your part, and the gap is not academic: vendors reuse
+ * peripheral *names* across incompatible register layouts far more often than
+ * they reuse implementations. `st,stm32-digi-temp` is the name of the peripheral
+ * an STM32N657 has, written against registers that part does not implement — a
+ * node using it compiles, links, and silently does nothing, and `get_binding`
+ * describes it accurately the whole way.
+ *
+ * Nothing proves incompatibility from the tree alone. What the tree does support
+ * is the strongest signal available: "used by 6 boards, all stm32f4x/stm32l4x,
+ * none on stm32n6x". Establishing that by hand meant grepping the SoC's CMSIS
+ * header for the driver's register macros — about a dozen shell calls, and the
+ * most expensive discovery of the study that produced this release.
+ */
+function instantiationNote(idx: Index, compatible: string): { text?: string; structured: Record<string, unknown> } {
+  let rows: Record<string, unknown>[];
+  try {
+    rows = idx.all('SELECT file, board FROM dt_instance WHERE compatible = ? ORDER BY file', compatible);
+  } catch {
+    // An index predating the instance table simply has nothing to add.
+    return { structured: {} };
+  }
+  if (rows.length === 0) {
+    return {
+      text:
+        '**No devicetree in this tree uses this compatible.** There is no upstream example of it in ' +
+        'use and no indication of which silicon it targets. Out-of-tree boards may still use it, so ' +
+        'this is not proof it is wrong. Read the driver before adopting it.',
+      structured: { usedIn: { files: 0, socDirectories: [], boards: [] } },
+    };
+  }
+
+  const boards = [...new Set(rows.map((row) => String(row['board'])).filter(Boolean))].sort();
+  // The directory a shared devicetree file sits in is the silicon grouping, and
+  // it is exact. Deriving an SoC series from the boards instead is not
+  // comparable across vendors, for the reason given in the closing note.
+  const socDirectories = [
+    ...new Set(
+      rows
+        .filter((row) => !row['board'])
+        .map((row) => {
+          const file = String(row['file']);
+          const cut = file.lastIndexOf('/');
+          return cut < 0 ? '' : file.slice(0, cut);
+        })
+        .filter(Boolean),
+    ),
+  ].sort();
+
+  const parts: string[] = [];
+  if (socDirectories.length > 0) {
+    parts.push(
+      '**Named in SoC and shared devicetree under**: ' +
+        `${socDirectories.slice(0, 8).map((dir) => `\`${dir}\``).join(', ')}` +
+        `${socDirectories.length > 8 ? `, and ${socDirectories.length - 8} more` : ''}. ` +
+        'These directories indicate the silicon the driver targets. If your part is not among them, ' +
+        'treat the driver as unverified on your part.',
+    );
+  }
+  if (boards.length > 0) {
+    parts.push(
+      `**Declared directly in ${boards.length} board file${boards.length === 1 ? '' : 's'}**: ` +
+        `${boards.slice(0, 8).map((name) => `\`${name}\``).join(', ')}` +
+        `${boards.length > 8 ? `, and ${boards.length - 8} more` : ''}.`,
+    );
+  }
+  // Without this, a zero board count reads as "nothing uses it", which for most
+  // SoC peripherals is the opposite of the truth: a board enables one by
+  // referencing its label (`&usart3 { status = "okay"; }`) and never repeats the
+  // compatible. The count therefore tracks how a vendor writes devicetree rather
+  // than how widely the driver is used, and only the directories above are
+  // comparable between vendors.
+  parts.push(
+    '_A board normally enables an SoC peripheral by referencing its label, not by repeating the ' +
+      'compatible, so a low board count does not mean the driver is unused. Use the devicetree ' +
+      'directories instead. Where a driver is used indicates what it was written for; it does not ' +
+      'guarantee compatibility. If your part is not covered, read the driver with get_source, note ' +
+      'the registers it uses, and check they exist in your SoC vendor header, which get_source also ' +
+      'reads from the HAL module._',
+  );
+
+  return {
+    text: parts.join('\n\n'),
+    structured: { usedIn: { files: rows.length, socDirectories, boards } },
+  };
+}
+
 function bindingSummary(idx: Index, requested: string): BatchEntry {
   const compatible = requested.replace(/^["']|["']$/g, '');
   const variants = bindingVariants(idx, compatible);
@@ -290,6 +441,7 @@ function bindingSummary(idx: Index, requested: string): BatchEntry {
   const required = own.filter((p) => Number(p['required']) === 1).map((p) => String(p['name']));
   const optionalCount = own.length - required.length;
   const includes = json<string[]>(binding['includes'], []);
+  const usage = instantiationNote(idx, compatible);
 
   return {
     key: compatible,
@@ -303,6 +455,7 @@ function bindingSummary(idx: Index, requested: string): BatchEntry {
       required.length > 0
         ? `**Required properties** (${required.length}): ${required.map((n) => `\`${n}\``).join(', ')}`
         : '**Required properties**: none beyond the universal ones.',
+      usage.text,
       variantNote(variants, compatible),
       `_${optionalCount} optional propert${optionalCount === 1 ? 'y' : 'ies'} and the full flattened ` +
         `set are behind a single-compatible get_binding call. Binding file: \`${String(binding['path'])}\`._`,
@@ -318,6 +471,7 @@ function bindingSummary(idx: Index, requested: string): BatchEntry {
       required,
       optionalCount,
       includes,
+      ...usage.structured,
     },
   };
 }
@@ -328,15 +482,17 @@ export const getBinding: ToolFactory = (index) => ({
   description:
     'Get the complete, flattened property set a devicetree compatible accepts, with each ' +
     "property's type, whether it is required, its allowed values, and which binding file it is " +
-    'inherited from. Use this before writing or editing any devicetree node or overlay. This is ' +
-    'the only reliable source: Zephyr bindings inherit most of their properties through include: ' +
-    'chains, so a binding file usually lists almost nothing itself — st,stm32-spi declares zero ' +
-    'properties in its own file but accepts forty. Pass "compatibles" to check several at once ' +
-    'before writing an overlay; that returns each one\'s bus, required properties and include ' +
-    'chain, and the full property set stays behind a single-compatible call. A device reachable ' +
-    'over more than one bus has one binding per bus and they require different properties — a ' +
-    'SPI node needs spi-max-frequency and an I2C one does not — so pass "on_bus" for the bus the ' +
-    'node actually sits on.',
+    'inherited from. Also reports which SoC and board devicetree files name the compatible, which ' +
+    'indicates what silicon the driver was written for. Vendors reuse peripheral names across ' +
+    'incompatible register layouts, and a node using the wrong one compiles and does nothing. ' +
+    'Use this before writing or editing any devicetree node or overlay. Zephyr bindings inherit ' +
+    'most of their properties through include: chains, so the binding file itself usually lists ' +
+    'few of them: st,stm32-spi declares no properties in its own file and accepts about forty. ' +
+    'Pass "compatibles" to check several at once, which returns each one\'s bus, required ' +
+    'properties and include chain; the full property set requires a single-compatible call. A ' +
+    'device reachable over more than one bus has one binding per bus, and they require different ' +
+    'properties: a SPI node needs spi-max-frequency and an I2C node does not. Pass "on_bus" for ' +
+    'the bus the node sits on.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -455,7 +611,7 @@ export const getBinding: ToolFactory = (index) => ({
       includes.length > 0
         ? `_Inherits from: ${includes.map((i) => `\`${i}\``).join(', ')}_`
         : undefined,
-      `_Binding file: \`${String(binding['path'])}\`${includeCommon ? '' : ` — ${all.length - visible.length} universal properties hidden; pass include_common: true to see them_`}_`,
+      `_Binding file: \`${String(binding['path'])}\`${includeCommon ? '' : `. ${all.length - visible.length} universal properties hidden; pass include_common: true to see them_`}_`,
     ]);
 
     return result(text, {

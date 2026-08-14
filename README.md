@@ -100,10 +100,11 @@ their metadata identifies a release-gated example.
 | Kernel behavior | `zephyr-rtos-patterns`, `zephyr-power` | Concurrency, timing, ISR boundaries, synchronization, and Zephyr power workflows |
 | Connectivity | `zephyr-bluetooth`, `zephyr-networking` | Zephyr Bluetooth and networking configuration/API workflows |
 | Build confidence | `zephyr-build-flash`, `zephyr-debugging`, `zephyr-testing` | Build/flash/debug diagnosis and ztest/Twister workflows |
+| Hardware bring-up | `zephyr-hardware-iteration` | Working efficiently when each test cycle needs a manual step on the board |
 | Vendor platforms | `stm32-platform`, `esp32-platform` | Zephyr-native STM32 and ESP32 board/SoC workflows; no STM32Cube or ESP-IDF claim |
 
-The bundled agents are `zephyr-architect`, `build-triage`,
-`devicetree-specialist`, and `firmware-reviewer`. Read-only agents deny Bash and inherit
+The bundled agents are `zephyr-architect`, `build-triage`, `devicetree-specialist`,
+`firmware-reviewer`, and `hardware-bringup`. Read-only agents deny Bash and inherit
 the user's model selection.
 
 ### Hooks

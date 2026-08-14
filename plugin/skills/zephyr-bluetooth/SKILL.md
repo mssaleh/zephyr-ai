@@ -4,7 +4,7 @@ description: Build Bluetooth Low Energy firmware on Zephyr. Use when implementin
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.7.0"
+  version: "0.8.0"
 ---
 
 # Bluetooth LE
@@ -104,7 +104,7 @@ int main(void)
 ```
 
 Advertising data is limited to 31 bytes in a legacy packet. A long device name
-plus a 128-bit UUID does not fit — move the name to the scan response, or shorten
+plus a 128-bit UUID does not fit. Move the name to the scan response, or shorten
 it. `bt_le_adv_start` returning `-EINVAL` is usually this.
 
 ## A GATT service
@@ -139,7 +139,7 @@ BT_GATT_SERVICE_DEFINE(my_svc,
 ```
 
 Every notifiable characteristic needs a `BT_GATT_CCC` descriptor immediately after
-it — that is where the client subscribes. Notify only when subscribed:
+it. That is where the client subscribes. Notify only when subscribed:
 
 ```c
 if (notify_enabled) {
@@ -205,7 +205,7 @@ if (rc) {
 ```
 
 Guard sensitive characteristics with `BT_GATT_PERM_READ_ENCRYPT` or
-`_AUTHEN` rather than checking security in the callback — the permission is
+`_AUTHEN` rather than checking security in the callback. The permission is
 enforced by the stack and cannot be forgotten.
 
 ## Debugging
@@ -221,5 +221,5 @@ is remote user termination, `0x3e` is failure to establish. Guessing between the
 from firmware logs alone wastes time a capture resolves in seconds.
 
 Start from a working sample: `search_samples` with "bluetooth peripheral" and read
-its `prj.conf` with `get_sample` — the buffer and stack sizing in those samples is
+its `prj.conf` with `get_sample`. The buffer and stack sizing in those samples is
 tuned and hard to derive.

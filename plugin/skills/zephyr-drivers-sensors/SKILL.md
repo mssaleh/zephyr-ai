@@ -4,7 +4,7 @@ description: Use and write Zephyr device drivers. Use when reading sensors, driv
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.7.0"
+  version: "0.8.0"
 ---
 
 # Drivers and sensors
@@ -30,8 +30,8 @@ never ran. The usual causes, in order of likelihood: the node is not
 `status = "okay"`; its bus controller is disabled; the `CONFIG_` for the driver is
 off; the device did not respond on the bus.
 
-Initialisation runs in levels — `EARLY`, `PRE_KERNEL_1`, `PRE_KERNEL_2`, `POST_KERNEL`,
-`APPLICATION` — and within a level by priority number. A driver that depends on
+Initialisation runs in levels (`EARLY`, `PRE_KERNEL_1`, `PRE_KERNEL_2`,
+`POST_KERNEL`, `APPLICATION`) and within a level by priority number. A driver that depends on
 another must initialise later. Getting this wrong is the classic cause of a device
 that works when probed by hand but fails at boot.
 
@@ -39,7 +39,7 @@ that works when probed by hand but fails at boot.
 
 Zephyr has two sensor APIs and they are easy to confuse.
 
-**Fetch-and-get** — stable, synchronous, everywhere:
+**Fetch-and-get**: stable, synchronous, available everywhere:
 
 ```c
 #include <zephyr/drivers/sensor.h>
@@ -63,7 +63,7 @@ double celsius = sensor_value_to_double(&temp);
 `sensor_sample_fetch()` blocks for the bus transaction. Do not call it from an
 ISR; sample on a thread or a workqueue.
 
-**Read-and-decode** — the newer RTIO-based path, non-blocking and higher
+**Read-and-decode**: the newer RTIO-based path, non-blocking and higher
 throughput, used for streaming and high-rate sensors. It is stabilising and is
 expected to replace fetch-and-get. Check with `search_docs` for the current shape
 before using it, since it has moved between releases.
@@ -73,7 +73,7 @@ Triggers replace polling where the hardware supports them:
 ```c
 static void trigger_handler(const struct device *dev, const struct sensor_trigger *trig)
 {
-        /* Runs in ISR or a dedicated thread depending on the driver —
+        /* Runs in an ISR or a dedicated thread depending on the driver.
            treat it as ISR context and defer real work. */
         k_work_submit(&sample_work);
 }
@@ -202,4 +202,33 @@ CONFIG_SENSOR_SHELL=y      # `sensor get <device>` without writing code
 ```
 
 `i2c scan` answering with no devices is a wiring, address, or pull-up problem, not
-a software one — establish that before reading driver code.
+a software one. Establish that before reading driver code.
+
+## Before adopting an in-tree driver on new silicon
+
+A driver existing in the tree does not mean it fits your part. Vendors reuse
+peripheral names across incompatible register layouts more often than they reuse
+the layouts. A driver written for the temperature sensor on one member of a
+family can address registers that do not exist on the next one. The result is a
+node that compiles, links, initialises, and returns nothing useful. There is no
+build error, because no stage of the build compares the driver against your
+silicon.
+
+This is most likely in the case that looks safest: same vendor, same family, same
+peripheral name, newer part.
+
+Run two checks before using a driver on a part you have not used it on:
+
+1. **Where does upstream use it?** `search_bindings` and `get_binding` report the
+   SoC and board devicetree that name the compatible. If your part is not among
+   them, treat the driver as unverified on your part.
+2. **Do the registers it uses exist on your part?** Read the driver with
+   `get_source`, list the register and macro names it depends on, and look for
+   them in your SoC vendor header. `get_source` reads module trees, so the CMSIS
+   or HAL header is one call away.
+
+If the registers are missing, stop. No devicetree change will make that driver
+work. The options are a different compatible, a vendor-supplied driver, or
+writing one.
+
+Check the register contract, not the family name.

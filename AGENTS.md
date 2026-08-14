@@ -41,9 +41,21 @@ stops earning it.
   integrity boundary, never to look rigorous.
 - **No governance theatre.** No mandatory prose fields, sign-offs, or ceremony
   around ordinary edits. Explain the change in the commit message and move on.
-- **Plain voice.** Say what the thing does in the fewest words that stay
-  accurate. No enterprise register, no grandeur, no words chosen to sound
-  serious.
+- **Plain technical voice, everywhere.** All English in this repository — skills,
+  agents, tool descriptions, hook messages, comments, docs — is direct, plain,
+  simple technical English with no literary style.
+
+  Do not write: dramatic framing, suspense, aphorisms, metaphor, rhetorical
+  repetition, sentences arranged for rhythm, emphasis added for effect, or
+  em-dash asides that carry tone instead of information. Do not describe a bug as
+  expensive, painful, or costly unless you are stating a measured number.
+
+  Write: the fact, the cause, the action. One idea per clause. A short flat
+  sentence beats a balanced one. The test: a sentence that fits a reference
+  manual is right, a sentence that fits an essay is wrong.
+
+  The audience is a coding agent. Decorative prose spends tokens without adding
+  information and buries the instruction.
 
 When one of these conflicts with something already in the repository, this
 section wins and the older thing goes.

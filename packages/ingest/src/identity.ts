@@ -166,10 +166,23 @@ export function buildIndexDescriptor(options: IdentityOptions): IndexDescriptor 
           : 'The west package was not importable when this index was built, so runners that import it — openocd among them — carry no capabilities.',
       },
       resolvedBuild: {
-        complete: false,
+        complete: Boolean(options.buildDirectory),
         note: options.buildDirectory
-          ? 'Build identity is recorded, but resolved .config and final devicetree values are not ingested.'
-          : 'No resolved build output was supplied or ingested.',
+          ? 'Resolved .config values and merged devicetree nodes are ingested from the named build directory; they describe that one build, not the tree.'
+          : 'No resolved build output was supplied or ingested, so questions about what a build actually resolved to are answered from the tree rather than from the build.',
+      },
+      // Two different things are true of modules and conflating them misreports
+      // both. Every module the manifest declares is readable through get_source
+      // at its pinned revision, which is what answers "do these registers exist
+      // on my part". Only the roots passed to `--modules` had their Kconfig and
+      // bindings evaluated, which is what makes a symbol's prompt status
+      // trustworthy. `complete` describes the second.
+      modules: {
+        complete: options.modules.length > 0,
+        note:
+          options.modules.length > 0
+            ? 'Module sources are readable at their manifest revisions; Kconfig and bindings were evaluated only for the module roots passed to the indexer.'
+            : 'Module sources are readable at their manifest revisions, but no module Kconfig or bindings were evaluated, so a symbol a module redeclares is not judged.',
       },
     },
   } satisfies Omit<IndexDescriptor, 'createdAt' | 'contextFingerprint'>;

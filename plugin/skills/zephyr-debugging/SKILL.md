@@ -1,10 +1,10 @@
 ---
 name: zephyr-debugging
-description: Diagnose Zephyr build failures and runtime faults. Use when a build fails with a CMake, Kconfig, devicetree, or linker error; when firmware hard-faults, hangs, reboots, or produces a stack overflow; when a device fails to initialise; or when a peripheral silently does nothing. Covers reading Zephyr's error output, decoding fault dumps, thread and stack analysis, and the instrumentation to enable while investigating.
+description: Diagnose Zephyr build failures and runtime faults. Use when a build fails with a CMake, Kconfig, devicetree, or linker error; when firmware hard-faults, hangs, reboots, or produces a stack overflow; when a device fails to initialise; or when a peripheral does nothing and reports no error. Covers reading Zephyr's error output, decoding fault dumps, thread and stack analysis, and the instrumentation to enable while investigating.
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.7.0"
+  version: "0.8.0"
 ---
 
 # Debugging Zephyr
@@ -18,8 +18,8 @@ west build -b <target> -p always .
 ```
 
 Incremental builds do not reliably regenerate Kconfig and devicetree output. A
-significant share of "impossible" behaviour is a stale build directory. Do this
-before forming a theory.
+stale build directory explains a large share of behaviour that otherwise looks
+impossible. Do this before forming a theory.
 
 ## Build failures
 
@@ -33,29 +33,35 @@ before forming a theory.
 | `_DT_N_S_soc_S_..._P_... undeclared` | Node not `status = "okay"` | Enable it in the overlay |
 | `duplicate unit-address` | Two children with the same `reg` | Give each device its own chip select or address |
 
-Confirm what actually compiled in `build/zephyr/zephyr.dts`. If your node is not
-there, the overlay never applied — check its filename against the build target.
+Check what compiled in `build/zephyr/zephyr.dts`. If your node is not there, the
+overlay did not apply. Check its filename against the build target; `get_board`
+lists the filenames each target uses.
 
 ### Kconfig
 
-An undefined assignment produces a Kconfig warning and the standard Zephyr
-application flow aborts on Kconfig warnings. A known symbol can still resolve
-off when its dependencies are unmet; check `build/zephyr/.config` and use
-`get_kconfig` to inspect each alternative definition and dependency.
+An assignment to an undefined symbol produces a Kconfig warning, and the standard
+Zephyr application flow aborts on Kconfig warnings. A symbol that does exist can
+still resolve to off when its dependencies are unmet. Check
+`build/zephyr/.config`, and use `get_kconfig` to read each definition and its
+dependencies.
 
-`error: Aborting due to Kconfig warnings` with "assigned but has no prompt"
-means the symbol is selected by others and cannot be set directly.
+An error saying a symbol is assigned but is not directly user-configurable means
+the symbol has no prompt. Other symbols select it, and it cannot be set from an
+application configuration. `check_config` reports this for a whole file.
 
 ### Linker
 
-`undefined reference to 'foo'` in Zephyr almost always means the subsystem
-providing `foo` was not enabled — the header is visible but nothing compiled it.
-Find the owning `CONFIG_` with `search_kconfig` rather than looking for a missing
-source file.
+`undefined reference to 'foo'` usually means the subsystem providing `foo` was
+not enabled. The header is visible, the implementation was not compiled. Find the
+owning `CONFIG_` with `search_kconfig` rather than looking for a missing source
+file.
 
-`region 'FLASH' overflowed by N bytes` — run `west build -t rom_report`, then cut
-`CONFIG_LOG`, `CONFIG_SHELL`, `CONFIG_ASSERT`, or unused subsystems, or set
-`CONFIG_SIZE_OPTIMIZATIONS=y`.
+An undefined `__device_dts_ord_..._ORD` is the devicetree form of the same
+problem: the node the code references is not in the merged tree.
+
+For `region 'FLASH' overflowed by N bytes`, run `west build -t rom_report`, then
+remove `CONFIG_LOG`, `CONFIG_SHELL`, `CONFIG_ASSERT`, or unused subsystems, or
+set `CONFIG_SIZE_OPTIMIZATIONS=y`.
 
 ## Runtime faults
 
@@ -81,8 +87,8 @@ E: >>> ZEPHYR FATAL ERROR 0: CPU exception on CPU 0
 E: Current thread: 0x20000f18 (my_worker)
 ```
 
-The fault address `0x00000004` is the tell: a small offset from zero means a
-member access through a `NULL` pointer — nearly always an unchecked
+The fault address `0x00000004` identifies the cause: a small offset from zero
+means a member access through a `NULL` pointer, usually an unchecked
 `DEVICE_DT_GET` result or a driver whose init failed.
 
 Turn `pc` into a source location:
@@ -91,17 +97,18 @@ Turn `pc` into a source location:
 arm-zephyr-eabi-addr2line -e build/zephyr/zephyr.elf 0x0800a2f4
 ```
 
-Fault types map to causes fairly reliably:
+Fault types map to causes reliably:
 
-- **Bus fault, low address** — dereferencing `NULL`
-- **Usage fault, unaligned access** — casting a byte buffer to a struct pointer
-- **Memory manage fault** — stack overflow caught by the MPU, or writing to flash
-- **Stack overflow / sentinel corrupted** — the thread's stack is too small
+- **Bus fault, low address**: dereferencing `NULL`
+- **Usage fault, unaligned access**: casting a byte buffer to a struct pointer
+- **Memory manage fault**: stack overflow caught by the MPU, or a write to flash
+- **Stack overflow or corrupted sentinel**: the thread's stack is too small
 
 ### Stack sizing
 
-Stack overflow is the most common Zephyr runtime failure and it corrupts memory
-silently without `CONFIG_HW_STACK_PROTECTION`. Measure rather than guess:
+Stack overflow is a common Zephyr runtime failure. Without
+`CONFIG_HW_STACK_PROTECTION` it corrupts memory with no immediate error. Measure
+rather than guess:
 
 ```kconfig
 CONFIG_THREAD_ANALYZER=y
@@ -114,24 +121,136 @@ Thread analyze:
  my_worker  : STACK: unused 216 usage 1832 / 2048 (89 %)
 ```
 
-Above ~80% peak usage, raise the stack. Printf-style logging, floating point, and
-deep call chains in ISRs are the usual consumers. With a shell built in,
-`kernel stacks` prints the same on demand.
+Above about 80% peak usage, raise the stack. Printf-style logging, floating
+point, and deep call chains in ISRs consume the most. With a shell built in,
+`kernel stacks` prints the same figures on demand.
 
 ## Nothing happens at all
 
 Work down this list:
 
-1. **Is the device ready?** `device_is_ready()` returning false means the driver's
-   init failed — often a devicetree node that is not `status = "okay"`, or a bus
-   controller that is disabled.
+1. **Is the device ready?** `device_is_ready()` returning false means the
+   driver's init failed, often because a devicetree node is not
+   `status = "okay"`, or a bus controller is disabled.
 2. **Did init fail earlier?** With `CONFIG_DEVICE_SHELL=y`, `device list` shows
    every device and its readiness.
 3. **Is the node in the tree?** `grep` the node in `build/zephyr/zephyr.dts`.
-4. **Is the pin actually routed?** Check `pinctrl-0` against the board's pinctrl
-   `.dtsi`; a peripheral with no pinctrl group drives nothing.
+4. **Is the pin routed?** Check `pinctrl-0` against the board's pinctrl `.dtsi`.
+   A peripheral with no pinctrl group drives nothing.
 5. **Are return values checked?** Zephyr reports failure through negative errno.
    Unchecked returns turn a clear error into silence.
+
+## A peripheral on a bus that does not enumerate
+
+Read the pattern of the failure before reading register maps.
+
+### Command-only phases succeed, the first reply fails
+
+A controller shifting bits out cannot detect whether anything is listening.
+Writes, resets, and other command-only phases report success when no device is
+present. The failure appears at the first operation that needs data back: reading
+an ID register, waiting for a ready bit, or an ACK.
+
+Read that pattern as a link-layer problem: clocking, signal integrity, pin
+configuration, chip select, power, or pull-ups. It is rarely the driver state
+machine, and the register named in the error is usually not the cause.
+
+In general, the first error reported is usually not the first thing that went
+wrong. Check what ran before it.
+
+### Lower the bus clock before reading register maps
+
+When a device does not enumerate, halve the bus frequency and retry first. It is
+one line and reversible.
+
+A `max-frequency` property, or its equivalent, describes the data path the board
+designer specified, at the voltage and trace length of that design. Probe, reset,
+and identification phases often run in a slower compatibility mode on the same
+divider, so a frequency the steady-state path handles can be too fast for
+enumeration. This is more likely through a header, a flying lead, or a long trace
+that was not part of the original design.
+
+```dts
+&spi_or_i2c_bus {
+        /* Halve it. If enumeration then works, the problem is the link rather
+           than the driver. Raise it again to find the usable maximum. */
+        clock-frequency = <1000000>;
+};
+```
+
+If it works at the lower clock and fails at the higher one, the problem is signal
+integrity or timing.
+
+### Vary the shape of an operation, not only its location
+
+When an operation fails inconsistently, the address is one variable and often the
+wrong one. Hold the location fixed and vary one parameter at a time:
+
+- **length**, in particular odd against even and multiples of the bus width;
+- **alignment** of the buffer and of the offset;
+- **count**, one item against many;
+- **direction**, read against write;
+- **mode**, single against multi-line, DDR against SDR, DMA against polled.
+
+Length is the one usually skipped, and it is where wide and double-data-rate
+buses fail. A controller that moves two bytes per clock has no encoding for a
+data phase of odd length. The transfer can return data that looks correct and
+leave the peripheral waiting for the missing half of the last pair, after which
+every operation times out. If a driver reports one-byte write granularity
+regardless of data rate, callers will issue odd-length transfers, and the value
+that triggers it will be whichever one has an odd length.
+
+The test takes seconds: read 14 bytes, read 15, read 16, and check which one
+leaves the next operation failing.
+
+### An operation that returns success can still leave the hardware unusable
+
+Check the peripheral after a suspect operation, not only that operation's return
+value. The odd-length transfer above returns data that looks correct, and only
+the next operation fails. When a failure appears at operation N, test whether
+operation N−1 caused it. The operation that reported success is often the cause.
+
+### On NOR flash, a failed write makes the location unusable
+
+Programming only clears bits. A byte left at `0x00` by a failed write cannot be
+rewritten to any other value. It reads back wrong regardless of later code.
+
+After fixing a flash bug, erase and retest. Otherwise the stale byte makes the
+value read back wrong and the old fault looks like a new one, costing another
+test cycle.
+
+## Early-boot output is lost, and garbled serial is usually a host problem
+
+Two separate effects make the console unreliable during bring-up, and both look
+like firmware faults.
+
+**Deferred logging drops messages emitted before the log thread runs.** That is
+the window in which drivers initialise. A device that appears to print nothing
+may be writing into a subsystem that has not started.
+
+The options are structural:
+
+- use synchronous logging for bring-up (`CONFIG_LOG_MODE_IMMEDIATE=y`), accepting
+  that it changes timing, which is an acceptable trade while the question is
+  whether the code ran at all;
+- move the work off the boot path so it runs with logging available;
+- use a transport that is available earlier, such as an on-chip trace or a direct
+  UART write, for the first messages;
+- buffer diagnostics and print them on demand from a shell.
+
+**A host-enumerated transport is not connected for the first second or two,**
+whatever the firmware does. On USB CDC-ACM the device cannot transmit until the
+host has enumerated and opened the port, so earlier output is discarded at the
+source. Either wait for DTR before the first message, or accept that earlier
+output is lost and design the diagnostics accordingly.
+
+### Two readers on one serial port split the byte stream
+
+If a terminal, a monitor script, an IDE console, or a leftover background process
+are attached to the same port, each read takes bytes the others do not see. The
+output on each is interleaved fragments and truncated lines, which looks like the
+device emitting corrupted data and leads to checking baud rates, clock accuracy,
+and signal integrity.
 
 ## Logging that does not distort timing
 
@@ -146,7 +265,7 @@ context. Inside an ISR or a real-time thread it will change the behaviour you ar
 trying to observe. Use deferred mode, and if messages are lost, raise the buffer
 rather than switching to immediate.
 
-For timing-sensitive work, toggle a GPIO and watch it on a logic analyser — it
+For timing-sensitive work, toggle a GPIO and watch it on a logic analyser. It
 costs nanoseconds where a log line costs microseconds.
 
 ## Useful shell commands
@@ -160,7 +279,7 @@ device list         # devices and readiness
 ## Workflow
 
 1. Pristine rebuild.
-2. Read the *first* error, not the last — later ones are usually consequences.
+2. Read the first error, not the last. Later ones are usually consequences.
 3. For a devicetree or Kconfig error, verify the symbol with the MCP tools before
    changing anything.
 4. For a runtime fault, get `pc` through `addr2line`, then inspect that function's

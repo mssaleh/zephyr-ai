@@ -257,21 +257,42 @@ function checkKconfig(
   // Zephyr's build decides promptlessness across every definition of a symbol.
   // This catalogue holds only the definitions reachable in the context it was
   // built for, so the claim is made only where that view is knowably complete:
-  // the declaration was indexed (it has a type), no definition sits under
-  // `modules/` (whose real declaration ships with the module), and not every
-  // definition is a `Kconfig.defconfig` (which sets a value, not a declaration).
+  // the declaration was indexed (it has a type), not every definition is a
+  // `Kconfig.defconfig` (which sets a value, not a declaration), and no
+  // definition sits in the in-tree glue directory of a module whose own Kconfig
+  // this index did not read.
+  //
+  // That last test is about the manifest, not about the `modules/` prefix.
+  // Upstream keeps its own files under `modules/` as well, and the two kinds
+  // behave oppositely: `modules/lvgl/Kconfig` mirrors symbols the lvgl module
+  // declares with prompts, so a promptless reading there is an artefact — while
+  // `modules/Kconfig.stm32` declares the USE_STM32_HAL_* family outright, no
+  // module redeclares them, and assigning one fails the build. Judging both by
+  // their path prefix reported the artefact and cleared the real error.
+  const glue = new Set(
+    idx
+      .all("SELECT glue_dir FROM west_module WHERE glue_dir <> '' AND kconfig_ingested = 0")
+      .map((row) => String(row['glue_dir'])),
+  );
   const symbol = idx.db.prepare(`
     SELECT k.name AS name, k.type AS type, k.prompt AS prompt, k.has_prompt AS has_prompt,
            (SELECT COUNT(*) FROM kconfig_definition d WHERE d.symbol_id = k.id) AS defs,
-           (SELECT COUNT(*) FROM kconfig_definition d WHERE d.symbol_id = k.id
-             AND d.file LIKE 'modules/%') AS module_defs,
+           (SELECT group_concat(DISTINCT d.file) FROM kconfig_definition d
+             WHERE d.symbol_id = k.id) AS files,
            (SELECT COUNT(*) FROM kconfig_definition d WHERE d.symbol_id = k.id
              AND d.file LIKE '%Kconfig.defconfig%') AS defconfig_defs
       FROM kconfig k WHERE k.name = ? AND k.scope = ?`);
+  const mirrorsAnUnreadModule = (files: unknown): boolean =>
+    String(files ?? '')
+      .split(',')
+      .some((file) => {
+        const match = /^modules\/([^/]+)\//.exec(file);
+        return match ? glue.has(match[1]!) : false;
+      });
   const promptStatusIsKnown = (row: Record<string, unknown>): boolean =>
     row['type'] !== null &&
     Number(row['defs']) > 0 &&
-    Number(row['module_defs']) === 0 &&
+    !mirrorsAnUnreadModule(row['files']) &&
     Number(row['defconfig_defs']) < Number(row['defs']);
   for (const entry of parsed.assignments) {
     const row = symbol.get(entry.name, scope) as Record<string, unknown> | undefined;
@@ -288,7 +309,7 @@ function checkKconfig(
         subject: entry.raw,
         problem: null,
         note:
-          'not in the indexed catalogue — generated, application-local, board-derived and ' +
+          'not in the indexed catalogue. Generated, application-local, board-derived and ' +
           'external-module symbols live outside it, so this is not proof the symbol is wrong' +
           (near.length > 0 ? `. Similar indexed names: ${near.join(', ')}` : ''),
       });
@@ -323,7 +344,7 @@ function checkKconfig(
       line: entry.line,
       subject: entry.raw,
       problem: mismatch ? `CONFIG_${entry.name} ${mismatch}.` : null,
-      note: mismatch ? '' : `ok — \`${type || 'unknown'}\`${prompt ? ` "${prompt}"` : ''}`,
+      note: mismatch ? '' : `ok, \`${type || 'unknown'}\`${prompt ? ` "${prompt}"` : ''}`,
     });
   }
 
@@ -381,13 +402,13 @@ function checkDevicetree(idx: Index, text: string): Verdict[] {
         line: node.line,
         subject: value,
         problem: near
-          ? `"${value}" is not a known compatible, but "${near.name}" is and differs by ` +
+          ? `"${value}" is not a known compatible. "${near.name}" is, and differs by ` +
             `${near.edits} character${near.edits === 1 ? '' : 's'}. A node whose compatible ` +
-            'resolves to no binding is ignored, and every property on it is silently dropped.'
+            'resolves to no binding is dropped, along with every property on it, without a warning.'
           : null,
         note: bound
           ? 'not indexed itself, but another compatible on this node is, so the node still binds'
-          : 'not in the indexed catalogue, and not close to anything in it — an application may ' +
+          : 'not in the indexed catalogue and not close to anything in it. An application may ' +
             'declare its own binding through `dts/bindings`, `DTS_ROOT`, or a module',
       });
     }
@@ -400,15 +421,14 @@ export const checkConfig: ToolFactory = (index) => ({
   name: 'check_config',
   title: 'Check a configuration file against the index',
   description:
-    'Check a whole prj.conf, board .conf, defconfig, sysbuild.conf, .overlay, .dts or .dtsi against the indexed ' +
-    'Zephyr version and get a verdict for every line, in one call. Use it before writing a ' +
-    'configuration file and again after, instead of looking symbols up one at a time or grepping ' +
-    'the tree — a shell loop proves only that a name appears somewhere, while this reports each ' +
-    "symbol's type, prompt and assignability, each compatible's bus and required-property count, " +
-    'and the mistakes that survive a build: a malformed assignment, a promptless symbol assigned ' +
-    'from an application configuration, a value contradicting the declared type, and a compatible ' +
-    'that misspells an indexed one. A symbol or compatible that is merely absent is reported as ' +
-    'outside the catalogue, never as wrong.',
+    'Check a whole prj.conf, board .conf, defconfig, sysbuild.conf, .overlay, .dts or .dtsi ' +
+    'against the indexed Zephyr version and get a verdict for every line, in one call. Use it ' +
+    'before writing a configuration file and again after. It reports each symbol\'s type, prompt ' +
+    'and whether it can be assigned; each compatible\'s bus and required-property count; and four ' +
+    'errors: a malformed assignment, a promptless symbol assigned from an application ' +
+    'configuration, a value that contradicts the declared type, and a compatible that misspells an ' +
+    'indexed one. A grep only tells you whether a name appears somewhere. A symbol or compatible ' +
+    'that is absent from the index is reported as outside the catalogue, not as wrong.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -434,8 +454,8 @@ export const checkConfig: ToolFactory = (index) => ({
         type: 'string',
         enum: ['CONFIG_', 'SB_CONFIG_'],
         description:
-          'Which Kconfig namespace the file is written in. Inferred from the path — only ' +
-          'sysbuild.conf is SB_CONFIG_ — so pass this only for an unnamed sysbuild fragment.',
+          'Which Kconfig namespace the file is written in. Inferred from the path, where only ' +
+          'sysbuild.conf is SB_CONFIG_. Pass this only for an unnamed sysbuild fragment.',
       },
     },
     required: ['text'],

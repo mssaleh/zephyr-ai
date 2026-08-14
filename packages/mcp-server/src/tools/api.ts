@@ -41,9 +41,9 @@ export const searchApi: ToolFactory = (index) => ({
   description:
     'Search Zephyr public C functions, macros, structs, enums, and typedefs by name or purpose. ' +
     'Use this to confirm a function exists and to find the right one for a task ("read a sensor ' +
-    'channel", "get a device from devicetree", "submit work"). Zephyr has several API generations ' +
-    'for the same job — device_get_binding() versus DEVICE_DT_GET(), sensor fetch-and-get versus ' +
-    'read-and-decode — and searching first avoids reaching for the deprecated one.',
+    'channel", "get a device from devicetree", "submit work"). Zephyr often has more than one API ' +
+    'for the same job, such as device_get_binding() and DEVICE_DT_GET(), or sensor fetch-and-get ' +
+    'and read-and-decode. Search first so you do not pick a deprecated one.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -218,10 +218,9 @@ export const getApi: ToolFactory = (index) => ({
   description:
     'Get the indexed contract of a Zephyr C symbol: signature, parameter documentation, return ' +
     'description, and documented error codes. Use before calling an unfamiliar function. Zephyr ' +
-    'commonly returns negative errno values, and the documented set differs per function. Empty ' +
-    'documentation is reported as unknown and never treated as proof that failure is impossible. ' +
-    'Pass "names" to confirm several symbols exist and read their signatures in one call, which ' +
-    'is the cheap way to check a header\'s worth of calls before writing against them.',
+    'commonly returns negative errno values, and the documented set differs per function. When a ' +
+    'symbol has no documentation the tool reports that as unknown; it does not mean the call ' +
+    'cannot fail. Pass "names" to check several symbols and read their signatures in one call.',
   inputSchema: {
     type: 'object',
     properties: {

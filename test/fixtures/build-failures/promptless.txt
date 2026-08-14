@@ -1,0 +1,25 @@
+-- Found Python3: /usr/bin/python3 (found suitable version "3.12.3", minimum required is "3.10")
+-- Cache files will be written to: /home/dev/.cache/zephyr
+-- Zephyr version: 4.4.2 (/home/dev/zephyrproject/zephyr), build: v4.4.2
+-- Found west (found suitable version "1.4.0", minimum required is "0.14.0")
+-- Board: nucleo_n657x0_q, qualifiers: stm32n657xx
+Parsing /home/dev/zephyrproject/zephyr/Kconfig
+Loaded configuration '/home/dev/zephyrproject/zephyr/boards/st/nucleo_n657x0_q/nucleo_n657x0_q_defconfig'
+Merged configuration '/home/dev/app/prj.conf'
+
+error: USE_STM32_HAL_DTS (defined at modules/Kconfig.stm32:186) is assigned in a configuration file,
+but is not directly user-configurable (has no prompt). It gets its value indirectly from other
+symbols. See http://docs.zephyrproject.org/latest/kconfig.html#CONFIG_USE_STM32_HAL_DTS and/or look
+up USE_STM32_HAL_DTS in the menuconfig/guiconfig interface. The Application Development Primer,
+Setting Configuration Values, and Kconfig - Tips and Best Practices sections of the manual might be
+helpful too.
+
+CMake Error at /home/dev/zephyrproject/zephyr/cmake/modules/kconfig.cmake:379 (message):
+  command failed with return code: 1
+Call Stack (most recent call first):
+  /home/dev/zephyrproject/zephyr/cmake/modules/zephyr_default.cmake:129 (include)
+  /home/dev/zephyrproject/zephyr/share/zephyr-package/cmake/ZephyrConfig.cmake:66 (include)
+  CMakeLists.txt:5 (find_package)
+
+-- Configuring incomplete, errors occurred!
+FATAL ERROR: command exited with status 1: /usr/bin/cmake -DWEST_PYTHON=/usr/bin/python3 -B/home/dev/app/build -S/home/dev/app

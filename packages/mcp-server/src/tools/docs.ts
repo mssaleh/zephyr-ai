@@ -14,11 +14,12 @@ export const searchDocs: ToolFactory = (index) => ({
   name: 'search_docs',
   title: 'Search Zephyr documentation',
   description:
-    'Search the Zephyr documentation for the exact version in use, returning the individual ' +
-    'sections that match rather than whole pages. Covers the kernel, subsystems, driver models, ' +
-    'connectivity stacks, build system, and every board page (pinouts and flashing instructions). ' +
-    'Use for concepts and procedures — "how do I use the sensor API", "power management states", ' +
-    '"sysbuild". For a symbol, a compatible, or a board, the dedicated tools are more precise.',
+    'Search the Zephyr documentation for the version in use, returning the individual sections ' +
+    'that match rather than whole pages. Covers the kernel, subsystems, driver models, ' +
+    'connectivity stacks, build system, and every board page including pinouts and flashing ' +
+    'instructions. Use it for concepts and procedures: "how do I use the sensor API", "power ' +
+    'management states", "sysbuild". For a symbol, a compatible, or a board, use the dedicated ' +
+    'tool instead; it is more precise.',
   inputSchema: {
     type: 'object',
     properties: {

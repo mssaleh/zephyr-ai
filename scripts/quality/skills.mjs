@@ -69,6 +69,42 @@ for (const entry of readdirSync(AGENTS, { withFileTypes: true })) {
   }
 }
 
+// Skills and agents are only worth anything if the tools they name exist and are
+// spelled the way the server registers them. A renamed or imagined tool fails at
+// the moment the model reaches for it, which is the moment it was most useful —
+// and nothing else in the gate would notice, because the prose still reads fine.
+//
+// The list is derived from the tool modules rather than typed here, so adding a
+// tool cannot leave this check describing the previous set.
+const TOOL_SOURCE = join(ROOT, 'packages', 'mcp-server', 'src', 'tools');
+const registered = new Set(
+  readdirSync(TOOL_SOURCE)
+    .filter((name) => name.endsWith('.ts'))
+    .flatMap((name) => [...readFileSync(join(TOOL_SOURCE, name), 'utf8').matchAll(/^\s*name: '([a-z_]+)',$/gm)])
+    .map((match) => match[1]),
+);
+if (registered.size === 0) failures.push('no MCP tool names could be read from the server sources');
+
+// Anything shaped like one of this server's tools has to be one of them.
+const TOOL_SHAPE = /\b((?:get|search|check|index)_[a-z][a-z_]*)\b/g;
+for (const file of markdown) {
+  for (const match of file.text.matchAll(TOOL_SHAPE)) {
+    if (!registered.has(match[1])) {
+      failures.push(`${file.path}: names "${match[1]}", which is not a registered MCP tool`);
+    }
+  }
+}
+
+// A skill that never names a tool teaches the model nothing about reaching for
+// the index, which is the whole mechanism by which this plugin improves answers.
+for (const entry of readdirSync(SKILLS, { withFileTypes: true })) {
+  if (!entry.isDirectory()) continue;
+  const text = readFileSync(join(SKILLS, entry.name, 'SKILL.md'), 'utf8');
+  if (![...text.matchAll(TOOL_SHAPE)].some((match) => registered.has(match[1]))) {
+    failures.push(`${entry.name}: names no MCP tool, so it cannot route the model to the index`);
+  }
+}
+
 const allText = markdown.map((file) => file.text).join('\n');
 for (const forbidden of [
   'CONFIG_ZTEST_NEW_API',

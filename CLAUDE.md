@@ -86,6 +86,21 @@ non-obvious trade-off — not what the line does. The semantic adapters encode
 real Zephyr quirks (Kconfig definition alternatives, recursive binding includes,
 Doxygen member identity); when you change one, keep the rationale accurate and
 add both a focused fixture and pinned-tree differential evidence.
+
+## Prose
+
+All English here is plain technical English. This covers skills, agents, MCP
+tool descriptions, hook messages, comments, and docs.
+
+No theatrical or sensationalist writing: no dramatic framing, suspense,
+aphorisms, metaphor, rhetorical repetition, sentences built for rhythm, emphasis
+for effect, or em-dash asides carrying tone rather than information. Do not call
+a problem expensive, painful, or costly unless quoting a measured number.
+
+State the fact, the cause, and the action. One idea per clause. A short flat
+sentence is better than a balanced one. A sentence that belongs in a reference
+manual is right; one that belongs in an essay is wrong. The reader is a coding
+agent, and decorative prose buries the instruction.
 <!-- git-workflow-rule -->
 ## Git workflow
 

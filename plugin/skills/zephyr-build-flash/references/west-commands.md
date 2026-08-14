@@ -4,7 +4,7 @@
 
 West has two layers. **Built-in commands** manage the workspace and come from west
 itself. **Extension commands** are contributed by Zephyr and only exist inside a
-workspace whose manifest provides them — which is why `west build` works in a
+workspace whose manifest provides them. That is why `west build` works in a
 workspace and nowhere else.
 
 Zephyr declares its extensions in `scripts/west-commands.yml`, and that set
@@ -23,7 +23,7 @@ get_source path=scripts/west-commands.yml       # the exact extension set it shi
 west init -m <url> --mr <revision> <dir>   # new workspace from a manifest URL
 west init -l <app-dir>                     # workspace around an existing manifest repo
 west update                                # fetch and check out every manifest project
-west list -f '{name} {posixpath}'          # what the workspace actually contains
+west list -f '{name} {posixpath}'          # what the workspace contains
 west topdir                                # the workspace root, found upward from cwd
 west manifest --resolve                    # the manifest after imports are applied
 west manifest --freeze                     # the same, with every revision pinned to a SHA
@@ -60,7 +60,7 @@ west bindesc dump <binary>                 # read the binary descriptor block
 With sysbuild, signing usually happens as part of the build; `west sign` is for
 signing an image explicitly or with a key the build does not know about.
 
-`west blobs fetch` matters on parts whose drivers ship as binaries — some wireless
+`west blobs fetch` matters on parts whose drivers ship as binaries. Some wireless
 stacks will not build until it has run.
 
 ## Testing

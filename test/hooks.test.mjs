@@ -1,10 +1,11 @@
-import { match, ok, strictEqual } from 'node:assert/strict';
+import { deepStrictEqual, match, ok, strictEqual } from 'node:assert/strict';
 import {
   copyFileSync,
   existsSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -268,7 +269,49 @@ describe('PostToolUse build failure', () => {
       const result = await runBuild('west build -b x app', { stderr: output, exit_code: 1 });
       strictEqual(result.code, 2, `${output} should block`);
       match(result.stderr, /check_environment/);
-      match(result.stderr, /not a mistake in the source/);
+      match(result.stderr, /not an error in the source/);
+    }
+  });
+
+  // The corpus is the deliverable and these patterns are downstream of it. Each
+  // file is output as Zephyr actually emits it, which is the part that was
+  // getting missed: a paraphrase reads fine and matches nothing.
+  //
+  // The promptless case is the one that cost a release. `err()` in
+  // scripts/kconfig/kconfig.py wraps the whole message with textwrap.fill(…,
+  // 100), so the source's line breaks are gone and the text is re-wrapped at
+  // column 100 — the break therefore falls in a different place for every
+  // symbol, because the symbol name and its `(defined at …)` location are inside
+  // the wrapped text. The old pattern could not cross a newline and had the
+  // wording of a paraphrase besides, so a `prj.conf` that could not build was
+  // answered with advice about reading CMake errors.
+  it('routes every real failure in the corpus to the lookup that settles it', async () => {
+    const expected = [
+      ['promptless.txt', /get_kconfig/, /promptless symbol/],
+      ['undefined-symbol.txt', /get_kconfig/, /ignored without a warning/],
+      ['devicetree-property.txt', /get_binding/, /include: chains/],
+      ['missing-binding.txt', /search_bindings/, /resolves to no binding/],
+      ['board-not-found.txt', /search_boards/, /qualified/],
+      ['region-overflow.txt', /get_board/, /CONFIG_XIP=n/],
+      ['host-environment.txt', /check_environment/, /not an error in the source/],
+    ];
+    const directory = join(ROOT, 'test', 'fixtures', 'build-failures');
+    const present = readdirSync(directory).filter((name) => name.endsWith('.txt')).sort();
+    deepStrictEqual(
+      present,
+      expected.map(([name]) => name).sort(),
+      'every corpus file needs an expected routing, and every routing a corpus file',
+    );
+
+    for (const [name, tool, reason] of expected) {
+      const output = readFileSync(join(directory, name), 'utf8');
+      const result = await runBuild('west build -b nucleo_n657x0_q/stm32n657xx app', {
+        stderr: output,
+        exit_code: 1,
+      });
+      strictEqual(result.code, 2, `${name} must reach the model`);
+      match(result.stderr, tool, `${name} should name the lookup that settles it`);
+      match(result.stderr, reason, `${name} should say why`);
     }
   });
 
@@ -399,17 +442,21 @@ describe('PostToolUse Zephyr validation', {
   it('does not claim promptless when the catalogue cannot see every definition', async () => {
     // Zephyr decides promptlessness across all of a symbol's definitions. This
     // catalogue holds only those reachable in the context it was built for, so
-    // a symbol whose declaration lives in a module Kconfig or another SoC's
-    // tree looks promptless when it is not — which reported four assignments
-    // that Zephyr's own samples make and its own CI builds.
+    // a symbol whose real declaration lives in a module's own Kconfig looks
+    // promptless when it is not. `modules/lvgl/Kconfig` is the shape: Zephyr
+    // mirrors LV_USE_LOG there as a bare `bool` while the lvgl module declares
+    // it with a prompt, and Zephyr's own samples assign it.
     const db = new DatabaseSync(INDEX, { readOnly: true });
     const hidden = db.prepare(`
       SELECT k.name FROM kconfig k
        WHERE k.has_prompt = 0
          AND (SELECT COUNT(*) FROM kconfig_definition d WHERE d.symbol_id = k.id) > 0
          AND (k.type IS NULL
-              OR (SELECT COUNT(*) FROM kconfig_definition d
-                   WHERE d.symbol_id = k.id AND d.file LIKE 'modules/%') > 0)
+              OR EXISTS (SELECT 1 FROM kconfig_definition d
+                          JOIN west_module m
+                            ON m.glue_dir <> '' AND m.kconfig_ingested = 0
+                           AND d.file LIKE 'modules/' || m.glue_dir || '/%'
+                         WHERE d.symbol_id = k.id))
        ORDER BY k.name LIMIT 1`).get();
     db.close();
     ok(hidden, 'expected at least one symbol whose prompt status the catalogue cannot decide');
@@ -418,6 +465,44 @@ describe('PostToolUse Zephyr validation', {
     const result = await runHook(file);
     strictEqual(result.code, 0, `must not claim ${hidden.name} is promptless`);
     strictEqual(result.stderr, '');
+  });
+
+  it('reports a promptless symbol Zephyr itself declares under modules/', async () => {
+    // The regression this release exists for. `modules/` holds two unrelated
+    // kinds of file, and the old guard suppressed the check for both: upstream's
+    // own `modules/Kconfig.stm32`, which declares the whole USE_STM32_HAL_*
+    // family and which no module can redeclare, and per-module glue directories
+    // that mirror symbols the module itself prompts for. Suppressing the first
+    // gave a `prj.conf` containing `CONFIG_USE_STM32_HAL_DTS=y` — a hard build
+    // failure under Zephyr's check_no_promptless_assign — a clean bill of health.
+    const db = new DatabaseSync(INDEX, { readOnly: true });
+    const owned = db.prepare(`
+      SELECT k.name AS name FROM kconfig k
+       WHERE k.has_prompt = 0 AND k.type IN ('bool', 'tristate') AND k.scope = 'zephyr'
+         AND EXISTS (SELECT 1 FROM kconfig_definition d
+                      WHERE d.symbol_id = k.id AND d.file LIKE 'modules/%')
+         AND NOT EXISTS (SELECT 1 FROM kconfig_definition d
+                          JOIN west_module m
+                            ON m.glue_dir <> '' AND m.kconfig_ingested = 0
+                           AND d.file LIKE 'modules/' || m.glue_dir || '/%'
+                         WHERE d.symbol_id = k.id)
+         AND (SELECT COUNT(*) FROM kconfig_definition d
+               WHERE d.symbol_id = k.id AND d.file LIKE '%Kconfig.defconfig%')
+             < (SELECT COUNT(*) FROM kconfig_definition d WHERE d.symbol_id = k.id)
+       ORDER BY k.name`).all();
+    db.close();
+    ok(
+      owned.some((row) => row.name.startsWith('USE_STM32_HAL_')),
+      'the family that motivated this check must be in the reportable population',
+    );
+
+    for (const row of [owned[0], owned.find((entry) => entry.name === 'USE_STM32_HAL_DTS')]) {
+      if (!row) continue;
+      const file = projectFile('prj.conf', `CONFIG_${row.name}=y\n`);
+      const result = await runHook(file);
+      strictEqual(result.code, 2, `${row.name} is promptless and must be reported`);
+      match(result.stderr, /has no prompt and cannot be assigned/);
+    }
   });
 
   it('raises no finding for a valid file', async () => {
@@ -441,10 +526,43 @@ describe('PostToolUse Zephyr validation', {
 
       const payload = JSON.parse(first.stdout);
       strictEqual(payload.hookSpecificOutput.hookEventName, 'PostToolUse');
-      match(payload.hookSpecificOutput.additionalContext, /checked 2 Kconfig assignments/);
+      match(payload.hookSpecificOutput.additionalContext, /read 2 assignments/);
+      match(payload.hookSpecificOutput.additionalContext, /2 verified/);
       match(payload.systemMessage, /against indexed Zephyr \d/);
       // No decision field: PostToolUse cannot block, and this is not a finding.
       strictEqual(payload.hookSpecificOutput.permissionDecision, undefined);
+    });
+
+    it('separates what it verified from what it could not judge', async () => {
+      // The acknowledgement counted every line it read as a line it checked, and
+      // then called the file clean. One of the lines it was silently skipping was
+      // a promptless assignment that fails the build, so the reassurance was
+      // covering exactly the case it needed to expose.
+      const db = new DatabaseSync(INDEX, { readOnly: true });
+      const unsettled = db.prepare(`
+        SELECT k.name FROM kconfig k
+         WHERE k.has_prompt = 0 AND k.type IS NOT NULL
+           AND EXISTS (SELECT 1 FROM kconfig_definition d
+                        JOIN west_module m
+                          ON m.glue_dir <> '' AND m.kconfig_ingested = 0
+                         AND d.file LIKE 'modules/' || m.glue_dir || '/%'
+                       WHERE d.symbol_id = k.id)
+         ORDER BY k.name LIMIT 1`).get();
+      db.close();
+      ok(unsettled, 'expected a symbol whose prompt status this index cannot settle');
+
+      const file = projectFile(
+        'prj.conf',
+        `CONFIG_GPIO=y\nCONFIG_ZEPHYR_AI_INVENTED_SYMBOL=y\nCONFIG_${unsettled.name}=y\n`,
+      );
+      const result = await runHook({ ...file, sessionId: `split-${Date.now()}-${Math.random()}` });
+      strictEqual(result.code, 0);
+      const payload = JSON.parse(result.stdout);
+      match(payload.systemMessage, /read 3 assignments/);
+      match(payload.systemMessage, /1 verified/);
+      match(payload.systemMessage, /1 outside the catalogue/);
+      match(payload.systemMessage, /1 not judged/);
+      match(payload.hookSpecificOutput.additionalContext, /Not judged:/);
     });
 
     it('does not repeat itself for the same file in the same session', async () => {
@@ -783,6 +901,42 @@ describe('SessionStart cold start', () => {
     const result = await runSession({ project, pluginData });
     strictEqual(result.code, 0);
     match(result.stdout, /zephyr-index skill/);
+  });
+
+  it('still speaks in a directory holding only documentation', async () => {
+    // The replay that established H4: an empty directory got the full prompt and
+    // the same directory plus a folder of board manuals got nothing. Reading
+    // datasheets before writing any code is the first day of a firmware project,
+    // which is precisely the case this message was written for.
+    const pluginData = mkdtempSync(join(TEMPORARY, 'no-index-'));
+    const project = mkdtempSync(join(TEMPORARY, 'docs-project-'));
+    mkdirSync(join(project, 'docs'), { recursive: true });
+    writeFileSync(join(project, 'docs', 'BOARD.md'), '# Board notes\n');
+    writeFileSync(join(project, 'README.md'), '# Firmware\n');
+    const result = await runSession({ project, pluginData });
+    strictEqual(result.code, 0);
+    match(result.stdout, /zephyr-index skill/);
+  });
+
+  it('names ZEPHYR_AI_INDEX as the override that actually works', async () => {
+    // ZEPHYR_AI_PROJECT_ROOT is set from ${CLAUDE_PROJECT_DIR} in .mcp.json, so
+    // exporting it before launching a session has no effect and the plugin
+    // silently resolves no index. An evaluation run was voided by exactly this.
+    const pluginData = mkdtempSync(join(TEMPORARY, 'no-index-'));
+    const project = mkdtempSync(join(TEMPORARY, 'override-project-'));
+    const result = await runSession({ project, pluginData });
+    match(result.stdout, /ZEPHYR_AI_INDEX/);
+    match(result.stdout, /ZEPHYR_AI_PROJECT_ROOT does not work for this/);
+  });
+
+  it('stays silent for each kind of foreign project manifest', async () => {
+    const pluginData = mkdtempSync(join(TEMPORARY, 'no-index-'));
+    for (const marker of ['package.json', 'Cargo.toml', 'go.mod', 'pyproject.toml', 'Makefile']) {
+      const project = mkdtempSync(join(TEMPORARY, 'foreign-'));
+      writeFileSync(join(project, marker), '\n');
+      const result = await runSession({ project, pluginData });
+      strictEqual(result.stdout, '', `${marker} identifies another kind of project`);
+    }
   });
 });
 

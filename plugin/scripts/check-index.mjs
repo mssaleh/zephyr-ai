@@ -14,7 +14,7 @@ import {
   validIndexDescriptor,
 } from './index-paths.mjs';
 
-const EXPECTED_SCHEMA = 9;
+const EXPECTED_SCHEMA = 10;
 const EXPECTED_DESCRIPTOR = 2;
 
 function treeVersion(root) {
@@ -50,19 +50,68 @@ function westZephyrBase(workspace) {
 }
 
 /**
- * Whether the project root holds nothing but dot-entries.
+ * Files that identify a directory as another kind of project.
  *
- * Dot-entries are ignored because `.git`, `.claude`, and editor state say
- * nothing about what the directory is for. Anything else means the user has a
- * project of some kind already, and guessing that it wants Zephyr would be
- * nagging.
+ * A manifest is the reliable signal: it means another toolchain owns this
+ * directory. A single source file is not; a lone `main.c` may well be the start
+ * of firmware.
  */
-function isEmptyDirectory(root) {
+const FOREIGN_MANIFESTS = new Set([
+  'package.json',
+  'Cargo.toml',
+  'go.mod',
+  'pyproject.toml',
+  'setup.py',
+  'Gemfile',
+  'pom.xml',
+  'build.gradle',
+  'build.gradle.kts',
+  'composer.json',
+  'Makefile',
+  'GNUmakefile',
+  'requirements.txt',
+]);
+
+/** Source trees in a language Zephyr applications are not written in. */
+const FOREIGN_SOURCE = /\.(?:js|mjs|cjs|ts|tsx|jsx|rs|go|rb|php|java|kt|swift|cs|py)$/;
+
+/**
+ * Whether the root holds nothing that identifies it as another kind of project.
+ *
+ * The previous rule was "nothing but dot-entries", which excluded the case the
+ * message exists for: a directory holding only a `docs/` folder of board manuals
+ * is the start of a firmware project and got no message. Dot-entries are still
+ * ignored, because `.git`, `.claude` and editor state say nothing about what the
+ * directory is for. Documentation is ignored for the same reason.
+ *
+ * The test is whether another toolchain owns the directory, not whether it is
+ * empty. A foreign manifest shows ownership; a README does not.
+ */
+function looksUnclaimed(root) {
+  let entries;
   try {
-    return readdirSync(root).every((entry) => entry.startsWith('.'));
+    entries = readdirSync(root, { withFileTypes: true });
   } catch {
     return false;
   }
+  for (const entry of entries) {
+    const name = entry.name;
+    if (name.startsWith('.')) continue;
+    if (entry.isDirectory()) {
+      // A directory of sources in another language is a claim; docs are not.
+      if (['node_modules', 'src', 'lib', 'app', 'cmd', 'pkg', 'target', 'vendor'].includes(name)) {
+        try {
+          if (readdirSync(join(root, name)).some((child) => FOREIGN_SOURCE.test(child))) return false;
+        } catch {
+          /* an unreadable directory cannot claim the root */
+        }
+      }
+      continue;
+    }
+    if (FOREIGN_MANIFESTS.has(name)) return false;
+    if (FOREIGN_SOURCE.test(name)) return false;
+  }
+  return true;
 }
 
 function emit(context) {
@@ -115,15 +164,18 @@ async function main() {
         'The Zephyr lookup and edit-validation services have no compatible project index, but ZEPHYR_BASE names a usable tree. ' +
           'Use the zephyr-index skill to build it before relying on generated CONFIG_, binding, board, or API facts.',
       );
-    } else if (isEmptyDirectory(projectRoot)) {
-      // An empty directory is the fresh-user state and the one that most needs
-      // this. Staying silent here is only correct in a directory that is
-      // demonstrably some other kind of project, which an empty one is not.
+    } else if (looksUnclaimed(projectRoot)) {
+      // The fresh-user state. Staying silent is correct only where the directory
+      // is demonstrably another kind of project, which a directory holding only
+      // documentation is not.
       emit(
-        'This project has no Zephyr index, no west workspace, and no ZEPHYR_BASE, so Zephyr lookups and edit ' +
-          'validation are unavailable. If this is going to be Zephyr firmware, use the zephyr-index skill first: ' +
-          'in an empty directory it can fetch the pinned Zephyr tree and build the index without an existing ' +
-          'workspace. Building it needs Node 24+ and Python 3.12+ with PyYAML.',
+        'This project has no Zephyr index, no west workspace, and no ZEPHYR_BASE, so Zephyr lookups and ' +
+          'edit validation are unavailable. If this will be Zephyr firmware, use the zephyr-index skill ' +
+          'first. In an empty directory it fetches the pinned Zephyr tree and builds the index without an ' +
+          'existing workspace. To use an existing index instead, set ZEPHYR_AI_INDEX to its path. ' +
+          'ZEPHYR_AI_PROJECT_ROOT does not work for this: the CLI overwrites it with the session working ' +
+          'directory. Building an index needs Node 24+ and Python 3.12+ with PyYAML. Building firmware ' +
+          'needs more than that, and the zephyr-prerequisites skill covers it.',
       );
     }
     return;
@@ -176,6 +228,6 @@ async function main() {
 
 main().catch(() => {
   emit(
-    'The Zephyr SessionStart compatibility check failed unexpectedly. Run index_status before relying on index-backed facts.',
+    'The Zephyr SessionStart compatibility check failed. Run index_status before relying on facts from the index.',
   );
 });

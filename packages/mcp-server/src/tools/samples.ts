@@ -19,12 +19,12 @@ export const searchSamples: ToolFactory = (index) => ({
   title: 'Search Zephyr samples',
   description:
     'Find Zephyr sample applications and upstream Twister test suites by what they demonstrate ' +
-    'or verify. Samples are the highest-value reference material in the tree: each combines ' +
-    'prj.conf, devicetree overlays, and source, with explicit Twister platform evidence where ' +
-    'upstream records it. Adapting one is safer than assembling a configuration from prose. ' +
-    'Search before writing a new application that uses an unfamiliar subsystem. Pass "board" ' +
-    'without a query to list everything upstream names for that board — the way to answer "is ' +
-    'this exercised upstream, and how" — and "kind" to restrict to samples or to tests.',
+    'or verify. Each sample combines a prj.conf, devicetree overlays, and source, plus the ' +
+    'Twister platforms upstream records for it. Adapting a sample is more reliable than ' +
+    'assembling a configuration from documentation. Search here before writing a new application ' +
+    'that uses an unfamiliar subsystem. Pass "board" without a query to list everything upstream ' +
+    'declares for that board, which shows what is tested on it. Pass "kind" to restrict the ' +
+    'results to samples or to tests.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -213,12 +213,12 @@ export const getSample: ToolFactory = (index) => ({
   name: 'get_sample',
   title: 'Read a Zephyr sample',
   description:
-    'Read a sample application or an upstream Twister test suite: its description, recorded ' +
-    'Twister platform evidence, scenario names, and the contents of its prj.conf, devicetree ' +
-    'overlays, CMakeLists.txt, and C sources. Use this to copy a working configuration rather ' +
-    'than deriving one — the Kconfig and devicetree changes a subsystem needs are rarely all ' +
-    'documented in one place — and to see what upstream already verifies on a board. The index ' +
-    'returns the small, high-value files retained under its explicit size policy.',
+    'Read a sample application or an upstream Twister test suite: its description, the Twister ' +
+    'platforms recorded for it, scenario names, and the contents of its prj.conf, devicetree ' +
+    'overlays, CMakeLists.txt, and C sources. Use this to copy a working configuration instead of ' +
+    'deriving one. The Kconfig and devicetree changes a subsystem needs are seldom documented in ' +
+    'one place. It also shows what upstream tests on a given board. The index stores the small ' +
+    'files under its size policy, not every file in the directory.',
   inputSchema: {
     type: 'object',
     properties: {

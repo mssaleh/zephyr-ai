@@ -1,5 +1,6 @@
 import { type Index, clampLimit, json } from '../db.ts';
 import { byField } from '../../../shared/ordering.ts';
+import { targetFileNames } from '../../../shared/build-string.ts';
 import { ToolError } from '../protocol.ts';
 import {
   type ToolFactory,
@@ -37,6 +38,8 @@ interface NearTwin {
   soc: string;
   ram: number | null;
   flash: number | null;
+  /** Why this board is confusable: the same silicon, or a near-miss name. */
+  relation: 'same SoC' | 'similar name';
   differs: string[];
 }
 
@@ -66,12 +69,24 @@ function partCodes(fullName: string): string[] {
  *
  * Two boards can share a PCB reference and a series and still differ on flash,
  * RAM, and which bus the external memory sits on — a confusion no amount of
- * document cross-checking catches, because the documents look alike too. The
- * rule is the near-miss discipline the write validator already uses for
- * compatibles: a genuine twin is one or two characters away, an unrelated board
- * is many. Requiring the same vendor and the same SoC series does the rest, so
- * no curated list of confusable products is needed and every vendor gets the
- * same treatment.
+ * document cross-checking catches, because the documents look alike too.
+ *
+ * Two relations produce that confusion and only one of them is nominal.
+ *
+ * **Name.** A genuine twin is one or two characters away, an unrelated board is
+ * many — the near-miss discipline the write validator uses for compatibles.
+ * `NUCLEO-F401RE` and `NUCLEO-F411RE` differ by one character and by their RAM.
+ *
+ * **Silicon.** Two boards carrying the *same* SoC are confusable no matter what
+ * they are called, and vendor naming hides this more often than it reveals it:
+ * `nucleo_n657x0_q` and `stm32n6570_dk` are both `stm32n657xx` and share not one
+ * near-miss token, yet they differ on the external flash part, the `--extload`
+ * file, the download address, the target count, and the declared RAM — every one
+ * a thing that breaks a build. A name-only rule links the first pair and misses
+ * the second, which is the pair where the mistake actually costs hardware time.
+ *
+ * Which relation fired is part of the answer: "shares this board's SoC" and
+ * "has a name one character away" are different reasons to look twice.
  */
 function nearTwins(
   idx: Index,
@@ -82,7 +97,8 @@ function nearTwins(
   ownFlash: number | null,
 ): NearTwin[] {
   const codes = partCodes(fullName);
-  if (codes.length === 0 || socs.length === 0) return [];
+  if (socs.length === 0) return [];
+  const ownSocs = new Set(socs.map((soc) => soc.name));
 
   const candidates = idx.all(
     `SELECT DISTINCT b.name, b.full_name, b.ram, b.flash, s.name AS soc
@@ -103,6 +119,9 @@ function nearTwins(
   const twins: NearTwin[] = [];
   for (const candidate of candidates) {
     const candidateFull = String(candidate['full_name'] ?? '');
+    const soc = String(candidate['soc']);
+    const sameSilicon = ownSocs.has(soc);
+
     let best: number | null = null;
     for (const mine of codes) {
       for (const theirs of partCodes(candidateFull)) {
@@ -117,27 +136,31 @@ function nearTwins(
         if (best === null || edits < best) best = edits;
       }
     }
-    if (best === null) continue;
+    if (best === null && !sameSilicon) continue;
 
     const ram = candidate['ram'] === null ? null : Number(candidate['ram']);
     const flash = candidate['flash'] === null ? null : Number(candidate['flash']);
-    const soc = String(candidate['soc']);
     twins.push({
       name: String(candidate['name']),
       fullName: candidateFull,
       soc,
       ram,
       flash,
+      relation: sameSilicon ? 'same SoC' : 'similar name',
       // Name what actually differs, so the answer can be checked against a probe
       // rather than against a datasheet that describes the other board.
       differs: [
-        socs.some((s) => s.name === soc) ? '' : `SoC ${soc}`,
+        sameSilicon ? '' : `SoC ${soc}`,
         ram !== null && ram !== ownRam ? `${ram} KB RAM` : '',
         flash !== null && flash !== ownFlash ? `${flash} KB flash` : '',
       ].filter(Boolean),
     });
   }
-  return twins.sort(byField((twin) => twin.name));
+  // Same-silicon first: a board that runs the same part is the one whose runner
+  // arguments and memory layout will be copied by mistake.
+  return twins.sort(
+    byField((twin) => `${twin.relation === 'same SoC' ? '0' : '1'} ${twin.name}`),
+  );
 }
 
 interface BoardRunner {
@@ -241,6 +264,21 @@ function flashingSection(runners: BoardRunner[], boardName: string): string | un
     registered.length > 1
       ? `Select another with \`west flash -r <runner>\`. Call get_runner for what each accepts.`
       : undefined,
+    // The default is chosen for correctness, never for how long a cycle takes.
+    // Where getting an image onto the board costs a physical action — a strap
+    // moved, a button held, a power cycle — the runner that costs the fewest is
+    // worth finding *before* settling into a rhythm, because the rhythm is what
+    // stops the question being asked. A project can pay every cycle at many
+    // times its necessary price with the alternative sitting in the board's own
+    // files. These are the alternatives this board actually declares.
+    registered.length > 1 || (debug?.available && flash?.available && debug.runner !== flash.runner)
+      ? 'If loading an image onto this board requires a manual step such as moving a jumper or ' +
+        'power-cycling, compare these runners before you start iterating. They differ in whether ' +
+        'they program flash, load through the debug probe, or use a separate boot path, and ' +
+        '`west debug` often loads without programming flash. Call get_runner for what each one ' +
+        'accepts. The board documentation and `board.cmake` list alternate boot modes that are not ' +
+        'runners.'
+      : undefined,
     debug && !debug.available
       ? `\`${debug.runner}\` is set as the debug default but is not registered for this board, ` +
         'so `west debug` has no runner to use.'
@@ -253,10 +291,10 @@ export const searchBoards: ToolFactory = (index) => ({
   title: 'Search boards',
   description:
     'Find Zephyr boards by name, vendor, SoC, or supported peripheral. Returns the qualified ' +
-    'board target identifier that `west build -b` expects — which is frequently not the bare ' +
-    'board name: the ESP32-S3 DevKitC builds as `esp32s3_devkitc/esp32s3/procpu`, and using ' +
-    '`esp32s3_devkitc` alone fails. Also use this to check whether a board supports a peripheral ' +
-    'before designing around it.',
+    'board target identifier that `west build -b` expects. That is often not the bare board ' +
+    'name: the ESP32-S3 DevKitC builds as `esp32s3_devkitc/esp32s3/procpu`, and `esp32s3_devkitc` ' +
+    'alone fails. Also use this to check whether a board supports a peripheral before designing ' +
+    'around it.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -380,14 +418,13 @@ export const getBoard: ToolFactory = (index) => ({
   name: 'get_board',
   title: 'Get a board',
   description:
-    'Get everything the index knows about one Zephyr board: every qualified build target with ' +
-    'its architecture, flash and RAM budget and supported peripherals, the SoCs and CPU clusters ' +
-    'it contains, available hardware revisions, and a link to its documentation page (pinout, ' +
-    'jumper settings, and flashing instructions). Use before starting a project for a specific ' +
-    'board, and to confirm which peripherals are actually wired up. It also names the boards ' +
-    'this one is easy to mistake for — products that share a PCB reference and a SoC series but ' +
-    'differ on flash, RAM, or SoC — so a board chosen from a document can be checked against ' +
-    'the silicon before a build targets the wrong twin.',
+    'Get what the index holds about one Zephyr board: every qualified build target with its ' +
+    'architecture, Twister flash and RAM figures and supported peripherals; the overlay and ' +
+    '.conf filenames each target picks up; the SoCs and CPU clusters it contains; hardware ' +
+    'revisions; the runners it registers and which one west flash and west debug select; and a ' +
+    'link to its documentation page. Use before starting a project for a board, and to confirm ' +
+    'which peripherals it exposes. It also lists boards this one is easy to confuse with, either ' +
+    'because they carry the same SoC or because the names are close, with the figures that differ.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -420,7 +457,7 @@ export const getBoard: ToolFactory = (index) => ({
 
     const row = idx.get(
       `SELECT name, full_name, vendor, dir, arch, ram, flash, socs, targets,
-              revisions, default_revision, supported, doc_path
+              revisions, default_revision, supported, doc_path, no_xip_targets
          FROM board WHERE name = ?`,
       name,
     );
@@ -468,6 +505,12 @@ export const getBoard: ToolFactory = (index) => ({
       ? `${(idx.meta['doc_base_url'] ?? '').replace(/\/?$/, '/')}${docPath.replace(/\.rst$/, '.html')}`
       : null;
 
+    const noXip = new Set(json<string[]>(row['no_xip_targets'], []));
+
+    // The filenames each target picks up, and the memory figures qualified by
+    // what they actually describe. Both are answers to questions a developer
+    // adding a build variant already has, and both were previously wrong in the
+    // same direction: silently, and in a way that reads as fact.
     const targetLines = targets.map((t) => {
       const mem = [t.flash ? `${t.flash} KB flash` : '', t.ram ? `${t.ram} KB RAM` : '']
         .filter(Boolean)
@@ -475,7 +518,18 @@ export const getBoard: ToolFactory = (index) => ({
       const detail = [t.arch, mem, t.toolchains.length ? `toolchains: ${t.toolchains.join(', ')}` : '']
         .filter(Boolean)
         .join(' · ');
-      return `\`${t.identifier}\`${detail ? ` — ${detail}` : ''}`;
+      const names = targetFileNames(t.identifier);
+      // The most qualified name is the one that is easy to get wrong: a file
+      // named for the board alone applies to every target, so it is never the
+      // one that goes missing.
+      const overlay = names.overlay[names.overlay.length - 1] ?? '';
+      const conf = names.conf[names.conf.length - 1] ?? '';
+      return (
+        `\`${t.identifier}\`${detail ? ` — ${detail}` : ''}` +
+        (noXip.has(t.identifier) ? '\n  - `CONFIG_XIP=n` in this target\'s defconfig' : '') +
+        (overlay ? `\n  - overlay: \`boards/${overlay}\`` : '') +
+        (conf ? `\n  - conf:    \`boards/${conf}\`` : '')
+      );
     });
 
     const text = joinSections([
@@ -487,7 +541,34 @@ export const getBoard: ToolFactory = (index) => ({
         // Twister metadata.
         `${flash !== null ? `, ${flash} KB flash` : ''}` +
         `${ram !== null ? `, ${ram} KB RAM` : ''}.`,
+      // These figures come from `twister.yaml`, where they size a test runner's
+      // expectations. Rendered bare they read as the application's memory
+      // budget, and they are not: upstream's NUCLEO-N657X0-Q declares 1024 KB of
+      // each while the application gets 511 KB of SRAM and no internal flash at
+      // all. The `_defconfig` says which case a target is in.
+      flash !== null || ram !== null
+        ? '_Those figures come from `twister.yaml`. They are test metadata, not the memory the ' +
+          'application gets.' +
+          (noXip.size > 0
+            ? ' Some targets on this board set `CONFIG_XIP=n`, so the image is not executed from an ' +
+              'internal flash that the flash figure could describe. Use the devicetree partitions ' +
+              'for the actual limit.'
+            : '') +
+          '_'
+        : undefined,
       section('Build targets (use with `west build -b`)', targetLines),
+      // A board overlay or `.conf` whose filename does not match the *qualified*
+      // target is skipped in silence — nothing reports a file that matched
+      // nothing, and the build fails much later as an undefined devicetree
+      // symbol, which reads as a mistake in the C. Adding a build variant is
+      // exactly when this bites, and it is exactly when this tool is called.
+      targets.length > 0
+        ? '_Zephyr selects board overlays and `.conf` fragments by building these filenames and ' +
+          'testing whether the file exists, so a file named for the unqualified board does not apply ' +
+          'to a qualified target. A file that matches nothing produces no warning. Check the ' +
+          'configure output for `Found devicetree overlay:` and `Merged configuration`, and check it ' +
+          'again after changing the target, not only after changing the file._'
+        : undefined,
       section(
         'SoCs',
         socDetail.map(
@@ -506,15 +587,18 @@ export const getBoard: ToolFactory = (index) => ({
               .slice(0, 8)
               .map(
                 (t) =>
-                  `\`${t.name}\` (${t.fullName})` +
+                  `\`${t.name}\` (${t.fullName}) — ${t.relation}` +
                   (t.differs.length > 0
-                    ? ` — differs: ${t.differs.join(', ')}`
-                    : ' — same SoC, flash and RAM; check the peripheral list'),
+                    ? `; differs: ${t.differs.join(', ')}`
+                    : '; same flash and RAM figures — check the peripheral list, the external memory part, and the runner arguments'),
               ),
           ) +
-          (twins.length > 8 ? `\n- …and ${twins.length - 8} more in the same series` : '') +
-          '\n\nThese share a marketing name and a SoC series. Confirm the target against ' +
-          'the silicon rather than against a document — the documents look alike too.'
+          (twins.length > 8 ? `\n- …and ${twins.length - 8} more` : '') +
+          '\n\nEach entry is listed either because it uses the same SoC or because its name is close ' +
+          'to this one. Same-SoC boards are easy to miss, because vendor names do not show the ' +
+          'relation. What differs between them is usually the external flash part, the loader file, ' +
+          'the download address, and the memory figures, and each of those breaks a build. Check the ' +
+          'target against the SoC rather than against a datasheet.'
         : undefined,
       flashingSection(runners, name),
       supported.length > 0

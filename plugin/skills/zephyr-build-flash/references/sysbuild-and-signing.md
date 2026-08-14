@@ -15,10 +15,10 @@ Two things move when it is enabled:
 
 - **The build directory gains a level.** Artefacts are under
   `build/<image-name>/zephyr/` rather than `build/zephyr/`. Scripts and CI steps
-  that hard-code the old path silently pick up the wrong file or none at all.
+  that hard-code the old path pick up the wrong file, or none, without a warning.
 - **Configuration splits in two.** `sysbuild.conf` configures the *system* and uses
   the `SB_CONFIG_` prefix. `prj.conf` still configures the application. A plain
-  `CONFIG_` in `sysbuild.conf` does nothing at all — it is not an error, it is
+  `CONFIG_` in `sysbuild.conf` has no effect. It is not an error, it is
   ignored, which is why it costs time to find.
 
 ```kconfig
@@ -43,8 +43,8 @@ get_kconfig name=SB_CONFIG_BOOTLOADER_MCUBOOT
 ```
 
 The prefix is what selects the namespace. Ten symbol names exist in both trees and
-mean different things — `BOOTLOADER_MCUBOOT` includes MCUboot in the build under
-`SB_CONFIG_`, and marks this image as chain-loaded by it under `CONFIG_` — so
+mean different things. `BOOTLOADER_MCUBOOT` includes MCUboot in the build under
+`SB_CONFIG_`, and marks this image as chain-loaded by it under `CONFIG_`, so
 `get_kconfig` says so when the name you asked about is one of them.
 
 `check_config` reads `sysbuild.conf` in the right namespace and reports a plain
@@ -55,7 +55,7 @@ mean different things — `BOOTLOADER_MCUBOOT` includes MCUboot in the build und
 With MCUboot in the system, the application is signed as part of the build and the
 artefact to flash is `build/<app>/zephyr/zephyr.signed.bin`. Flashing the unsigned
 `zephyr.bin` produces a board that boots the bootloader, fails to validate the
-image, and stops — with no error on the console beyond the bootloader's own
+image, and stops, with no error on the console beyond the bootloader's own
 output, which is easy to read as a hardware fault.
 
 `west flash` with sysbuild flashes the whole system, bootloader included, and
@@ -92,5 +92,5 @@ ls build/*/zephyr/*.bin           # every image the system produced
 ```
 
 If a `zephyr.signed.bin` is absent when you expected one, the bootloader was not
-actually enabled — check that `sysbuild.conf` was picked up and that the build was
+enabled. Check that `sysbuild.conf` was read and that the build was
 pristine after adding it.

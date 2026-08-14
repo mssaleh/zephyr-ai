@@ -13,31 +13,30 @@ import packageMetadata from '../package.json' with { type: 'json' };
 const VERSION = packageMetadata.version;
 
 const INSTRUCTIONS = [
-  'Grounded reference for Zephyr RTOS, indexed from a specific Zephyr release.',
+  'Zephyr RTOS reference, indexed from one specific Zephyr revision.',
   '',
-  'Query this server before writing Zephyr code rather than after a build fails. Four classes',
-  'of error account for most broken Zephyr firmware, and each has a tool that prevents it:',
-  '- Invented CONFIG_ symbols -> search_kconfig / get_kconfig before editing prj.conf.',
-  '- Invented devicetree properties -> get_binding before editing a .dts or .overlay. Bindings',
-  '  inherit almost everything through include: chains, so the binding file is not the answer.',
+  'Query this server before writing Zephyr code, not after a build fails. Four common errors',
+  'each have a tool that prevents them:',
+  '- CONFIG_ symbol that does not exist -> search_kconfig / get_kconfig before editing prj.conf.',
+  '- Devicetree property that does not exist -> get_binding before editing a .dts or .overlay.',
+  '  Bindings inherit most properties through include: chains, so reading the binding file is',
+  '  not enough.',
   '- Wrong board target -> search_boards. Targets are qualified, e.g. esp32s3_devkitc/esp32s3/procpu.',
-  '- Wrong flash or debug runner -> get_board names the runners a board actually registers and',
-  '  which one each command selects; get_runner says what that runner accepts. west flash and',
-  '  west debug do not always use the same runner, and an option a runner does not declare is',
-  '  rejected before any hardware is touched.',
+  '- Wrong flash or debug runner -> get_board lists the runners a board registers and which one',
+  '  each command selects. get_runner says what a runner accepts. west flash and west debug do',
+  '  not always select the same runner, and west rejects an option the runner does not declare.',
   '',
-  'Check many things at once. get_kconfig, get_binding and get_api each take a list — names,',
-  'compatibles, names — and answer the whole list in one call, so grounding a prj.conf or an',
-  'overlay costs one call rather than one per line. check_config goes further: give it the file',
-  'contents and it returns a verdict per line. Reaching for a shell loop over the tree instead',
-  'trades the type, prompt, dependencies and defaults these tools return for a bare yes/no.',
+  'Batch lookups. get_kconfig, get_binding and get_api each accept a list and answer all of it',
+  'in one call, so checking a whole prj.conf or overlay costs one call. check_config takes the',
+  'file contents and returns a verdict per line. A shell loop over the tree returns yes or no;',
+  'these tools return the type, prompt, dependencies and defaults as well.',
   '',
-  'When you need the source itself rather than a symbol — a board .dts, an SoC Kconfig, a driver',
-  'implementation, a runner script — use get_source. It reads the file at the commit this index was',
-  'built from. Fetching it from a web search or a repository default branch describes a different',
-  'Zephyr, which is the drift these tools exist to prevent.',
+  'Use get_source when you need a file rather than a symbol: a board .dts, an SoC Kconfig, a',
+  'driver, a linker script, a runner script, or a vendor HAL header from a west module. It reads',
+  'the file at the revision this index was built from. A web search or a repository default',
+  'branch returns a different Zephyr version.',
   '',
-  'Call index_status if answers seem wrong for the project: it reports the indexed Zephyr version',
+  'Call index_status if answers look wrong for the project. It reports the indexed Zephyr version',
   'and detects a west workspace pinned to a different one.',
 ].join('\n');
 
@@ -70,10 +69,12 @@ function main(): void {
 
     if (!info) {
       throw new ToolError(
-        'No project-specific Zephyr index is available, so the lookup tools cannot answer. ' +
-        'Build one by invoking the `zephyr-index` skill, which locates the project\'s Zephyr ' +
-        'tree and runs the bundled indexer. Alternatively set ZEPHYR_AI_INDEX to an existing ' +
-        'compatible index file.',
+        'No Zephyr index is available, so the lookup tools cannot answer. Build one with the ' +
+        '`zephyr-index` skill: it locates the project\'s Zephyr tree and runs the bundled indexer. ' +
+        'To use an existing index instead, set ZEPHYR_AI_INDEX to its path. ZEPHYR_AI_INDEX is the ' +
+        'only variable that selects an index. Setting ZEPHYR_AI_PROJECT_ROOT does not work: the ' +
+        'plugin sets it from ${CLAUDE_PROJECT_DIR}, and the CLI overwrites that with the session ' +
+        'working directory.',
       );
     }
 

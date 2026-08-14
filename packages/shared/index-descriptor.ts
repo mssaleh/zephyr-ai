@@ -2,9 +2,9 @@ import { createHash } from 'node:crypto';
 
 import { byCodeUnits } from './ordering.ts';
 
-export const INDEX_SCHEMA_VERSION = 9;
+export const INDEX_SCHEMA_VERSION = 10;
 export const INDEX_DESCRIPTOR_VERSION = 2;
-export const INDEX_BUILDER_VERSION = '0.7.0';
+export const INDEX_BUILDER_VERSION = '0.8.0';
 
 export type SourceKind = 'pinned-upstream' | 'west-workspace' | 'explicit-tree';
 

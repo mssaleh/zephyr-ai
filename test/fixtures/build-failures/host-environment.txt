@@ -1,0 +1,12 @@
+-- Found Python3: /usr/bin/python3 (found suitable version "3.12.3", minimum required is "3.10")
+-- Zephyr version: 4.4.2 (/home/dev/zephyrproject/zephyr), build: v4.4.2
+Traceback (most recent call last):
+  File "/home/dev/zephyrproject/zephyr/scripts/build/gen_isr_tables.py", line 16, in <module>
+    import elftools
+ModuleNotFoundError: No module named 'elftools'
+
+CMake Error at /home/dev/zephyrproject/zephyr/cmake/modules/kernel.cmake:281 (message):
+  gen_isr_tables.py failed with return code: 1
+
+-- Configuring incomplete, errors occurred!
+FATAL ERROR: command exited with status 1: /usr/bin/cmake -DWEST_PYTHON=/usr/bin/python3 -B/home/dev/app/build -S/home/dev/app

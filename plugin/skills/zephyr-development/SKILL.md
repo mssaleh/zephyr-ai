@@ -4,7 +4,7 @@ description: Core workflow for writing, building, and debugging Zephyr RTOS firm
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.7.0"
+  version: "0.8.0"
 ---
 
 # Zephyr development
@@ -36,21 +36,21 @@ from a specific Zephyr tree. Treat exact results as version-exact only when
 | Anything unfamiliar | `search_samples` | A sample with explicit Twister platform evidence is a better starting point than assembled prose |
 | The source itself — a board `.dts`, an SoC Kconfig, a driver, a runner script | `get_source` | Returns the file at the indexed commit; a copy fetched from the web is a different Zephyr |
 
-Run `index_status` when answers look wrong for the project — it reports the
+Run `index_status` when answers look wrong for the project. It reports the
 indexed version and detects a west workspace pinned to a different one.
 
 ## The other half: after you write
 
-Looking things up first prevents the errors that are cheap to prevent. The rest
-surface after the code exists, and each has an agent that is better at it than a
-straight-line continuation of your own reasoning.
+Looking symbols up first prevents one class of error. The rest appear after the
+code exists, and each has an agent for it.
 
 | What just happened | Do this |
 | --- | --- |
-| A `west build` failed | Run the `build-triage` agent. It reads the build output *and* the generated artefacts — `build/zephyr/.config`, `build/zephyr/zephyr.dts` — which is where the real cause usually is |
+| A `west build` failed, and the cause is not one line in one file | Run the `build-triage` agent. It reads the build output and the generated artefacts, `build/zephyr/.config` and `build/zephyr/zephyr.dts`, where the cause usually is |
 | You wrote a driver, an ISR, or anything shared between contexts | Run `firmware-reviewer` before calling it done. Interrupt-context violations and init-order races pass testing and fail in the field |
-| You edited a `.dts`, `.dtsi`, `.overlay`, or a binding | Run `devicetree-specialist`, or at minimum confirm the result in the compiled tree at `build/zephyr/zephyr.dts` — the source overlay is not the answer |
-| You are choosing hardware or structuring a new product | Run `zephyr-architect` before writing code, not after |
+| You edited a `.dts`, `.dtsi`, `.overlay`, or a binding | Run `devicetree-specialist`, or at least check the result in the compiled tree at `build/zephyr/zephyr.dts`. The source overlay does not show what the build used |
+| You are choosing hardware or structuring a new product | Run `zephyr-architect` before writing code |
+| Firmware builds and flashes but does not work on the board | Run `hardware-bringup` |
 
 Do not treat a failed build as a prompt to guess and rebuild. The second and
 third attempts cost more than one triage pass, and a fix that happens to compile
@@ -117,8 +117,8 @@ int main(void)
 }
 ```
 
-`device_get_binding("GPIO_0")` is the old API. It still compiles, resolves at
-runtime, and costs a string comparison — use `DEVICE_DT_GET` and the `_dt`
+`device_get_binding("GPIO_0")` is the older API. It still compiles, resolves at
+runtime, and costs a string comparison. Use `DEVICE_DT_GET` and the `_dt`
 accessors instead.
 
 Zephyr calls commonly report failure with a negative errno. Check the documented
@@ -128,19 +128,19 @@ the source documents them; an empty list does not prove the call cannot fail.
 ## Working style
 
 1. **Establish the target first.** `search_boards` for the hardware, then
-   `get_board` for its build targets and supported peripherals. Designing around a
-   peripheral the board does not expose wastes everything that follows.
+   `get_board` for its build targets and supported peripherals. A design that
+   assumes a peripheral the board does not expose has to be redone.
 2. **Find a sample that already does it.** `search_samples`, then `get_sample` to
    read its `prj.conf` and overlay. Copy the configuration, then adapt.
 3. **Verify every symbol you write.** `check_config` takes a whole `prj.conf` or
-   `.overlay` and returns a verdict per line; `get_kconfig`, `get_binding`, and
-   `get_api` each take a list, so grounding a file costs one call rather than one
+   `.overlay` and returns a verdict per line. `get_kconfig`, `get_binding`, and
+   `get_api` each take a list, so checking a file costs one call rather than one
    per name. The plugin also validates provable mistakes on write. A name the
-   catalogue does not hold is never reported as wrong — an application may
-   declare its own Kconfig and bindings — so confirm uncertain names against the
+   catalogue does not hold is not reported as wrong, because an application may
+   declare its own Kconfig and bindings. Confirm uncertain names against the
    build.
-4. **Build before claiming it works.** `west build -b <target> <app>`. Firmware
-   that has not been compiled has not been written.
+4. **Build before reporting it works.** `west build -b <target> <app>`. Do not
+   report firmware as complete before it has compiled.
 5. **Triage failures, review what compiled.** A failed build goes to
    `build-triage`; a driver or ISR that now compiles goes to `firmware-reviewer`
    before it is called done.
