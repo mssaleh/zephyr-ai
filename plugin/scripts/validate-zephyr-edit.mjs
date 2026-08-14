@@ -35,7 +35,7 @@ import {
   validIndexDescriptor,
 } from './index-paths.mjs';
 
-const EXPECTED_SCHEMA = 10;
+const EXPECTED_SCHEMA = 11;
 const EXPECTED_DESCRIPTOR = 2;
 const MAX_REPORTED = 12;
 

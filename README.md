@@ -10,14 +10,24 @@ not hold is reported as outside its scope, never as wrong.
 
 ## Why it exists
 
-Zephyr failures often come from structured facts that prose search cannot settle:
+Zephyr failures often come from structured facts that prose search cannot settle,
+and from questions that are aggregates over the whole tree rather than facts in any
+one file:
 
 | Failure mode | Grounded response |
 | --- | --- |
 | A misspelled or renamed `CONFIG_` assignment fails Kconfig processing | Query evaluated Kconfiglib declarations, types, alternative definition contexts, defaults, and reverse selects before editing |
 | A devicetree node uses a property inherited several bindings away | Query the compatible's recursively flattened property set, types, constraints, and provenance |
 | A build uses the wrong board or qualifier | Query targets derived through Zephyr's board tooling, including revisions and CPU clusters |
+| A part answers `0x19` from its identity register and no datasheet says which driver takes it | Query the identity contract every in-tree driver enforces, in both directions |
+| The vendor already published the overlay you are about to write | Query every sample and test that ships a configuration file for that build target, which no Twister key names |
+| A Twister figure is read as the application's memory budget | Query the memory the board's own `chosen` node points at, with its address and size |
 | Code targets another Zephyr revision | Build an index from the project's actual Git tree and module state, then compare its fingerprint at runtime |
+
+Reading one file at a known tag is not the differentiator: a web search that
+resolves the release tag can do that too, more slowly. What it cannot do is answer
+a question whose answer is spread across three thousand bindings, a thousand
+boards, and two thousand drivers.
 
 The hook catches only what the catalogue can decide on its own: malformed configuration,
 a type mismatch against a known declaration, or assigning a known promptless symbol. It
@@ -88,20 +98,27 @@ ZEPHYR_AI_INDEX="$PWD/index/zephyr.db" claude --plugin-dir "$PWD/plugin"
 
 ### Skills and agents
 
-The skills cover host prerequisites, project setup, Kconfig, devicetree, build/flash,
-debugging, RTOS patterns, drivers and sensors, power, Bluetooth, networking, testing,
-indexing, and STM32/ESP32 platform workflows. Fenced snippets are explicitly illustrative unless
+The skills cover setup, Kconfig, devicetree, build/flash, debugging, RTOS patterns,
+drivers and sensors, power, connectivity, testing, indexing, hardware iteration, and
+STM32/ESP32 platform workflows. Fenced snippets are explicitly illustrative unless
 their metadata identifies a release-gated example.
+
+There are fourteen of them, and the number is deliberate. Claude Code loads skill
+names and descriptions into a character budget of roughly 1% of the context window
+and drops descriptions when it overflows, least-invoked first — so a plugin that
+ships more skills than the budget holds is a plugin whose skills the model cannot
+match against a request. Depth lives in each skill's `references/`, which costs
+nothing until it is read.
 
 | Skill group | Included skills | Coverage boundary |
 | --- | --- | --- |
-| Project foundation | `zephyr-prerequisites`, `zephyr-project-setup`, `zephyr-development`, `zephyr-index` | Workspace layout, grounded implementation workflow, and project index lifecycle |
+| Project foundation | `zephyr-setup`, `zephyr-development`, `zephyr-index` | Workspace layout, grounded implementation workflow, and project index lifecycle |
 | Configuration and hardware | `zephyr-kconfig`, `zephyr-devicetree`, `zephyr-drivers-sensors` | Semantic configuration/binding lookup, overlays, buses, devices, and sensors |
 | Kernel behavior | `zephyr-rtos-patterns`, `zephyr-power` | Concurrency, timing, ISR boundaries, synchronization, and Zephyr power workflows |
-| Connectivity | `zephyr-bluetooth`, `zephyr-networking` | Zephyr Bluetooth and networking configuration/API workflows |
+| Connectivity | `zephyr-connectivity` | Zephyr Bluetooth and networking configuration/API workflows |
 | Build confidence | `zephyr-build-flash`, `zephyr-debugging`, `zephyr-testing` | Build/flash/debug diagnosis and ztest/Twister workflows |
 | Hardware bring-up | `zephyr-hardware-iteration` | Working efficiently when each test cycle needs a manual step on the board |
-| Vendor platforms | `stm32-platform`, `esp32-platform` | Zephyr-native STM32 and ESP32 board/SoC workflows; no STM32Cube or ESP-IDF claim |
+| Vendor platforms | `zephyr-platforms` | Zephyr-native STM32 and ESP32 board/SoC workflows; no STM32Cube or ESP-IDF claim |
 
 The bundled agents are `zephyr-architect`, `build-triage`, `devicetree-specialist`,
 `firmware-reviewer`, and `hardware-bringup`. Read-only agents deny Bash and inherit

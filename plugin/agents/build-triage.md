@@ -1,6 +1,6 @@
 ---
 name: build-triage
-description: Diagnose a Zephyr build failure whose cause is not in one file. Use when a build fails differently between pristine and incremental runs, when the first error names a file the developer did not write, when a failure persists after the obvious fix, when the same source builds for one board target and not another, or when the error appears far from its cause, such as a linker or generated-header error caused by a Kconfig or devicetree decision. Reads the build output and the generated artefacts, checks every symbol against the indexed Zephyr version, and reports the root cause with a specific fix. Not for a single-symbol error with a one-line fix.
+description: Diagnose a Zephyr build failure whose cause is not in one file. Use when a build fails differently between pristine and incremental runs, when the first error names a file the developer did not write, when a failure persists after the obvious fix, when the same source builds for one board target and not another, or when the error appears far from its cause, such as a linker or generated-header error caused by a Kconfig or devicetree decision. Reads the build output and the generated artefacts, checks every symbol against the indexed Zephyr version, and reports the root cause with a specific fix. Not for a single-symbol error with a one-line fix. Use proactively as soon as a Zephyr build fails in a way one file does not explain, rather than editing files to see what changes.
 effort: medium
 maxTurns: 30
 ---

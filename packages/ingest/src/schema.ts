@@ -287,10 +287,48 @@ CREATE TABLE dt_instance (
   compatible TEXT NOT NULL,
   file       TEXT NOT NULL,
   -- Empty when the file is SoC or shared devicetree rather than a board's.
-  board      TEXT NOT NULL DEFAULT ''
+  board      TEXT NOT NULL DEFAULT '',
+  -- The node that carries the compatible, with its unit address: mpu6886@68.
+  -- The node name is the part number, and it is what turns "used on
+  -- m5stack_atoms3" -- which requires the reader to know what that board
+  -- carries -- into "used on m5stack_atoms3 as mpu6886@68", which names the
+  -- part outright. Empty when the enclosing node could not be established.
+  node       TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX dt_instance_compatible_idx ON dt_instance(compatible);
 CREATE INDEX dt_instance_board_idx ON dt_instance(board);
+
+-- What a driver will accept, as against what a binding describes. Many drivers
+-- refuse to initialise unless an identity register reads one of a fixed set of
+-- values, and that set is the answer to "is the part on my bench supported?".
+-- It appears in no binding: invensense,mpu6050 accepts 0x19, an MPU6880, whose
+-- name is in no binding, no board file and no documentation page.
+--
+-- Absence of a row means the extractor did not recognise the driver's shape. It
+-- never means the driver accepts nothing, and every rendering says so.
+CREATE TABLE driver_identity (
+  id            INTEGER PRIMARY KEY,
+  compatible    TEXT NOT NULL,
+  driver_file   TEXT NOT NULL,
+  -- The macro the driver passed to the read, not one matched by name: vendors
+  -- write REG_WAI, REG_CHIP_ID, DEVICE_ID_REG and REG_ID for the same thing.
+  register_name TEXT NOT NULL DEFAULT '',
+  -- Null when the call could be found but its register was not an integer macro.
+  register      INTEGER,
+  UNIQUE(compatible, driver_file)
+);
+CREATE INDEX driver_identity_compatible_idx ON driver_identity(compatible);
+
+CREATE TABLE driver_identity_value (
+  identity_id INTEGER NOT NULL REFERENCES driver_identity(id),
+  -- Stored as an integer so the reverse lookup -- "what accepts 0x19?" -- is an
+  -- index seek rather than a string comparison against 0x19, 0X19 and 25.
+  value       INTEGER NOT NULL,
+  name        TEXT NOT NULL,
+  ord         INTEGER NOT NULL,
+  PRIMARY KEY(identity_id, name)
+);
+CREATE INDEX driver_identity_value_idx ON driver_identity_value(value);
 
 CREATE VIEW dt_property_v AS
   SELECT p.id, p.binding_id, p.child_level, p.name, p.type, p.required,
@@ -345,6 +383,32 @@ CREATE TABLE soc (
 );
 CREATE INDEX soc_name_idx ON soc(name);
 CREATE INDEX soc_series_idx ON soc(series);
+
+-- The memory the application actually gets, as against the Twister figures.
+--
+-- twister.yaml sizes a test runner's expectations. Rendered bare those figures
+-- read as a memory budget and are not one: upstream's NUCLEO-N657X0-Q declares
+-- 1024 KB of each while the application gets 511 KB of SRAM and no internal
+-- flash at all. What decides it is the board's own chosen node and the reg
+-- of what it points at.
+--
+-- A row exists only where the whole chain resolved: the chosen phandle, the
+-- labelled node, and a reg this can read. A board with an unresolvable chain
+-- stores nothing, because a wrong number here is worse than no number.
+CREATE TABLE board_memory (
+  id      INTEGER PRIMARY KEY,
+  board   TEXT NOT NULL,
+  -- Empty when the declaration applies to every target of the board.
+  target  TEXT NOT NULL DEFAULT '',
+  role    TEXT NOT NULL CHECK(role IN ('sram', 'code-partition', 'flash')),
+  label   TEXT NOT NULL,
+  node    TEXT NOT NULL DEFAULT '',
+  address INTEGER NOT NULL,
+  size    INTEGER NOT NULL,
+  source  TEXT NOT NULL,
+  UNIQUE(board, target, role)
+);
+CREATE INDEX board_memory_board_idx ON board_memory(board, role);
 
 CREATE VIRTUAL TABLE board_fts USING fts5(
   name, full_name, vendor, socs_text, supported_text, targets_text,
@@ -452,6 +516,30 @@ CREATE TABLE sample_file (
   text      TEXT NOT NULL
 );
 CREATE INDEX sample_file_sample_idx ON sample_file(sample_id, path);
+
+-- A suite's own per-board configuration, keyed by the build target its filename
+-- resolves to.
+--
+-- Twister metadata is not the only way upstream names a board. A suite that
+-- ships boards/<qualified_target>.overlay configures that exact target, and this
+-- is the most directly useful upstream material a board has: ST's SPI loopback
+-- overlay for the NUCLEO-N657X0-Q carries the DMA channels, the request numbers
+-- and CONFIG_NOCACHE_MEMORY that nobody would guess. Recording only the Twister
+-- keys undercounted what names one board by eight suites.
+CREATE TABLE sample_board_file (
+  id        INTEGER PRIMARY KEY,
+  sample_id INTEGER NOT NULL REFERENCES sample(id),
+  -- Relative to the sample directory: boards/nucleo_n657x0_q_stm32n657xx_sb.overlay.
+  path      TEXT NOT NULL,
+  -- Empty when the filename resolves to no board this index knows. The row is
+  -- kept anyway: it is still evidence the suite ships per-board configuration.
+  board     TEXT NOT NULL DEFAULT '',
+  -- The qualified target, when the filename is that target's build string.
+  target    TEXT NOT NULL DEFAULT '',
+  kind      TEXT NOT NULL DEFAULT 'other'
+);
+CREATE INDEX sample_board_file_board_idx ON sample_board_file(board, target);
+CREATE INDEX sample_board_file_sample_idx ON sample_board_file(sample_id);
 
 CREATE TABLE sample_platform (
   sample_id INTEGER NOT NULL REFERENCES sample(id),

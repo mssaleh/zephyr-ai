@@ -16,9 +16,22 @@ const MAX_LINES = 200;
 type Kind = 'kconfig' | 'devicetree';
 type Prefix = 'CONFIG_' | 'SB_CONFIG_';
 
+/**
+ * What the check actually established about a line.
+ *
+ * Three populations, not two. `ok` used to cover both "verified against the
+ * catalogue" and "the catalogue cannot judge this, so nothing was checked", and
+ * the two are different claims: `CONFIG_LV_USE_MONKEY=y` came back `ok, bool`,
+ * the identical verdict `CONFIG_GPIO=y` receives, when the module Kconfig that
+ * declares it was never read. Suppressing the complaint is right; reporting the
+ * result as verified is not.
+ */
+type Status = 'ok' | 'not-judged' | 'problem';
+
 interface Verdict {
   line: number;
   subject: string;
+  status: Status;
   problem: string | null;
   note: string;
 }
@@ -238,6 +251,7 @@ function checkKconfig(
     verdicts.push({
       line: entry.line,
       subject: entry.raw,
+      status: 'problem',
       problem:
         `is a ${wrong} line in a ${prefix === 'SB_CONFIG_' ? 'sysbuild.conf' : 'prj.conf'}-style ` +
         `file, where only ${prefix} settings apply. The build ignores it silently${counterpart}`,
@@ -249,6 +263,7 @@ function checkKconfig(
     verdicts.push({
       line: entry.line,
       subject: entry.raw,
+      status: 'problem',
       problem: `malformed Kconfig assignment: ${entry.raw}`,
       note: '',
     });
@@ -289,6 +304,22 @@ function checkKconfig(
         const match = /^modules\/([^/]+)\//.exec(file);
         return match ? glue.has(match[1]!) : false;
       });
+  /** Which of the three tests below failed, in the words of the thing that failed. */
+  const unjudgedReason = (row: Record<string, unknown>, glueDirs: Set<string>): string => {
+    if (row['type'] === null || Number(row['defs']) === 0) {
+      return 'no declaration for this symbol was indexed, so it has no type or prompt here';
+    }
+    const mirrored = String(row['files'] ?? '')
+      .split(',')
+      .map((file) => /^modules\/([^/]+)\//.exec(file)?.[1] ?? '')
+      .find((directory) => directory && glueDirs.has(directory));
+    if (mirrored) {
+      return `the only declarations are in \`modules/${mirrored}\`, whose module Kconfig this ` +
+        'index did not read, so a prompt the module itself declares is not visible here';
+    }
+    return 'every indexed declaration is a `Kconfig.defconfig`, which sets a value rather than ' +
+      'declaring the symbol, so its prompt is declared somewhere this index did not read';
+  };
   const promptStatusIsKnown = (row: Record<string, unknown>): boolean =>
     row['type'] !== null &&
     Number(row['defs']) > 0 &&
@@ -307,6 +338,7 @@ function checkKconfig(
       verdicts.push({
         line: entry.line,
         subject: entry.raw,
+        status: 'not-judged',
         problem: null,
         note:
           'not in the indexed catalogue. Generated, application-local, board-derived and ' +
@@ -330,6 +362,7 @@ function checkKconfig(
       verdicts.push({
         line: entry.line,
         subject: entry.raw,
+        status: 'problem',
         problem:
           `CONFIG_${entry.name} has no prompt and cannot be assigned from an application ` +
           'configuration. Enable the symbol that selects it instead' +
@@ -340,11 +373,30 @@ function checkKconfig(
     }
 
     const mismatch = valueProblem(type, entry.value);
+    if (mismatch) {
+      verdicts.push({
+        line: entry.line,
+        subject: entry.raw,
+        status: 'problem',
+        problem: `CONFIG_${entry.name} ${mismatch}.`,
+        note: '',
+      });
+      continue;
+    }
+
+    // A symbol whose prompt status this catalogue cannot settle was verified
+    // against nothing. Reporting it as `ok` states a check that did not happen,
+    // which is the same failure mode as reporting a symbol absent.
+    const unjudged = Number(row['has_prompt']) === 0 && !promptStatusIsKnown(row);
     verdicts.push({
       line: entry.line,
       subject: entry.raw,
-      problem: mismatch ? `CONFIG_${entry.name} ${mismatch}.` : null,
-      note: mismatch ? '' : `ok, \`${type || 'unknown'}\`${prompt ? ` "${prompt}"` : ''}`,
+      status: unjudged ? 'not-judged' : 'ok',
+      problem: null,
+      note: unjudged
+        ? `not judged — ${unjudgedReason(row, glue)}. The type is \`${type || 'unknown'}\`, but ` +
+          'whether this line can be assigned here was not established'
+        : `ok, \`${type || 'unknown'}\`${prompt ? ` "${prompt}"` : ''}`,
     });
   }
 
@@ -386,6 +438,7 @@ function checkDevicetree(idx: Index, text: string): Verdict[] {
         verdicts.push({
           line: node.line,
           subject: value,
+          status: 'ok',
           problem: null,
           note:
             `indexed — ${detail}` +
@@ -401,6 +454,10 @@ function checkDevicetree(idx: Index, text: string): Verdict[] {
       verdicts.push({
         line: node.line,
         subject: value,
+        // A compatible the catalogue does not hold was judged only when a near
+        // miss was found. Otherwise nothing was established: an application may
+        // declare its own binding through dts/bindings, DTS_ROOT or a module.
+        status: near ? 'problem' : bound ? 'ok' : 'not-judged',
         problem: near
           ? `"${value}" is not a known compatible. "${near.name}" is, and differs by ` +
             `${near.edits} character${near.edits === 1 ? '' : 's'}. A node whose compatible ` +
@@ -423,12 +480,15 @@ export const checkConfig: ToolFactory = (index) => ({
   description:
     'Check a whole prj.conf, board .conf, defconfig, sysbuild.conf, .overlay, .dts or .dtsi ' +
     'against the indexed Zephyr version and get a verdict for every line, in one call. Use it ' +
-    'before writing a configuration file and again after. It reports each symbol\'s type, prompt ' +
-    'and whether it can be assigned; each compatible\'s bus and required-property count; and four ' +
-    'errors: a malformed assignment, a promptless symbol assigned from an application ' +
-    'configuration, a value that contradicts the declared type, and a compatible that misspells an ' +
-    'indexed one. A grep only tells you whether a name appears somewhere. A symbol or compatible ' +
-    'that is absent from the index is reported as outside the catalogue, not as wrong.',
+    'before writing a configuration file and again after. Every line comes back in one of three ' +
+    'populations: confirmed against the catalogue, carrying a problem, or not judged — the last ' +
+    'meaning the catalogue could not settle it and checked nothing, with the reason given. It ' +
+    'reports each symbol\'s type, prompt and whether it can be assigned; each compatible\'s bus ' +
+    'and required-property count; and four errors: a malformed assignment, a promptless symbol ' +
+    'assigned from an application configuration, a value that contradicts the declared type, and a ' +
+    'compatible that misspells an indexed one. A grep only tells you whether a name appears ' +
+    'somewhere. A symbol or compatible that is absent from the index is reported as outside the ' +
+    'catalogue, not as wrong.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -475,13 +535,20 @@ export const checkConfig: ToolFactory = (index) => ({
         ? checkKconfig(idx, text, Boolean(path?.endsWith('_defconfig')), prefix)
         : checkDevicetree(idx, text);
     const problems = verdicts.filter((v) => v.problem !== null);
+    const confirmed = verdicts.filter((v) => v.status === 'ok').length;
+    const notJudged = verdicts.filter((v) => v.status === 'not-judged').length;
     const subject = kind === 'kconfig' ? 'Kconfig assignment' : 'compatible declaration';
 
     const shown = verdicts.slice(0, MAX_LINES);
     const body = joinSections([
       `# ${path ? `\`${path}\`` : `${kind} fragment`}`,
       `Checked ${verdicts.length} ${subject}${verdicts.length === 1 ? '' : 's'} against the ` +
-        `indexed Zephyr ${version} catalogue.`,
+        `indexed Zephyr ${version} catalogue: ${confirmed} confirmed, ${notJudged} not judged, ` +
+        `${problems.length} with a problem.` +
+        (notJudged > 0
+          ? ' A line that was not judged was checked against nothing; the reason is on the line ' +
+            'itself. It is neither an error nor a confirmation.'
+          : ''),
       problems.length > 0
         ? `## Problems (${problems.length})\n` +
           problems.map((p) => `- line ${p.line}: ${p.problem}`).join('\n')
@@ -511,6 +578,8 @@ export const checkConfig: ToolFactory = (index) => ({
       path: path ?? null,
       zephyrVersion: version,
       checked: verdicts.length,
+      confirmedCount: confirmed,
+      notJudgedCount: notJudged,
       problemCount: problems.length,
       verdicts,
     });

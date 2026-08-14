@@ -1,10 +1,10 @@
 ---
 name: zephyr-kconfig
-description: Configure a Zephyr application with Kconfig. Use when editing prj.conf, a board .conf, a defconfig, or a Kconfig file; when a CONFIG_ option appears to have no effect; when choosing between prj.conf, board overlays, and Kconfig fragments; or when a build fails with an undefined symbol, a dependency error, or an unexpected default. Covers symbol lookup, dependency and select semantics, where each kind of setting belongs, and how to inspect the resolved configuration.
+description: "Kconfig for Zephyr: prj.conf, board .conf, defconfig, symbol lookup, dependencies and selects, promptless symbols, and why a CONFIG_ option has no effect or fails the build."
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.8.0"
+  version: "0.9.0"
 ---
 
 # Kconfig in Zephyr

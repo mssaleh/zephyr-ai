@@ -1,10 +1,10 @@
 ---
 name: zephyr-hardware-iteration
-description: Work efficiently when every firmware test cycle needs a manual step. Use when bringing up firmware on real hardware and each attempt needs a jumper moved, a button held, a power cycle, a cable swapped, a board taken out of an enclosure, or a trip to a lab or remote site; when progress has dropped to a few attempts an hour; when deciding what to put in the next image; or when choosing between competing hypotheses about a hardware problem. Covers finding a faster load path, adding observability, combining changes into one image, ranking hypotheses by cost of disproof, and diagnostic commands that cannot report failure.
+description: "Work efficiently when every firmware test needs a manual step: a jumper, a button, a power cycle, a trip to the bench. Use when progress is a few attempts an hour or a person is helping at the hardware."
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.8.0"
+  version: "0.9.0"
 ---
 
 # Iterating against real hardware
@@ -136,6 +136,42 @@ operation that did not complete.
 A command that applied a setting but could not store it should report that, not
 success. Keep this behaviour after the bug is fixed.
 
+**Build the health registry before the features.** One place where every
+subsystem records its state and a one-line detail, feeding the boot banner, the
+shell, whatever the device reports over the network, and the indicator LED.
+Written once, early, it costs nothing per feature; retrofitted, it produces N
+inconsistent answers to the same question.
+
+**Latch faults, not weather.** An unplugged cable is not a device defect. A fault
+indicator that latches on transient external conditions is one operators learn to
+ignore, which is worse than having none.
+
+**Report on change, not on schedule.** A periodic dump buries the transition that
+matters in identical lines.
+
+**Prove the safety mechanism by firing it.** "The watchdog is armed" is a claim
+about configuration. A command that hangs the system deliberately, plus a known
+external signature for the reset, is a claim about reality.
+
+## Directing someone at the bench
+
+The person holding the board cannot see your terminal, and each round trip costs
+more than any command you will run.
+
+**Batch the physical actions and state the rhythm first.** "Press and hold the
+button, I will tell you when to release" beats discovering the sequence one
+message at a time. Say what you are about to do, what they should see, and what
+to tell you.
+
+**Make interactive timeouts generous.** Fifteen seconds to present a finger or
+press a button, not eight. Timing out halfway through a three-step enrolment
+costs a full restart with a person waiting.
+
+**The person at the bench is the authority on physical facts.** Which LED is lit,
+what is plugged in, whether the jumper is fitted, whether the board is warm. Ask,
+and believe the answer over the schematic — the schematic describes the design,
+and they are looking at the build.
+
 ## Characterise precisely
 
 If a bug is not fixed in this session, the quality of the description decides
@@ -160,6 +196,30 @@ have:
 grep -c 'read ok' capture.log
 grep -n 'error\|timeout' capture.log | head
 ```
+
+**An identification that cannot be falsified is not an identification.** Report
+the value you read next to the conclusion you drew from it: "reads 0x19 at
+register 0x75, which `invensense,mpu6050` accepts" can be checked by the next
+person; "it's an MPU6886" cannot. `search_bindings` takes that value as
+`identity_value` and answers which compatibles have a driver that accepts it,
+which is faster and more reliable than searching for the part number.
+
+**Prefer a handshake with a checksum over an acknowledgement.** A bare ACK proves
+only that something is at that address. A response whose CRC validates cannot
+have come from a device that did not send it.
+
+**When a read returns zeros, read something known-non-zero through the same
+path.** Zeros are ambiguous: blank storage, a failed read reporting success, a
+peripheral in the wrong security state. If the control read is also zero, say so.
+"The fuse is blank" and "nothing is coming back from this path" are different
+claims, and choosing the flattering one costs a test cycle.
+
+**A response that changes with state tells you what it means.** Perturb the
+system deliberately — cover the sensor, unplug the cable, hold the button — and
+watch which bytes move.
+
+**Report raw bytes on the failure path.** "Not recognised" locates nothing; "id
+2, code 0x01" locates everything.
 
 ## Put several changes in one image
 

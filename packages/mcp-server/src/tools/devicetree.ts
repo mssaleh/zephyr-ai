@@ -129,13 +129,93 @@ export function skeletonProperty(property: PropertyRow): string {
   }
 }
 
+/** Accept `0x19`, `19`, `0X19` or `25` for an identity value. */
+function parseIdentityValue(raw: string): number | null {
+  const text = raw.trim();
+  if (/^0[xX][0-9a-fA-F]+$/.test(text)) return Number.parseInt(text.slice(2), 16);
+  if (/^[0-9]+$/.test(text)) return Number.parseInt(text, 10);
+  return null;
+}
+
+/**
+ * Which compatible accepts a value read off a part.
+ *
+ * The direction a developer at a bench actually has. They can read `WHO_AM_I`
+ * over I2C in one command; what they cannot do is get from `0x19` to
+ * `invensense,mpu6050`, because no binding, board file or documentation page
+ * contains that number. Only the driver does.
+ */
+function identityLookup(
+  idx: Index,
+  value: number,
+  register: number | null,
+  limit: number,
+): ReturnType<typeof result> {
+  const hex = (item: number): string => `0x${item.toString(16).padStart(2, '0')}`;
+  let rows: Row[] = [];
+  try {
+    rows = idx.all(
+      `SELECT d.compatible, d.driver_file, d.register, d.register_name, v.name
+         FROM driver_identity_value v JOIN driver_identity d ON d.id = v.identity_id
+        WHERE v.value = ?${register === null ? '' : ' AND d.register = ?'}
+        ORDER BY d.compatible
+        LIMIT ?`,
+      ...(register === null ? [value, limit] : [value, register, limit]),
+    );
+  } catch {
+    // An index predating the identity corpus cannot answer this direction.
+  }
+
+  const where = register === null ? '' : ` at register ${hex(register)}`;
+  if (rows.length === 0) {
+    return noResults(
+      'drivers accepting that identity value',
+      `${hex(value)}${where}`,
+      'This index records an identity contract only for drivers whose check it could read, so a ' +
+        'miss is not proof that no driver accepts the value. Search by part name or peripheral ' +
+        'type instead, and read the candidate driver with get_source to see what it compares ' +
+        'against.',
+    );
+  }
+
+  const results = rows.map((row) => ({
+    compatible: String(row['compatible']),
+    constant: String(row['name']),
+    register: row['register'] === null ? null : Number(row['register']),
+    registerName: String(row['register_name'] ?? ''),
+    driverFile: String(row['driver_file']),
+  }));
+
+  return result(
+    `${results.length} driver(s) accept ${hex(value)}${where}.\n\n` +
+      results
+        .map(
+          (entry) =>
+            `### \`${entry.compatible}\`\n` +
+            `accepts it as \`${entry.constant}\`` +
+            `${entry.register === null ? '' : `, read from ${hex(entry.register)}`}` +
+            `${entry.registerName ? ` (\`${entry.registerName}\`)` : ''}\n` +
+            `_driver: ${entry.driverFile}_`,
+        )
+        .join('\n\n') +
+      '\n\nAn identity value is not unique across vendors: several unrelated parts answer 0x68. ' +
+      'Confirm the candidate with get_binding, and check that the part is on the bus and address ' +
+      'the driver expects.',
+    { identityValue: value, register, count: results.length, results },
+  );
+}
+
 export const searchBindings: ToolFactory = (index) => ({
   name: 'search_bindings',
   title: 'Search devicetree bindings',
   description:
     'Search Zephyr devicetree bindings by compatible string, hardware description, or property ' +
     'name. Use this to find the right compatible for a peripheral or sensor ("bosch bme280", ' +
-    '"stm32 spi", "gpio led"), or to find which bindings accept a given property. Returns ' +
+    '"stm32 spi", "gpio led"), or to find which bindings accept a given property. Matches part of ' +
+    'a compatible, so "digi-temp" finds st,stm32-digi-temp when the vendor prefix is not known. ' +
+    'Pass "identity_value" to search the other direction: given the value an unknown part returns ' +
+    'from its WHO_AM_I or chip-ID register, it reports which compatibles have a driver that ' +
+    'accepts it. That is the question at a bench, and no other tool can answer it. Returns ' +
     'compatible strings; pass one to get_binding for the full property set.',
   inputSchema: {
     type: 'object',
@@ -144,6 +224,18 @@ export const searchBindings: ToolFactory = (index) => ({
         type: 'string',
         description: 'Compatible fragment, hardware description, or property name.',
       },
+      identity_value: {
+        type: 'string',
+        description:
+          'A value read from an unknown part\'s identity register, e.g. "0x19". Reports which ' +
+          'compatibles have a driver that accepts it.',
+      },
+      identity_register: {
+        type: 'string',
+        description:
+          'Restrict the identity search to drivers that read this register, e.g. "0x75". Use when ' +
+          'the register is known, since the same value is accepted by unrelated parts.',
+      },
       vendor: {
         type: 'string',
         description: 'Restrict to a devicetree vendor prefix, e.g. "st", "espressif", "nordic".',
@@ -151,15 +243,34 @@ export const searchBindings: ToolFactory = (index) => ({
       bus: { type: 'string', description: 'Restrict to a bus, e.g. "spi", "i2c".' },
       limit: limitSchema(15),
     },
-    required: ['query'],
+    anyOf: [{ required: ['query'] }, { required: ['identity_value'] }],
     additionalProperties: false,
   },
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   handler: (args) => {
-    const query = requireString(args, 'query');
     const vendor = optionalString(args, 'vendor');
     const bus = optionalString(args, 'bus');
     const limit = clampLimit(args['limit'], 15);
+
+    const identityValue = optionalString(args, 'identity_value');
+    if (identityValue !== undefined) {
+      const value = parseIdentityValue(identityValue);
+      if (value === null) {
+        throw new ToolError(
+          `"identity_value" must be an integer, in hexadecimal or decimal: got "${identityValue}".`,
+        );
+      }
+      const registerText = optionalString(args, 'identity_register');
+      const register = registerText === undefined ? null : parseIdentityValue(registerText);
+      if (registerText !== undefined && register === null) {
+        throw new ToolError(
+          `"identity_register" must be an integer, in hexadecimal or decimal: got "${registerText}".`,
+        );
+      }
+      return identityLookup(index(), value, register, limit);
+    }
+
+    const query = requireString(args, 'query');
 
     const filters: string[] = [];
     const params: unknown[] = [];
@@ -183,6 +294,27 @@ export const searchBindings: ToolFactory = (index) => ({
       [...params, limit],
       limit,
     );
+
+    // Searching bindings is the tool for when the compatible is exactly what is
+    // not known, so recall on a fragment is the point. Full-text search cannot
+    // provide it here: dt_fts tokenises on `_,-`, which makes
+    // `st,stm32-digi-temp` a single token, so `stm32-digi-temp` and `digi-temp`
+    // match nothing while the binding sits in the index.
+    const seen = new Set(rows.map((row) => String(row['compatible'])));
+    const substring =
+      rows.length < limit && query.length >= 3
+        ? idx.all(
+            `SELECT b.compatible, b.description, b.bus, b.on_bus, b.n_props, b.path
+               FROM dt_binding b
+              WHERE b.compatible LIKE ? ESCAPE '\\' ${filters.join(' ')}
+              ORDER BY LENGTH(b.compatible), b.compatible
+              LIMIT ?`,
+            `%${query.trim().replace(/[%_\\]/g, '\\$&')}%`,
+            ...params,
+            limit,
+          ).filter((row) => !seen.has(String(row['compatible'])))
+        : [];
+    rows.push(...substring.slice(0, Math.max(0, limit - rows.length)));
 
     if (rows.length === 0) {
       return noResults(
@@ -351,7 +483,10 @@ function bindingMissText(idx: Index, compatible: string): string {
 function instantiationNote(idx: Index, compatible: string): { text?: string; structured: Record<string, unknown> } {
   let rows: Record<string, unknown>[];
   try {
-    rows = idx.all('SELECT file, board FROM dt_instance WHERE compatible = ? ORDER BY file', compatible);
+    rows = idx.all(
+      'SELECT file, board, node FROM dt_instance WHERE compatible = ? ORDER BY file, node',
+      compatible,
+    );
   } catch {
     // An index predating the instance table simply has nothing to add.
     return { structured: {} };
@@ -366,7 +501,23 @@ function instantiationNote(idx: Index, compatible: string): { text?: string; str
     };
   }
 
-  const boards = [...new Set(rows.map((row) => String(row['board'])).filter(Boolean))].sort();
+  // The node name is the part number. "used on m5stack_atoms3" requires the
+  // reader to know what that board carries; "on m5stack_atoms3 as mpu6886@68"
+  // names the part outright, and it is one join away from the same rows.
+  const nodesByBoard = new Map<string, Set<string>>();
+  for (const row of rows) {
+    const board = String(row['board']);
+    if (!board) continue;
+    const node = String(row['node'] ?? '');
+    const existing = nodesByBoard.get(board);
+    if (existing) existing.add(node);
+    else nodesByBoard.set(board, new Set([node]));
+  }
+  const boards = [...nodesByBoard.keys()].sort();
+  const boardLabel = (board: string): string => {
+    const nodes = [...(nodesByBoard.get(board) ?? [])].filter(Boolean).sort();
+    return nodes.length === 0 ? `\`${board}\`` : `\`${board}\` as ${nodes.map((node) => `\`${node}\``).join(', ')}`;
+  };
   // The directory a shared devicetree file sits in is the silicon grouping, and
   // it is exact. Deriving an SoC series from the boards instead is not
   // comparable across vendors, for the reason given in the closing note.
@@ -396,8 +547,10 @@ function instantiationNote(idx: Index, compatible: string): { text?: string; str
   if (boards.length > 0) {
     parts.push(
       `**Declared directly in ${boards.length} board file${boards.length === 1 ? '' : 's'}**: ` +
-        `${boards.slice(0, 8).map((name) => `\`${name}\``).join(', ')}` +
-        `${boards.length > 8 ? `, and ${boards.length - 8} more` : ''}.`,
+        `${boards.slice(0, 8).map(boardLabel).join(', ')}` +
+        `${boards.length > 8 ? `, and ${boards.length - 8} more` : ''}. ` +
+        'The node name is the part the board actually carries, which is often a different part ' +
+        'number from the compatible.',
     );
   }
   // Without this, a zero board count reads as "nothing uses it", which for most
@@ -418,6 +571,56 @@ function instantiationNote(idx: Index, compatible: string): { text?: string; str
   return {
     text: parts.join('\n\n'),
     structured: { usedIn: { files: rows.length, socDirectories, boards } },
+  };
+}
+
+/**
+ * What the driver behind a compatible will accept, when it says so in code.
+ *
+ * Many drivers refuse to initialise unless an identity register reads one of a
+ * fixed set of values, and that set is the fact that decides whether the part on
+ * the bench is supported. It is in no binding: `invensense,mpu6050` accepts
+ * `0x19`, an MPU6880, whose name appears in no binding, no board file and no
+ * documentation page. Establishing it by hand means reading driver headers.
+ *
+ * A missing record means the extractor did not recognise the driver's shape, and
+ * the text says exactly that. Read as "this driver accepts nothing" it would be
+ * worse than silence.
+ */
+function identityNote(idx: Index, compatible: string): { text?: string; structured: Record<string, unknown> } {
+  let rows: Row[];
+  try {
+    rows = idx.all(
+      `SELECT d.driver_file, d.register_name, d.register, v.value, v.name
+         FROM driver_identity d JOIN driver_identity_value v ON v.identity_id = d.id
+        WHERE d.compatible = ?
+        ORDER BY d.driver_file, v.ord`,
+      compatible,
+    );
+  } catch {
+    // An index predating the identity corpus has nothing to add.
+    return { structured: {} };
+  }
+  if (rows.length === 0) return { structured: { identity: null } };
+
+  const hex = (value: number): string => `0x${value.toString(16).padStart(2, '0')}`;
+  const driverFile = String(rows[0]!['driver_file']);
+  const registerName = String(rows[0]!['register_name'] ?? '');
+  const register = rows[0]!['register'] === null ? null : Number(rows[0]!['register']);
+  const values = rows.map((row) => ({ value: Number(row['value']), name: String(row['name']) }));
+
+  return {
+    text:
+      '**Driver identity check.** ' +
+      (register === null
+        ? 'This driver reads an identity register and accepts '
+        : `This driver reads ${hex(register)}${registerName ? ` (\`${registerName}\`)` : ''} and accepts `) +
+      `${values.map((entry) => `${hex(entry.value)} \`${entry.name}\``).join(', ')}. ` +
+      'A part that returns anything else fails initialisation, so read the register off the part ' +
+      'before binding this driver. Binding one whose check the part fails produces a device that ' +
+      'initialises, or half-initialises, and returns numbers that are not readings. ' +
+      `Source: \`${driverFile}\`.`,
+    structured: { identity: { driverFile, register, registerName, accepts: values } },
   };
 }
 
@@ -442,6 +645,7 @@ function bindingSummary(idx: Index, requested: string): BatchEntry {
   const optionalCount = own.length - required.length;
   const includes = json<string[]>(binding['includes'], []);
   const usage = instantiationNote(idx, compatible);
+  const identity = identityNote(idx, compatible);
 
   return {
     key: compatible,
@@ -455,6 +659,7 @@ function bindingSummary(idx: Index, requested: string): BatchEntry {
       required.length > 0
         ? `**Required properties** (${required.length}): ${required.map((n) => `\`${n}\``).join(', ')}`
         : '**Required properties**: none beyond the universal ones.',
+      identity.text,
       usage.text,
       variantNote(variants, compatible),
       `_${optionalCount} optional propert${optionalCount === 1 ? 'y' : 'ies'} and the full flattened ` +
@@ -472,6 +677,7 @@ function bindingSummary(idx: Index, requested: string): BatchEntry {
       optionalCount,
       includes,
       ...usage.structured,
+      ...identity.structured,
     },
   };
 }
@@ -567,6 +773,11 @@ export const getBinding: ToolFactory = (index) => ({
 
     const cells = json<Record<string, string[]>>(binding['cells'], {});
     const includes = json<string[]>(binding['includes'], []);
+    const identity = identityNote(idx, compatible);
+    // The fullest answer must carry the same evidence as the batched summary:
+    // what silicon the driver targets, and which part each board that uses it
+    // actually fits.
+    const usage = instantiationNote(idx, compatible);
 
     // A skeleton node saves the model from guessing syntax for required properties.
     const skeleton = [
@@ -593,6 +804,8 @@ export const getBinding: ToolFactory = (index) => ({
             .join('\n')
         : undefined,
       onBus ? undefined : variantNote(variants, compatible),
+      identity.text,
+      usage.text,
       Object.keys(cells).length > 0
         ? `**Specifier cells**\n${Object.entries(cells)
             .map(([k, v]) => `- \`${k}\`: ${v.join(', ')}`)
@@ -625,6 +838,8 @@ export const getBinding: ToolFactory = (index) => ({
         onBus: v['on_bus'] ?? null,
         path: String(v['path']),
       })),
+      ...identity.structured,
+      ...usage.structured,
       cells,
       includes,
       required: required.map((p) => ({

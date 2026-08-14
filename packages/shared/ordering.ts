@@ -22,3 +22,14 @@ export function byCodeUnits(left: string, right: string): number {
 export function byField<T>(field: (item: T) => string): (left: T, right: T) => number {
   return (left, right) => byCodeUnits(field(left), field(right));
 }
+
+/**
+ * One sort or de-duplication key from several fields.
+ *
+ * Joined with NUL, which cannot occur in a path, a compatible or a board
+ * name, so no combination of fields can collide with another by running two
+ * of them together.
+ */
+export function compositeKey(...parts: string[]): string {
+  return parts.join('\u0000');
+}

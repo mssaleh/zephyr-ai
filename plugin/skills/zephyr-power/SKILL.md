@@ -1,10 +1,10 @@
 ---
 name: zephyr-power
-description: Reduce power consumption in Zephyr firmware. Use when targeting battery or energy-harvesting operation, configuring system or device power management, choosing low-power states, keeping peripherals from blocking sleep, or investigating why measured current is higher than expected. Covers CONFIG_PM and CONFIG_PM_DEVICE, device runtime PM, power state definition in devicetree, wake sources, and a diagnostic order for excess current.
+description: "Cut power on battery or energy-harvesting devices: CONFIG_PM and PM_DEVICE, device runtime PM, low-power states, wake sources, and why measured current is higher than expected."
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.8.0"
+  version: "0.9.0"
 ---
 
 # Power management

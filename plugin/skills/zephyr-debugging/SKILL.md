@@ -1,10 +1,10 @@
 ---
 name: zephyr-debugging
-description: Diagnose Zephyr build failures and runtime faults. Use when a build fails with a CMake, Kconfig, devicetree, or linker error; when firmware hard-faults, hangs, reboots, or produces a stack overflow; when a device fails to initialise; or when a peripheral does nothing and reports no error. Covers reading Zephyr's error output, decoding fault dumps, thread and stack analysis, and the instrumentation to enable while investigating.
+description: "Diagnose a Zephyr build failure or runtime fault: CMake, Kconfig, devicetree or linker errors, hard faults, stack overflows, hangs, reboots, a device that does nothing, or a reply that decodes wrongly."
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.8.0"
+  version: "0.9.0"
 ---
 
 # Debugging Zephyr
@@ -59,7 +59,11 @@ file.
 An undefined `__device_dts_ord_..._ORD` is the devicetree form of the same
 problem: the node the code references is not in the merged tree.
 
-For `region 'FLASH' overflowed by N bytes`, run `west build -t rom_report`, then
+For `region 'FLASH' overflowed by N bytes`, first confirm what the region
+actually is: `get_board` reports the memory this target's devicetree gives the
+application, which is often not the Twister flash figure and on a target without
+execute-in-place describes no internal flash at all. Then run
+`west build -t rom_report`, and
 remove `CONFIG_LOG`, `CONFIG_SHELL`, `CONFIG_ASSERT`, or unused subsystems, or
 set `CONFIG_SIZE_OPTIMIZATIONS=y`.
 
@@ -218,6 +222,36 @@ rewritten to any other value. It reads back wrong regardless of later code.
 After fixing a flash bug, erase and retest. Otherwise the stale byte makes the
 value read back wrong and the old fault looks like a new one, costing another
 test cycle.
+
+## Believe the device before your decoder
+
+Three failures look like broken hardware and are not.
+
+**A non-zero return is not always a failure.** `-EALREADY` means the operation
+was already done: bringing up an interface that auto-started returns it, and so
+do many idempotent calls. Treating every non-zero return as an error produced a
+prominent, confident report that a link had failed while it was carrying traffic.
+Read the documented return set with `get_api` before wrapping a call; an
+idempotent operation has an "already done" code, and it is a success.
+
+**Distinguish "not yet" from "never".** A subsystem that will be ready in one
+second and one that never will deserve different words and different
+consequences. Wait, bounded, for the steady state before reporting it, and say
+which of the two you observed.
+
+**A field whose meaning depends on the outcome cannot be decoded
+unconditionally.** A reply that carries a privilege level on success and a status
+code on failure, in the same byte, will be decoded wrongly by a status table that
+is correct for every other command in the protocol — and the failure is silent
+and fails closed, so it reads as a hardware or user problem. Decide the outcome
+from a field that is unambiguous, then interpret the overloaded one. A shared
+enumeration feels safe because it is usually right; ask which commands it
+actually applies to.
+
+**Suspect your own decoder first when the device answered promptly with a valid
+checksum.** That combination means it understood the question. Report the raw
+bytes on the failure path: "not recognised" locates nothing, "id 2, code 0x01"
+locates everything.
 
 ## Early-boot output is lost, and garbled serial is usually a host problem
 

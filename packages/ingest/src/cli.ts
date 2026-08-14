@@ -37,10 +37,13 @@ import { collectBindings } from './sources/bindings.ts';
 import { collectBoards, collectSocs } from './sources/boards.ts';
 import { collectDocs } from './sources/docs.ts';
 import { collectKconfig, type CollectedKconfig, type KconfigScope } from './sources/kconfig.ts';
+import { collectBoardMemory } from './sources/board-memory.ts';
+import { collectSampleBoardFiles } from './sources/sample-board-files.ts';
 import { collectSamples } from './sources/samples.ts';
 import { collectBoardRunners, collectRunners, collectWestCommands } from './sources/west.ts';
 import { collectModules, moduleNameForRoot } from './sources/modules.ts';
 import { collectDevicetreeInstances } from './sources/devicetree-instances.ts';
+import { collectDriverIdentities } from './sources/driver-identity.ts';
 import { collectSocKconfig } from './sources/soc-kconfig.ts';
 import { collectResolvedBuild } from './sources/resolved-build.ts';
 import type { KconfigExpr } from './sources/kconfig.ts';
@@ -508,6 +511,16 @@ function main(): void {
       `${instanceExport.report.discovered} devicetree files (${Date.now() - tInstances} ms)`,
   );
 
+  const tIdentity = Date.now();
+  const identityExport = collectDriverIdentities(
+    manifest,
+    bindings.map((binding) => binding.compatible).filter((value): value is string => Boolean(value)),
+  );
+  log(
+    `  driver id ${identityExport.identities.length} identity contracts from ` +
+      `${identityExport.report.discovered} candidate drivers (${Date.now() - tIdentity} ms)`,
+  );
+
   const t4 = Date.now();
   const socDirByName = new Map(socs.map((soc) => [soc.name, soc.dir]));
   const westCommands = collectWestCommands(manifest);
@@ -552,7 +565,27 @@ function main(): void {
 
   const t5s = Date.now();
   const samples = collectSamples(manifest);
-  log(`  samples   ${samples.length} (${Date.now() - t5s} ms)`);
+  const boardTargets = boards.map((board) => ({
+    name: board.name,
+    dir: board.dir,
+    targets: board.targets.map((target) => target.identifier),
+  }));
+  const sampleBoardFiles = collectSampleBoardFiles(
+    manifest,
+    samples.map((sample) => sample.path),
+    boardTargets,
+  );
+  log(
+    `  samples   ${samples.length}, ${sampleBoardFiles.files.length} board-named files ` +
+      `(${Date.now() - t5s} ms)`,
+  );
+
+  const tMemory = Date.now();
+  const boardMemory = collectBoardMemory(manifest, boardTargets);
+  log(
+    `  memory    ${boardMemory.regions.length} board regions resolved of ` +
+      `${boardMemory.report.discovered} chosen declarations (${Date.now() - tMemory} ms)`,
+  );
 
   const t5 = Date.now();
   const api = collectApi(manifest, opts.apiXml);
@@ -840,10 +873,28 @@ function main(): void {
   }
 
   const insInstance = db.prepare(
-    'INSERT INTO dt_instance (compatible, file, board) VALUES (?, ?, ?)',
+    'INSERT INTO dt_instance (compatible, file, board, node) VALUES (?, ?, ?, ?)',
   );
   for (const instance of instanceExport.instances) {
-    insInstance.run(instance.compatible, instance.file, instance.board);
+    insInstance.run(instance.compatible, instance.file, instance.board, instance.node);
+  }
+
+  const insIdentity = db.prepare(
+    'INSERT INTO driver_identity (compatible, driver_file, register_name, register) VALUES (?, ?, ?, ?)',
+  );
+  const insIdentityValue = db.prepare(
+    'INSERT INTO driver_identity_value (identity_id, value, name, ord) VALUES (?, ?, ?, ?)',
+  );
+  for (const identity of identityExport.identities) {
+    const row = insIdentity.run(
+      identity.compatible,
+      identity.driverFile,
+      identity.registerName,
+      identity.register,
+    );
+    identity.values.forEach((value, ord) => {
+      insIdentityValue.run(Number(row.lastInsertRowid), value.value, value.name, ord);
+    });
   }
 
   // Intern property descriptions; see the note on `text_pool` in schema.ts.
@@ -956,6 +1007,23 @@ function main(): void {
     );
   }
 
+  const insBoardMemory = db.prepare(
+    `INSERT INTO board_memory (board, target, role, label, node, address, size, source)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  for (const region of boardMemory.regions) {
+    insBoardMemory.run(
+      region.board,
+      region.target,
+      region.role,
+      region.label,
+      region.node,
+      region.address,
+      region.size,
+      region.source,
+    );
+  }
+
   // west runners and commands
   const insRunner = db.prepare(
     'INSERT INTO runner (name, module, description, capabilities, commands) VALUES (?, ?, ?, ?, ?)',
@@ -1022,6 +1090,15 @@ function main(): void {
   const insSamplePlatform = db.prepare(
     'INSERT INTO sample_platform (sample_id, platform, evidence) VALUES (?, ?, ?)',
   );
+  const insSampleBoardFile = db.prepare(
+    'INSERT INTO sample_board_file (sample_id, path, board, target, kind) VALUES (?, ?, ?, ?, ?)',
+  );
+  const boardFilesBySample = new Map<string, typeof sampleBoardFiles.files>();
+  for (const file of sampleBoardFiles.files) {
+    const existing = boardFilesBySample.get(file.sample);
+    if (existing) existing.push(file);
+    else boardFilesBySample.set(file.sample, [file]);
+  }
   for (const sample of samples) {
     const info = insSample.run(
       sample.path,
@@ -1039,6 +1116,9 @@ function main(): void {
     );
     const sampleId = Number(info.lastInsertRowid);
     for (const file of sample.contents) insSampleFile.run(sampleId, file.path, file.text);
+    for (const file of boardFilesBySample.get(sample.path) ?? []) {
+      insSampleBoardFile.run(sampleId, file.path, file.board, file.target, file.kind);
+    }
     for (const platform of sample.integrationPlatforms) {
       insSamplePlatform.run(sampleId, platform, 'integration');
     }
@@ -1135,6 +1215,8 @@ function main(): void {
     count_bindings: String(bindings.length),
     count_dt_instances: String(instanceExport.instances.length),
     report_dt_instances: canonicalJson(instanceExport.report),
+    count_driver_identity: String(identityExport.identities.length),
+    report_driver_identity: canonicalJson(identityExport.report),
     count_soc_kconfig: String(socKconfig.symbols.length),
     report_soc_kconfig: canonicalJson(socKconfig.report),
     count_resolved_configs: String(resolved.configs.length),
@@ -1145,6 +1227,8 @@ function main(): void {
     count_boards: String(boards.length),
     count_board_targets: String(targetCount),
     count_socs: String(socs.length),
+    count_board_memory: String(boardMemory.regions.length),
+    report_board_memory: canonicalJson(boardMemory.report),
     report_boards: canonicalJson({
       // Board, target, and SoC records are all primary hardware-catalogue
       // outcomes produced by this collector family.
@@ -1180,6 +1264,8 @@ function main(): void {
       errors: [...runnerExport.report.errors, ...boardRunnerExport.report.errors],
     }),
     count_samples: String(samples.length),
+    count_sample_board_files: String(sampleBoardFiles.files.length),
+    report_sample_board_files: canonicalJson(sampleBoardFiles.report),
     report_samples: canonicalJson({
       // Account for both each sample record and each eligible attached file.
       // Oversized files remain visible as reason-coded exclusions.

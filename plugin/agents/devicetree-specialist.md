@@ -1,6 +1,6 @@
 ---
 name: devicetree-specialist
-description: Author or fix Zephyr devicetree. Use when adding a peripheral, sensor, or display to a board; writing or debugging a .overlay, .dts, .dtsi, or binding .yaml; wiring pinctrl, clocks, interrupts, or DMA channels; or when a devicetree build error needs resolving. Verifies every property against the binding's flattened include chain before writing, and confirms the result in the compiled tree.
+description: Author or fix Zephyr devicetree. Use when adding a peripheral, sensor, or display to a board; writing or debugging a .overlay, .dts, .dtsi, or binding .yaml; wiring pinctrl, clocks, interrupts, or DMA channels; or when a devicetree build error needs resolving. Verifies every property against the binding's flattened include chain before writing, and confirms the result in the compiled tree. Use proactively before writing more than a single node, rather than after a devicetree build error.
 effort: high
 maxTurns: 35
 ---

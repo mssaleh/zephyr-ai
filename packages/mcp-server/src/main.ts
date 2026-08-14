@@ -12,8 +12,23 @@ import packageMetadata from '../package.json' with { type: 'json' };
 
 const VERSION = packageMetadata.version;
 
+/**
+ * The one part of this server that is always in context.
+ *
+ * Claude Code defers MCP tool definitions: at session start the model sees the
+ * tool *names* and this text, and nothing else. Every tool description in
+ * `tools/` — the text this project spends the most care on — arrives only after
+ * the model has already decided to go looking. So this string is what decides
+ * whether the tools are reached for at all, and it is written for that job: the
+ * situations first, the tool names next, and no prose that does not name one.
+ */
 const INSTRUCTIONS = [
   'Zephyr RTOS reference, indexed from one specific Zephyr revision.',
+  '',
+  'Load and call these tools before writing or editing a prj.conf, a devicetree overlay, a board',
+  'target, a runner argument, or a driver binding — not after a build fails. They are the only',
+  'source here that matches the Zephyr revision this project actually builds against; a web',
+  'search and a repository default branch return a different version.',
   '',
   'Query this server before writing Zephyr code, not after a build fails. Four common errors',
   'each have a tool that prevents them:',
@@ -35,6 +50,16 @@ const INSTRUCTIONS = [
   'driver, a linker script, a runner script, or a vendor HAL header from a west module. It reads',
   'the file at the revision this index was built from. A web search or a repository default',
   'branch returns a different Zephyr version.',
+  '',
+  'Two questions have an answer here and nowhere else, because they are aggregates over the whole',
+  'tree rather than facts in one file:',
+  '- A part answers 0x19 from its WHO_AM_I or chip-ID register: which driver accepts it? Pass',
+  '  identity_value to search_bindings. get_binding reports the same contract forwards, and a',
+  '  driver whose identity check the part fails initialises and returns numbers that are not',
+  '  readings.',
+  '- What does upstream already publish for this board target? get_board and search_samples name',
+  '  every sample and test that ships a configuration file for it, which is where the vendor put',
+  '  the DMA channels, clock sources and cache attributes for each peripheral.',
   '',
   'Call index_status if answers look wrong for the project. It reports the indexed Zephyr version',
   'and detects a west workspace pinned to a different one.',

@@ -1,14 +1,3 @@
----
-name: zephyr-prerequisites
-description: Get a machine ready to build Zephyr, and diagnose a host environment that cannot. Use BEFORE the first build in a new or freshly cloned workspace, before the first build on a machine you have not built Zephyr on, right after creating a west workspace or building a Zephyr index, and whenever setting up, bootstrapping, or preparing a Zephyr project. Also use when a build fails with a missing Python module, a CMake error naming jsonschema, pykwalify, elftools or another package, when west, cmake, ninja, dtc or the Zephyr SDK is absent or the wrong version, when a flashing or signing tool is missing, or when indexing succeeds but building does not. Covers the interpreter contract, Python environments with uv or pip, toolchain installation, and per-board host tools.
-license: Apache-2.0
-compatibility: Requires Node.js 24+ and Python 3.12+; the toolchain and host flashing tools are installed as described here.
-allowed-tools: Bash(west:*) Bash(python3:*) Bash(uv:*) Bash(command:*) Bash(node:*) Read
-metadata:
-  author: zephyr-ai
-  version: "0.8.0"
----
-
 # Build prerequisites
 
 > Example status: fenced snippets are illustrative unless an immediately preceding `zephyr-ai-example` metadata comment names a verified target and build command.

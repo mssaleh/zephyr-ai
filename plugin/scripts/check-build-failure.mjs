@@ -21,7 +21,21 @@ import { readHookInput } from './index-paths.mjs';
  * whitespace and environment-variable prefixes are still the same command.
  */
 const BUILD_COMMAND =
-  /(?:^|[;&|])\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*(?:west\s+build\b|cmake\s+--build\b|ninja\b(?!\s+-t\s))/;
+  /(?:^|[;&|])\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*(?:west\s+(?:build|twister)\b|cmake\s+--build\b|ninja\b(?!\s+-t\s)|make\b)/;
+
+/**
+ * Remove heredoc bodies before deciding whether a command is a build.
+ *
+ * `cat > run.sh <<'EOF' … west build … EOF` writes a script; it does not build.
+ * The separator alternation above matches a newline through `\s*`, so without
+ * this the body reads as another command in the same line.
+ */
+function withoutHeredocs(command) {
+  return command.replace(
+    /<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1[\s\S]*?^\s*\2\s*$/gm,
+    (match) => match.replace(/[^\n]/g, ' '),
+  );
+}
 
 /**
  * Failure signatures, most specific first. The classification decides which
@@ -112,10 +126,10 @@ const FAILURES = [
     pattern: /region `[^']+' overflowed by|will not fit in region|not enough room for program headers/i,
     advice:
       'The image does not fit the region the linker was given. Check what the region is before trimming ' +
-      'code. get_board reports the Twister flash and RAM figures for the target, which are test metadata ' +
-      'rather than the memory the application gets. On a target whose defconfig sets CONFIG_XIP=n the ' +
-      'image is not executed from internal flash, and the limit comes from the devicetree partition it ' +
-      'is linked into.',
+      'code. get_board reports the memory this target actually gets, read from the board devicetree, ' +
+      'alongside the Twister flash and RAM figures, which are test metadata and frequently larger. On a ' +
+      'target whose defconfig sets CONFIG_XIP=n the image is not executed from internal flash at all, ' +
+      'and the limit comes from the devicetree partition it is linked into.',
   },
   {
     kind: 'link',
@@ -177,20 +191,22 @@ function exitStatus(response) {
 async function main() {
   const payload = await readHookInput();
   const command = commandOf(payload.tool_input ?? {});
-  if (!BUILD_COMMAND.test(command)) return 0;
+  if (!BUILD_COMMAND.test(withoutHeredocs(command))) return 0;
 
   const response = payload.tool_response ?? payload.tool_result;
   // A build the user stopped is not a build that failed.
   if (response && typeof response === 'object' && response.interrupted === true) return 0;
 
   const status = exitStatus(response);
-  if (status === 0) return 0;
-
+  // Whether a build failed is decided by whether it failed, never by what its
+  // output contains. A command that prints a captured build log — `west build …
+  // 2>&1 | tee build.log` re-run after a fix, a diff of two logs — carries every
+  // signature below while having succeeded. Where the harness reports no status
+  // at all, west's own line stands in; a signature alone does not.
   const output = outputOf(response);
+  if (status === null ? !WEST_FAILED.test(output) : status === 0) return 0;
+
   const failure = FAILURES.find((entry) => entry.pattern.test(output));
-  // An explicit non-zero status is enough on its own; otherwise a recognised
-  // signature has to stand in for it.
-  if (!failure && !(status !== null && status !== 0) && !WEST_FAILED.test(output)) return 0;
 
   const advice =
     failure?.advice ??

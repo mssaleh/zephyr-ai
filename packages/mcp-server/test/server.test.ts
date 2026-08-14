@@ -371,6 +371,27 @@ describe('MCP server', { skip: !ready && 'run `npm run build` and build the inde
       ok(!res.text.includes('CONFIG_ZEPHYR_AI_INVENTED_SYMBOL is'), 'absence must not be a finding');
     });
 
+    it('separates what it verified from what it could not judge', async () => {
+      // CONFIG_LV_USE_MONKEY is declared only in modules/lvgl/Kconfig, a mirror
+      // of a symbol the lvgl module declares with a prompt. Suppressing the
+      // promptless complaint is right. Returning `ok, bool` — the identical
+      // verdict CONFIG_GPIO=y gets, which was verified in full — reported a
+      // check that did not happen.
+      const res = await client.call('check_config', {
+        path: 'prj.conf',
+        text: ['CONFIG_GPIO=y', 'CONFIG_LV_USE_MONKEY=y'].join('\n'),
+      });
+      const verdicts = res.structured['verdicts'] as { subject: string; status: string; note: string }[];
+      strictEqual(verdicts.find((v) => v.subject.includes('GPIO'))?.status, 'ok');
+      const monkey = verdicts.find((v) => v.subject.includes('LV_USE_MONKEY'));
+      strictEqual(monkey?.status, 'not-judged');
+      ok(monkey.note.includes('modules/lvgl'), 'the reason must name what was not read');
+      strictEqual(res.structured['problemCount'], 0);
+      strictEqual(res.structured['notJudgedCount'], 1);
+      strictEqual(res.structured['confirmedCount'], 1);
+      ok(res.text.includes('1 confirmed, 1 not judged'));
+    });
+
     it('checks devicetree without checking property names', async () => {
       const res = await client.call('check_config', {
         path: 'app.overlay',
@@ -751,7 +772,68 @@ describe('MCP server', { skip: !ready && 'run `npm run build` and build the inde
     });
   });
 
+  describe('driver identity', () => {
+    it('states what the driver accepts, in the binding answer', async () => {
+      // The question the gateway study spent three steps and a grep on: an I2C
+      // part at 0x68 reporting WHO_AM_I = 0x19. The authoritative fact is
+      // MPU6880_CHIP_ID in the driver header, and no binding, board file or
+      // documentation page contains it.
+      const res = await client.call('get_binding', { compatible: 'invensense,mpu6050' });
+      ok(res.text.includes('Driver identity check'), 'the contract must be in the answer');
+      ok(res.text.includes('0x19'), 'the accepted value must be stated');
+      const identity = res.structured['identity'] as { register: number; accepts: { value: number }[] };
+      strictEqual(identity.register, 0x75);
+      ok(identity.accepts.some((entry) => entry.value === 0x19));
+    });
+
+    it('answers the reverse direction, which is the one a bench has', async () => {
+      const res = await client.call('search_bindings', { identity_value: '0x19' });
+      const results = res.structured['results'] as { compatible: string }[];
+      ok(
+        results.some((entry) => entry.compatible === 'invensense,mpu6050'),
+        'reading 0x19 off a part must reach the compatible that accepts it',
+      );
+      // An identity value is not unique across vendors, and an answer that does
+      // not say so invites binding the first driver returned.
+      ok(res.text.includes('not unique'));
+    });
+
+    it('reports a miss as a limit of the corpus, not as absence', async () => {
+      const res = await client.call('search_bindings', { identity_value: '0xfe', identity_register: '0x7f' });
+      ok(res.text.includes('not proof'), 'a miss must not read as "no driver accepts this"');
+    });
+
+    it('rejects an identity value that is not a number', async () => {
+      const res = await client.call('search_bindings', { identity_value: 'who-knows' });
+      strictEqual(res.isError, true);
+    });
+  });
+
   describe('devicetree tools', () => {
+    it('matches part of a compatible when the vendor prefix is not known', async () => {
+      // dt_fts tokenises on `_,-`, so `st,stm32-digi-temp` is one token and a
+      // fragment matches nothing. Searching bindings is the tool for when the
+      // compatible is exactly what is not known, and the miss used to volunteer
+      // "out-of-tree drivers are not in this index" about a binding that is
+      // present — a reason to stop looking, offered wrongly.
+      for (const query of ['stm32-digi-temp', 'digi-temp']) {
+        const res = await client.call('search_bindings', { query });
+        const results = res.structured['results'] as { compatible: string }[];
+        ok(
+          results.some((entry) => entry.compatible === 'st,stm32-digi-temp'),
+          `"${query}" must reach st,stm32-digi-temp`,
+        );
+        ok(!res.text.includes('out-of-tree drivers are not in this index'));
+      }
+    });
+
+    it('names the node a board carries, not only the board', async () => {
+      // The node name is the part number. "used on m5stack_atoms3" requires the
+      // reader to know what that board carries; the node says `mpu6886@68`.
+      const res = await client.call('get_binding', { compatible: 'invensense,mpu6050' });
+      ok(res.text.includes('mpu6886@68'), 'the node name must be rendered with the board');
+    });
+
     it('returns the flattened property set for a compatible', async () => {
       const res = await client.call('get_binding', { compatible: 'st,stm32-spi' });
       strictEqual(res.structured['found'], true);
@@ -825,6 +907,48 @@ describe('MCP server', { skip: !ready && 'run `npm run build` and build the inde
     it('accepts a qualified target as input', async () => {
       const res = await client.call('get_board', { name: 'esp32s3_devkitc/esp32s3/procpu' });
       strictEqual(res.structured['found'], true);
+    });
+
+    it('names upstream configuration published for this board target', async () => {
+      // ST publishes a SPI loopback overlay for this exact target, with the DMA
+      // channels, request numbers and cache attributes. The suite names the
+      // board in no Twister key, so a search on platform metadata reported that
+      // nothing upstream configures it, and a session wrote its own from
+      // scratch and ran at 1 MHz without DMA.
+      const res = await client.call('get_board', { name: 'nucleo_n657x0_q' });
+      const files = res.structured['upstreamConfiguration'] as { suite: string; file: string }[];
+      ok(files.length > 0, 'the board ships upstream configuration files');
+      ok(
+        files.some((entry) => entry.suite.includes('spi_loopback') && entry.file.endsWith('.overlay')),
+        'the SPI loopback overlay must be reachable from get_board',
+      );
+      ok(res.text.includes('Upstream configures this board'));
+    });
+
+    it('states the memory the application gets, not only the Twister figures', async () => {
+      // twister.yaml declares 1024 KB of each for this board. The application
+      // gets 511 KB of SRAM at 0x34180400 and no internal flash, and that is
+      // decided by the board's chosen node.
+      const res = await client.call('get_board', { name: 'nucleo_n657x0_q' });
+      const memory = res.structured['memory'] as { role: string; address: number; size: number }[];
+      const sram = memory.find((entry) => entry.role === 'sram');
+      ok(sram, 'the board declares zephyr,sram');
+      strictEqual(sram.address, 0x34180400);
+      strictEqual(sram.size, 511 * 1024);
+      ok(res.text.includes('0x34180400'));
+    });
+
+    it('says nothing about memory it could not resolve', async () => {
+      // Silence is the contract where the devicetree chain is ambiguous: a wrong
+      // address is worse than no address.
+      for (const board of ['esp32s3_devkitc', 'nucleo_f401re', 'm5stack_atoms3']) {
+        const res = await client.call('get_board', { name: board });
+        const memory = res.structured['memory'] as { address: number; size: number }[];
+        for (const entry of memory) {
+          ok(Number.isInteger(entry.address) && entry.address >= 0, `${board} address must be real`);
+          ok(Number.isInteger(entry.size) && entry.size > 0, `${board} size must be real`);
+        }
+      }
     });
 
     it('accepts board as an alias for the get_board name argument', async () => {
@@ -996,6 +1120,28 @@ describe('MCP server', { skip: !ready && 'run `npm run build` and build the inde
   });
 
   describe('sample tools', () => {
+    it('counts a suite that names a board only through a boards/ file', async () => {
+      // The question that separated the arms in the gateway study: how much
+      // upstream material names this board. Counting Twister keys alone answered
+      // "two"; eight further suites ship a file named for one of its qualified
+      // targets and never appear in a Twister list.
+      const res = await client.call('search_samples', { board: 'nucleo_n657x0_q', limit: 40 });
+      const results = res.structured['results'] as {
+        path: string;
+        boardEvidence: string[];
+        boardFiles: { path: string }[];
+      }[];
+      const byFile = results.filter(
+        (entry) => entry.boardFiles.length > 0 && entry.boardEvidence.includes('a file under boards/'),
+      );
+      ok(byFile.length >= 5, `expected suites found through boards/ files, got ${byFile.length}`);
+      ok(
+        results.some((entry) => entry.path.includes('spi_loopback')),
+        'the SPI loopback suite configures this target and must be listed',
+      );
+      ok(res.text.includes("upstream's own configuration for this target"));
+    });
+
     it('returns the prj.conf contents stored in the index', async () => {
       const res = await client.call('get_sample', { path: 'samples/basic/blinky' });
       strictEqual(res.structured['found'], true);

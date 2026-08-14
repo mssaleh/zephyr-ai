@@ -1,10 +1,10 @@
 ---
 name: zephyr-testing
-description: Test Zephyr firmware with ztest and twister. Use when writing unit or integration tests for firmware, setting up test suites, running tests across boards or on native_sim and QEMU, adding tests to CI, or mocking hardware so logic can be tested without a board. Covers ztest suite structure, testcase.yaml, twister invocation and filtering, fakes for device drivers, and coverage.
+description: "Test firmware with ztest and twister: unit and integration suites, testcase.yaml, running on native_sim, QEMU or hardware, mocking drivers, and adding tests to CI."
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.8.0"
+  version: "0.9.0"
 ---
 
 # Testing

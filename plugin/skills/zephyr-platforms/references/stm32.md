@@ -1,12 +1,3 @@
----
-name: stm32-platform
-description: Zephyr firmware on STM32 microcontrollers. Use when an STM32 build fails to configure or link, when a peripheral produces no output or a device fails to initialise, when a clock, PLL, or timing value is wrong, when ST-LINK will not flash or the runner is rejected, when a pinctrl entry is not found, when DMA transfers corrupt or stall, when a driver that exists for one STM32 series is missing on another, or when targeting any STM32 board or SoC (Nucleo, Discovery, STM32F/G/L/H/U/WB/WL series). Covers the clock tree, the pinctrl naming scheme, series differences that change driver availability, DMA and cache coherency, runner selection, low-power modes, and STM32-specific behaviour.
-license: Apache-2.0
-metadata:
-  author: zephyr-ai
-  version: "0.8.0"
----
-
 # STM32 on Zephyr
 
 > Example status: fenced snippets are illustrative unless an immediately preceding `zephyr-ai-example` metadata comment names a verified target and build command.

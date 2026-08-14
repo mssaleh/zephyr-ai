@@ -1,12 +1,12 @@
 ---
 name: zephyr-index
-description: Build or refresh the project-scoped Zephyr reference index that the zephyr MCP server queries. Use when starting Zephyr firmware in an empty directory, when lookup tools report no index, when index_status reports a commit or context mismatch, after west update, or when answers must reflect the active workspace and modules.
+description: Build or refresh the project Zephyr index the lookup tools read. Use in an empty directory, when a tool reports no index, when index_status reports a mismatch, or after west update.
 license: Apache-2.0
 compatibility: Requires Node.js 24+, Python 3.12+ with PyYAML, and a complete Zephyr source tree.
 allowed-tools: Bash(node:*) Bash(west:*) Bash(ls:*) Bash(test:*) Bash(python3:*) Bash(command:*) Read
 metadata:
   author: zephyr-ai
-  version: "0.8.0"
+  version: "0.9.0"
 ---
 
 # Build the Zephyr index
@@ -44,7 +44,7 @@ What to do with each result:
 - **Python older than 3.12, or PyYAML missing**: if the project has a west
   workspace, its virtual environment usually has both, and the indexer prefers
   that interpreter. Otherwise point `PYTHON_EXECUTABLE` at one that has them; the
-  `zephyr-prerequisites` skill covers the layouts and their trade-offs.
+  `zephyr-setup` skill covers the layouts and their trade-offs.
 - **`west` absent**: needed only to discover an existing workspace and to run
   `west update`. The pinned fetch in step 2 does not need it, so an empty project
   can proceed without it.
@@ -90,7 +90,7 @@ ls -d ./zephyr ../zephyr 2>/dev/null
 ```
 
 If none resolves, offer the pinned fetch above, ask for a path to an existing
-checkout, or use the `zephyr-project-setup` skill to create a complete west
+checkout, or use the `zephyr-setup` skill to create a complete west
 workspace.
 
 ## 3. Find the modules worth including
@@ -179,7 +179,7 @@ The server resolves the index on each call, so a freshly built index is picked u
 without restarting Claude Code. If `index_status` still shows an old fingerprint,
 inspect the project-root and plugin-data variables it reports before rebuilding.
 
-## 6. Hand off to `zephyr-prerequisites`
+## 6. Hand off to `zephyr-setup`
 
 Do this before the first build. A successful index shows the tree can be read and
 parsed. It does not show that this machine can build. Indexing needs Node and a
@@ -187,13 +187,13 @@ Python with PyYAML. A build also needs the Zephyr SDK or another toolchain,
 CMake, ninja, the devicetree and Kconfig packages in the interpreter CMake
 selects, and per-board host tools for flashing and signing.
 
-Indexing succeeding while building fails is the case `zephyr-prerequisites`
+Indexing succeeding while building fails is the case `zephyr-setup`
 covers. Checking now takes a few minutes; the alternative is diagnosing a CMake
 error that names a Python package.
 
 Run `check_environment`. It reports every interpreter on this machine and which
 of the packages this Zephyr version needs each one has. Follow
-`zephyr-prerequisites` for anything it reports as missing.
+`zephyr-setup` for anything it reports as missing.
 
 ## Notes
 

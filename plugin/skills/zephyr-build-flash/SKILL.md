@@ -1,10 +1,10 @@
 ---
 name: zephyr-build-flash
-description: Build, flash, and run Zephyr firmware with west. Use when compiling an application, choosing a board target, flashing or debugging hardware, picking or configuring a runner, working with sysbuild or MCUboot, setting up or updating a west workspace, or when a build behaves inconsistently. Covers west build options, pristine builds, runner selection from the indexed tree, multi-image builds, and reading build output.
+description: Build and flash with west. Use when compiling, choosing a board target, flashing or debugging hardware, picking a runner, using sysbuild or MCUboot, or when a build behaves inconsistently.
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.8.0"
+  version: "0.9.0"
 ---
 
 # Building and flashing
@@ -14,7 +14,7 @@ metadata:
 ## Before the first build
 
 If this machine has not built Zephyr before, or a build fails with a missing
-Python module or a missing toolchain, use the `zephyr-prerequisites` skill and
+Python module or a missing toolchain, use the `zephyr-setup` skill and
 call `check_environment`. A host environment failure looks like a build error but
 nothing in the application is wrong, and editing it will not help.
 
@@ -120,8 +120,7 @@ Three things that output tells you and a general rule cannot:
 
 In a configured build directory, `west flash --context` is the authoritative list
 for that exact build. Host programs each runner wraps are covered in the
-`zephyr-prerequisites` skill; vendor specifics are in `stm32-platform` and
-`esp32-platform`.
+`zephyr-setup` skill; vendor specifics are in `zephyr-platforms`.
 
 ## Running without hardware
 

@@ -1,12 +1,3 @@
----
-name: zephyr-bluetooth
-description: Build Bluetooth Low Energy firmware on Zephyr. Use when implementing a BLE peripheral or central, defining GATT services and characteristics, configuring advertising and connections, handling pairing, bonding, and security, or debugging BLE connectivity, throughput, and power. Covers the host and controller split, the minimum working configuration, GATT service definition, connection parameters, and the settings needed for bonds to persist.
-license: Apache-2.0
-metadata:
-  author: zephyr-ai
-  version: "0.8.0"
----
-
 # Bluetooth LE
 
 > Example status: fenced snippets are illustrative unless an immediately preceding `zephyr-ai-example` metadata comment names a verified target and build command.

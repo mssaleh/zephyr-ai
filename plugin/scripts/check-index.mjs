@@ -14,7 +14,7 @@ import {
   validIndexDescriptor,
 } from './index-paths.mjs';
 
-const EXPECTED_SCHEMA = 10;
+const EXPECTED_SCHEMA = 11;
 const EXPECTED_DESCRIPTOR = 2;
 
 function treeVersion(root) {
@@ -114,6 +114,22 @@ function looksUnclaimed(root) {
   return true;
 }
 
+/**
+ * How the Zephyr tools are named once they are loaded.
+ *
+ * Claude Code defers MCP tool definitions: at session start only the tool names
+ * and the server's own instructions are in context, and a tool cannot be called
+ * until it is loaded by name. Naming the exact scoped form here, in the message
+ * that is read before anything else happens, is the difference between a session
+ * that can reach these tools and one that never sees them. The prefix is the
+ * plugin name and the server key from .mcp.json; a test ties it to both.
+ */
+const TOOL_NAMES =
+  'The Zephyr tools are named `mcp__plugin_zephyr-ai_zephyr__<tool>`, for example ' +
+  '`mcp__plugin_zephyr-ai_zephyr__index_status`, `mcp__plugin_zephyr-ai_zephyr__get_kconfig` and ' +
+  '`mcp__plugin_zephyr-ai_zephyr__get_binding`. They are loaded on demand rather than listed ' +
+  'upfront, so load them by that name before writing Kconfig, devicetree, or a board target.';
+
 function emit(context) {
   process.stdout.write(
     `${JSON.stringify({
@@ -169,13 +185,14 @@ async function main() {
       // is demonstrably another kind of project, which a directory holding only
       // documentation is not.
       emit(
-        'This project has no Zephyr index, no west workspace, and no ZEPHYR_BASE, so Zephyr lookups and ' +
+        `${TOOL_NAMES} They cannot answer yet: ` +
+          'this project has no Zephyr index, no west workspace, and no ZEPHYR_BASE, so Zephyr lookups and ' +
           'edit validation are unavailable. If this will be Zephyr firmware, use the zephyr-index skill ' +
           'first. In an empty directory it fetches the pinned Zephyr tree and builds the index without an ' +
           'existing workspace. To use an existing index instead, set ZEPHYR_AI_INDEX to its path. ' +
           'ZEPHYR_AI_PROJECT_ROOT does not work for this: the CLI overwrites it with the session working ' +
           'directory. Building an index needs Node 24+ and Python 3.12+ with PyYAML. Building firmware ' +
-          'needs more than that, and the zephyr-prerequisites skill covers it.',
+          'needs more than that, and the zephyr-setup skill covers it.',
       );
     }
     return;
@@ -200,7 +217,20 @@ async function main() {
     return;
   }
 
-  if (!workspace) return;
+  // A usable index is the case where naming the tools matters most, and it is
+  // the case that said nothing at all. The message is one line about a fact the
+  // session cannot get without a tool call — which Zephyr version its answers
+  // will describe — and the names it needs to make that call.
+  const ready = (extra) =>
+    emit(
+      `A Zephyr ${state.descriptor.zephyrVersion} index is available for this project. ${TOOL_NAMES}` +
+        (extra ? ` ${extra}` : ''),
+    );
+
+  if (!workspace) {
+    ready();
+    return;
+  }
   const base = westZephyrBase(workspace);
   const version = base ? treeVersion(base) : null;
   const treeIdentity = base ? gitTreeFingerprint(base) : null;
@@ -223,7 +253,9 @@ async function main() {
         'Rebuild it with the zephyr-index skill before relying on ' +
         'version-sensitive Kconfig, devicetree, board, or API answers.',
     );
+    return;
   }
+  ready('It matches the Zephyr in this west workspace.');
 }
 
 main().catch(() => {

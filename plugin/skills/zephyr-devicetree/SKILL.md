@@ -1,10 +1,10 @@
 ---
 name: zephyr-devicetree
-description: Describe hardware to Zephyr with devicetree. Use when writing or editing .overlay, .dts, .dtsi, or binding .yaml files; when adding a sensor, display, or peripheral to a board; when wiring pinctrl, aliases, or chosen nodes; when using DT_ macros from C; or when a build fails with a devicetree error such as an unknown property, a missing binding, or an undefined node label. Covers overlay authoring, the binding include model, phandle specifiers, and how to inspect the compiled tree.
+description: "Devicetree: .overlay, .dts, .dtsi and binding .yaml. Use when adding a sensor, display or peripheral, wiring pinctrl, aliases, chosen, interrupts or DMA, or when a node, property or binding error appears."
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.8.0"
+  version: "0.9.0"
 ---
 
 # Devicetree in Zephyr
@@ -38,13 +38,20 @@ A node using the wrong compatible passes devicetree validation, compiles, links,
 and does nothing. No stage of the build compares the driver against your silicon.
 
 Before using a driver on a part you have not used it on, especially a newer
-member of a family you have used, run two checks:
+member of a family you have used, run three checks:
 
 1. **Where does upstream use it?** `get_binding` and `search_bindings` report
-   which SoC and board devicetree name the compatible. If it is used only in SoC
-   directories that do not include your part, that is not proof of
+   which SoC and board devicetree name the compatible, and the node name each
+   board gives it — usually the part number actually fitted. If it is used only
+   in SoC directories that do not include your part, that is not proof of
    incompatibility, but it is the strongest available signal.
-2. **Do the registers exist on your part?** Read the driver with `get_source`,
+2. **What identity does the driver demand?** Where the driver gates
+   initialisation on an identity register, `get_binding` states the register and
+   the values it accepts. Binding a driver whose check the part fails gives a
+   device that initialises and returns numbers that are not readings, with no
+   error anywhere. If you have already read a value off the part,
+   `search_bindings` takes it as `identity_value`.
+3. **Do the registers exist on your part?** Read the driver with `get_source`,
    list the register and macro names it uses, and look for them in your SoC
    vendor header. `get_source` reads the HAL module trees as well. Missing
    register definitions are strong evidence.
@@ -123,6 +130,12 @@ an error in the C rather than an overlay that was not read.
 
 This matters most when adding a build variant: the file that worked for the
 default target does not apply to the qualified target, because the name differs.
+
+Before writing an overlay for a peripheral, check whether upstream already
+published one. `get_board` lists every sample and test that ships a
+configuration file for this board's targets, and those files carry the DMA
+channels, request numbers and cache attributes the vendor verified. Read one
+with `get_sample`.
 
 Two checks prevent it:
 

@@ -1,12 +1,3 @@
----
-name: zephyr-networking
-description: Build networked Zephyr firmware. Use when adding Wi-Fi, Ethernet, TCP/IP, sockets, MQTT, HTTP, CoAP, LwM2M, TLS, or DNS to a device; configuring the network stack and its buffers; connecting to an access point; or debugging connectivity, DHCP, and socket errors. Covers the minimum working configuration, buffer sizing, the BSD socket API as Zephyr implements it, TLS credentials, and a diagnostic order for a device that will not connect.
-license: Apache-2.0
-metadata:
-  author: zephyr-ai
-  version: "0.8.0"
----
-
 # Networking
 
 > Example status: fenced snippets are illustrative unless an immediately preceding `zephyr-ai-example` metadata comment names a verified target and build command.

@@ -23,8 +23,10 @@ export const searchSamples: ToolFactory = (index) => ({
     'Twister platforms upstream records for it. Adapting a sample is more reliable than ' +
     'assembling a configuration from documentation. Search here before writing a new application ' +
     'that uses an unfamiliar subsystem. Pass "board" without a query to list everything upstream ' +
-    'declares for that board, which shows what is tested on it. Pass "kind" to restrict the ' +
-    'results to samples or to tests.',
+    'declares for that board: the Twister platform lists and, separately, every suite that ships ' +
+    'a configuration file named for one of the board\'s targets. Those files are the vendor\'s own ' +
+    'settings for that exact target and are named in no Twister key, so they are invisible to any ' +
+    'other search. Pass "kind" to restrict the results to samples or to tests.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -64,10 +66,16 @@ export const searchSamples: ToolFactory = (index) => ({
     const bareBoard = board?.split('/')[0];
     const COLUMNS = `s.path, s.name, s.description, s.tags, s.kind, s.scenarios,
               s.integration_platforms, s.platform_allow, s.files`;
-    const namesBoardSql = `EXISTS (
+    // Three kinds of evidence, not two. A suite that ships
+    // `boards/<target>.overlay` configures that target and need not name it in
+    // any Twister key: eight suites configure the NUCLEO-N657X0-Q that way, and
+    // a search on the platform lists alone reported two.
+    const namesBoardSql = `(EXISTS (
            SELECT 1 FROM sample_platform p
             WHERE p.sample_id = s.id AND (p.platform = ? OR p.platform LIKE ?)
-         )`;
+         ) OR EXISTS (
+           SELECT 1 FROM sample_board_file bf WHERE bf.sample_id = s.id AND bf.board = ?
+         ))`;
     const kindFilter = kind ? ' AND s.kind = ?' : '';
 
     // Without a query there is nothing to MATCH, so the board evidence becomes
@@ -84,7 +92,7 @@ export const searchSamples: ToolFactory = (index) => ({
         query,
         [
           ...(kind ? [kind] : []),
-          ...(bareBoard ? [bareBoard, `${bareBoard}/%`] : []),
+          ...(bareBoard ? [bareBoard, `${bareBoard}/%`, bareBoard] : []),
           limit,
         ],
         limit,
@@ -102,6 +110,7 @@ export const searchSamples: ToolFactory = (index) => ({
             ORDER BY s.rank, s.kind LIMIT ?`,
         bareBoard,
         `${bareBoard}/%`,
+        bareBoard,
         ...(kind ? [kind] : []),
         limit,
       );
@@ -121,6 +130,23 @@ export const searchSamples: ToolFactory = (index) => ({
     const namesBoard = (platforms: string[]) =>
       bareBoard !== undefined &&
       platforms.some((p) => p === bareBoard || p.startsWith(`${bareBoard}/`));
+
+    // The files this board's targets pick up, for every row at once.
+    const boardFiles = new Map<string, { path: string; target: string }[]>();
+    if (bareBoard) {
+      for (const file of index().all(
+        `SELECT s.path AS suite, bf.path AS file, bf.target AS target
+           FROM sample_board_file bf JOIN sample s ON s.id = bf.sample_id
+          WHERE bf.board = ? ORDER BY s.path, bf.path`,
+        bareBoard,
+      )) {
+        const suite = String(file['suite']);
+        const entry = { path: String(file['file']), target: String(file['target'] ?? '') };
+        const existing = boardFiles.get(suite);
+        if (existing) existing.push(entry);
+        else boardFiles.set(suite, [entry]);
+      }
+    }
 
     const results = rows.map((r) => {
       const integrationPlatforms = json<string[]>(r['integration_platforms'], []);
@@ -142,8 +168,10 @@ export const searchSamples: ToolFactory = (index) => ({
           ? [
               namesBoard(platformAllow) ? 'platform_allow' : '',
               namesBoard(integrationPlatforms) ? 'integration_platforms' : '',
+              boardFiles.has(String(r['path'])) ? 'a file under boards/' : '',
             ].filter(Boolean)
           : [],
+        boardFiles: boardFiles.get(String(r['path'])) ?? [],
       };
     });
 
@@ -162,6 +190,11 @@ export const searchSamples: ToolFactory = (index) => ({
             ? `integration_platforms: ${boundedList(r.integrationPlatforms, 6)}`
             : '',
           r.boardEvidence.length > 0 ? `names ${board} in: ${r.boardEvidence.join(', ')}` : '',
+          r.boardFiles.length > 0
+            ? `ships ${r.boardFiles
+                .map((file) => `\`${file.path}\`${file.target ? ` for \`${file.target}\`` : ''}`)
+                .join(', ')} — upstream's own configuration for this target`
+            : '',
         ]
           .filter(Boolean)
           .join('\n'),
@@ -175,13 +208,11 @@ export const searchSamples: ToolFactory = (index) => ({
       ? index()
         .all(
           `SELECT s.kind, COUNT(DISTINCT s.id) AS n FROM sample s
-              WHERE EXISTS (
-                SELECT 1 FROM sample_platform p
-                 WHERE p.sample_id = s.id AND (p.platform = ? OR p.platform LIKE ?)
-              )${kindFilter}
+              WHERE ${namesBoardSql}${kindFilter}
               GROUP BY s.kind`,
           bareBoard,
           `${bareBoard}/%`,
+          bareBoard,
           ...(kind ? [kind] : []),
         )
         .map((r) => ({ kind: String(r['kind']), count: Number(r['n']) }))

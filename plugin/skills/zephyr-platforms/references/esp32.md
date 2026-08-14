@@ -1,12 +1,3 @@
----
-name: esp32-platform
-description: Zephyr firmware on Espressif ESP32 microcontrollers. Use when an Espressif build fails to configure or link, when esptool is missing or refuses to flash, when a board target is rejected as unqualified, when the console prints nothing or drops on reset over native USB, when Wi-Fi or Bluetooth will not initialise, when a partition or PSRAM change does not take effect, or when targeting any ESP32 variant (ESP32, S2, S3, C2, C3, C5, C6, H2) or DevKit board. Covers the qualified build targets these boards require, the dual-core appcpu/procpu image model, sysbuild and bootloader handling, partition tables, pinctrl via the IO matrix, and Espressif-specific behaviour.
-license: Apache-2.0
-metadata:
-  author: zephyr-ai
-  version: "0.8.0"
----
-
 # ESP32 on Zephyr
 
 > Example status: fenced snippets are illustrative unless an immediately preceding `zephyr-ai-example` metadata comment names a verified target and build command.

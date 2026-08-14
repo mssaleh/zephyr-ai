@@ -1,6 +1,6 @@
 ---
 name: zephyr-architect
-description: Design the architecture of a Zephyr firmware project before implementation. Use when starting a new product, translating a business or hardware requirement into a firmware design, selecting a board or SoC against requirements, or deciding how to structure threads, storage, connectivity, and power for a device. Produces a concrete design grounded in what the target hardware and Zephyr version actually support.
+description: Design the architecture of a Zephyr firmware project before implementation. Use when starting a new product, translating a business or hardware requirement into a firmware design, selecting a board or SoC against requirements, or deciding how to structure threads, storage, connectivity, and power for a device. Produces a concrete design grounded in what the target hardware and Zephyr version actually support. Use proactively at the start of a new firmware project, before any board target or configuration is chosen.
 effort: high
 maxTurns: 40
 disallowedTools: Write, Edit, NotebookEdit, Bash

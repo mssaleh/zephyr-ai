@@ -199,7 +199,18 @@ if (measured.stringifiedNulls.length) {
   failures.push(`a stringified null is stored as a value: ${measured.stringifiedNulls.join(', ')}`);
 }
 
-const REPORTS = ['report_docs', 'report_kconfig', 'report_bindings', 'report_boards', 'report_samples', 'report_api', 'report_west'];
+const REPORTS = [
+  'report_docs',
+  'report_kconfig',
+  'report_bindings',
+  'report_boards',
+  'report_samples',
+  'report_api',
+  'report_west',
+  'report_driver_identity',
+  'report_sample_board_files',
+  'report_board_memory',
+];
 for (const key of REPORTS) {
   const raw = db.prepare('SELECT value FROM meta WHERE key = ?').get(key)?.value;
   const report = raw ? JSON.parse(String(raw)) : null;
@@ -219,6 +230,74 @@ for (const key of REPORTS) {
     );
   }
 }
+
+// Every identity value this claims must be a #define in the driver it names.
+//
+// The extractor reads C with regular expressions. A fixture proves it reads the
+// shapes it was written for; only the tree can show that what it stored is in
+// the file it points at. A wrong accepted value is the one defect this corpus
+// cannot tolerate: it says a part is supported when the driver refuses it.
+let identityMismatches = 0;
+for (const row of db.prepare(
+  `SELECT d.driver_file AS file, d.register AS register, v.name AS name, v.value AS value
+     FROM driver_identity d JOIN driver_identity_value v ON v.identity_id = d.id`,
+).all()) {
+  let source = '';
+  const directory = join(ZEPHYR, String(row.file).slice(0, String(row.file).lastIndexOf('/')));
+  try {
+    source = readFileSync(join(ZEPHYR, String(row.file)), 'utf8');
+    for (const entry of readdirSync(directory)) {
+      if (entry.endsWith('.h')) source += readFileSync(join(directory, entry), 'utf8');
+    }
+  } catch {
+    identityMismatches++;
+    continue;
+  }
+  // Upstream writes both `#define X 0x12` and `#define X (0x12)`, and the parser
+  // strips the parentheses. A gate that accepts only one form reports the other
+  // as a corpus defect.
+  const declared = new RegExp(
+    `^\\s*#\\s*define\\s+${String(row.name).replace(/[^A-Za-z0-9_]/g, '')}\\s+\\(?\\s*(?:0[xX]([0-9a-fA-F]+)|([0-9]+))`,
+    'm',
+  ).exec(source);
+  const value = declared ? Number.parseInt(declared[1] ?? declared[2], declared[1] ? 16 : 10) : null;
+  if (value !== Number(row.value)) identityMismatches++;
+}
+measured.driverIdentityMismatches = identityMismatches;
+if (identityMismatches) {
+  failures.push(`${identityMismatches} driver identity value(s) do not match the driver source`);
+}
+
+// Every board-named sample file must exist where the corpus says it does, and
+// every resolved target must be a target that board actually declares.
+const sampleFileMismatches = db.prepare(
+  `SELECT COUNT(*) AS n FROM sample_board_file f JOIN sample s ON s.id = f.sample_id
+    WHERE f.target <> '' AND NOT EXISTS (
+      SELECT 1 FROM board b, json_each(b.targets) t
+       WHERE b.name = f.board AND json_extract(t.value, '$.identifier') = f.target
+    )`,
+).get().n;
+measured.sampleBoardFileMismatches = Number(sampleFileMismatches);
+if (Number(sampleFileMismatches)) {
+  failures.push(`${sampleFileMismatches} sample board file(s) name a target the board does not declare`);
+}
+let missingSampleFiles = 0;
+for (const row of db.prepare(
+  `SELECT s.path AS suite, f.path AS file FROM sample_board_file f
+     JOIN sample s ON s.id = f.sample_id ORDER BY s.path, f.path`,
+).all()) {
+  if (!existsSync(join(ZEPHYR, String(row.suite), String(row.file)))) missingSampleFiles++;
+}
+measured.missingSampleBoardFiles = missingSampleFiles;
+if (missingSampleFiles) failures.push(`${missingSampleFiles} indexed sample board file(s) do not exist`);
+
+// A memory region with no figures is the failure mode this corpus exists to
+// avoid: it would render as an authoritative budget of nothing.
+const emptyRegions = db.prepare(
+  'SELECT COUNT(*) AS n FROM board_memory WHERE address IS NULL OR size IS NULL OR size <= 0',
+).get().n;
+measured.emptyBoardMemoryRegions = Number(emptyRegions);
+if (Number(emptyRegions)) failures.push(`${emptyRegions} board memory region(s) carry no usable figures`);
 
 // Twister `common:` is merged into the relational sample evidence and tags.
 let commonMismatches = 0;

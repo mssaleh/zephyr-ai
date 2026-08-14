@@ -3,6 +3,98 @@
 All notable user-visible changes are recorded here. The format follows Keep a
 Changelog, and releases use semantic versioning.
 
+## [0.9.0] - 2026-08-14
+
+Rebuild the index with the `zephyr-index` skill after upgrading; the schema moves
+to 11 and the server and hooks refuse an older one.
+
+Six skills were merged into three and every skill description was rewritten, so
+`/zephyr-ai:stm32-platform`, `/zephyr-ai:esp32-platform`,
+`/zephyr-ai:zephyr-prerequisites`, `/zephyr-ai:zephyr-project-setup`,
+`/zephyr-ai:zephyr-networking` and `/zephyr-ai:zephyr-bluetooth` are now
+`/zephyr-ai:zephyr-platforms`, `/zephyr-ai:zephyr-setup` and
+`/zephyr-ai:zephyr-connectivity`. No guidance was removed; each former skill's
+body is a `references/` page inside its successor.
+
+### Added
+
+- **The index records what each driver will accept, not only where it is used.**
+  Many drivers refuse to initialise unless an identity register reads one of a
+  fixed set of values, and that set exists in no binding, board file, or
+  documentation page. `invensense,mpu6050` accepts `0x19`, which is an MPU6880 —
+  a part whose name appears nowhere in the tree. `get_binding` now states the
+  register and the accepted values inline, and `search_bindings` answers the
+  reverse direction from an `identity_value` read off the hardware, which is the
+  direction a developer at a bench actually has. Where the driver's shape was not
+  recognised nothing is stored, and every rendering says that an absent record is
+  not a claim that the driver accepts nothing.
+- **`get_board` names the configuration upstream already publishes for a target.**
+  A sample or test that ships `boards/<qualified_target>.overlay` configures that
+  exact target, with the DMA channels, request numbers and cache attributes that
+  nobody would guess, and it need not name the board in any Twister key.
+  `search_samples` counts those suites as evidence too: on one board that is eight
+  further suites which a search of the platform lists reported as none.
+- **`get_board` states the memory the application gets.** Read from the board's
+  own `chosen` node and the `reg` of what it points at, through the devicetree
+  include chain and any `ranges` translation: 511 KB at `0x34180400` where the
+  Twister metadata says 1024 KB. A board whose devicetree chain cannot be resolved
+  unambiguously reports nothing rather than a guess.
+- **The devicetree usage corpus records the node each board declares.** The node
+  name is the part number, so an answer reads "used on `m5stack_atoms3` as
+  `mpu6886@68`" rather than requiring the reader to know what that board carries.
+  The full `get_binding` answer now carries this section, which only the batched
+  summary did.
+
+### Changed
+
+- **The skill listing fits the budget Claude Code gives it.** Claude Code loads
+  skill names and descriptions into a character budget of about 1% of the context
+  window and drops descriptions when it overflows, starting with the skills
+  invoked least — which for a freshly installed plugin is all of them. This
+  plugin's listing was 8 592 characters across 17 skills, over four times the
+  budget on a 200k-context session, and across four measured studies exactly one
+  skill ever fired. It is now 2 938 characters across 14, a gate holds it there,
+  and no guidance was lost: the merged bodies are `references/` pages.
+- **The MCP server instructions are written to be searched for.** Claude Code
+  defers MCP tool definitions, so at session start the model sees the tool names
+  and this text and nothing else. It now leads with the situations that should
+  send a session to these tools, and names the two questions the index answers
+  that no file-level source can.
+- **SessionStart names the tools and the indexed Zephyr version.** In a healthy
+  project the hook said nothing at all, which left the one channel that reliably
+  reaches a session silent in exactly the case where the tools can answer. It now
+  states the version and the scoped tool names, which are what a deferred tool
+  must be loaded by.
+- **The devicetree write nudge names the identity question and drops the agent
+  referral.** Across four studies the tool advice in that sentence was taken and
+  the agent referral in the same sentence was not, so the words are spent on the
+  check that prevents a device which initialises and returns numbers that are not
+  readings.
+- **Agent descriptions name the situation to reach for them without being asked**,
+  which is the mechanism Claude Code documents for automatic delegation.
+
+### Fixed
+
+- **`check_config` reported `ok` for lines it did not judge.**
+  `CONFIG_LV_USE_MONKEY=y` came back `ok, bool` — the identical verdict
+  `CONFIG_GPIO=y` receives, which was verified in full — while the module Kconfig
+  that declares it had never been read. Every line now falls in one of three
+  populations, confirmed, not judged, or a problem, the summary counts all three,
+  and a not-judged line says which test could not be applied.
+- **`search_bindings` would not match part of a compatible.** `st,stm32-digi-temp`
+  resolved and `stm32-digi-temp` and `digi-temp` returned nothing, because the
+  full-text tokeniser treats the whole compatible as one token — and the miss
+  volunteered "out-of-tree drivers are not in this index" about a binding that is
+  present, which is a reason to stop looking. Fragments now match, and that
+  sentence appears only when nothing in the catalogue matched.
+- **The build-failure hook could fire when no build had failed.** It required a
+  build command, but a recognised failure signature alone was enough when the
+  harness reported no exit status, so any command printing a captured build log
+  qualified. It now requires a non-zero exit, or west's own failure line where no
+  status was reported, and ignores a build command inside a heredoc body.
+  `west twister` and `make` were missing from the command set and are now
+  included.
+
 ## [0.8.0] - 2026-08-14
 
 Rebuild the index with the `zephyr-index` skill after upgrading; the schema moves

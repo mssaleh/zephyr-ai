@@ -1,10 +1,10 @@
 ---
 name: zephyr-rtos-patterns
-description: Write correct concurrent code on Zephyr. Use when creating threads, workqueues, or interrupt handlers; choosing between mutexes, semaphores, message queues, FIFOs, and events; sizing stacks; sharing data between an ISR and a thread; or reviewing firmware for real-time correctness. Covers what is legal in interrupt context, priority and preemption semantics, timeout handling, memory allocation policy, and the concurrency mistakes that produce intermittent field failures.
+description: "Concurrency on Zephyr: threads, workqueues, ISRs, mutexes, semaphores, queues, stack sizing, timeouts, callbacks you do not own, and the mistakes that cause intermittent field failures."
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.8.0"
+  version: "0.9.0"
 ---
 
 # Real-time patterns
@@ -81,6 +81,14 @@ coalescing behaviour next to the submission.
 If the handler can take more than a few hundred microseconds, put it on a
 dedicated workqueue rather than the system one. The system workqueue is shared,
 and blocking it stalls unrelated subsystems.
+
+The same rule covers every callback you did not write the stack for. A callback
+from a subsystem — network management, Bluetooth, a driver — runs on a stack that
+subsystem sized for its own work, and you cannot see how much of it is left. Do
+nothing in it except hand the work to a context you own. With immediate-mode
+logging there is no log thread to absorb formatting, so a single log line inside
+a network-management callback overflows a stack somebody else sized, 2.5 seconds
+into every boot.
 
 ## Choosing a synchronisation primitive
 
@@ -183,6 +191,13 @@ CONFIG_HW_STACK_PROTECTION=y
 Run the worst-case path: deepest call chain, largest log line, and error
 handling. Size the stack to peak usage plus about 30%. On some architectures ISRs
 run on the interrupted thread's stack, so `CONFIG_ISR_STACK_SIZE` matters too.
+
+Read the high-water marks while the system is doing real work, not at idle. With
+stack initialisation enabled the shell reports true per-thread usage, which turns
+stack sizing from an estimate into a table you can act on. Some driver threads
+have their size fixed in their own source and cannot be configured from the
+application; record that where the next person will find it rather than treating
+it as a fault.
 
 ## Timing and ordering assumptions
 

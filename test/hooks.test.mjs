@@ -230,11 +230,34 @@ describe('PostToolUse build failure', () => {
       ['grep -r "CMake Error" build/', { stdout: 'CMake Error at x', exit_code: 0 }],
       // The build has to start a command, not merely appear inside one.
       ['grep "west build" notes.txt', { stdout: 'CMake Error at x', exit_code: 1 }],
+      // An observer command that prints a captured build log carries every
+      // failure signature while nothing was built. Classification is on whether
+      // a build ran and failed, never on what the output contains.
+      ['cat /tmp/build.log', { stdout: 'devicetree error: something\nCMake Error at x' }],
+      [
+        'diff old.log new.log',
+        { stdout: "undefined reference to `bt_enable'", exit_code: 1 },
+      ],
+      // A build inside a heredoc is a script being written, not a build.
+      [
+        "cat > run.sh <<'EOF'\nwest build -b nucleo_f401re app\nEOF",
+        { stdout: 'CMake Error at x', exit_code: 1 },
+      ],
+      // A real build with no reported status and no marker from west: the
+      // signature alone is not evidence that this run failed.
+      ['west build -b nucleo_f401re app', { stdout: 'CMake Error at x' }],
     ];
     for (const [command, response] of quiet) {
       const result = await runBuild(command, response);
       strictEqual(result.code, 0, `${command} should be silent`);
       strictEqual(result.stderr, '', `${command} should be silent`);
+    }
+  });
+
+  it('still fires for the build commands that were missing from the gate', async () => {
+    for (const command of ['west twister -p nucleo_f401re -T tests/kernel', 'make -C build']) {
+      const result = await runBuild(command, { stderr: 'CMake Error at x', exit_code: 1 });
+      strictEqual(result.code, 2, `${command} should block`);
     }
   });
 
@@ -943,12 +966,35 @@ describe('SessionStart cold start', () => {
 describe('SessionStart index compatibility', {
   skip: !existsSync(INDEX) && 'release hook tests require the rebuilt index',
 }, () => {
-  it('is silent for a compatible catalogue outside a west workspace', async () => {
+  it('names the tools and the indexed version for a compatible catalogue', async () => {
+    // The MCP tools are deferred: at session start the model sees tool names and
+    // the server instructions, and a tool cannot be called before it is loaded
+    // by name. This message is read at call 0 in every session, which makes it
+    // the one reliable place to say what the tools are called. Being silent here
+    // meant the healthy case — the only case where the tools can answer — was
+    // the case that said nothing.
     const project = mkdtempSync(join(TEMPORARY, 'plain-project-'));
     const result = await runSession({ project, index: INDEX });
     strictEqual(result.code, 0);
-    strictEqual(result.stdout, '');
     strictEqual(result.stderr, '');
+    const context = JSON.parse(result.stdout).hookSpecificOutput.additionalContext;
+    match(context, /mcp__plugin_zephyr-ai_zephyr__/);
+    match(context, /A Zephyr \d+\.\d+\.\d+ index is available/);
+  });
+
+  it('spells the tool prefix the way the manifests define it', async () => {
+    // The scoped name is built from the plugin name and the MCP server key. A
+    // rename in either manifest would leave the message naming a tool that does
+    // not resolve, and nothing else in the gate compares the three.
+    const plugin = JSON.parse(readFileSync(join(ROOT, 'plugin', '.claude-plugin', 'plugin.json'), 'utf8'));
+    const servers = JSON.parse(readFileSync(join(ROOT, 'plugin', '.mcp.json'), 'utf8')).mcpServers;
+    const prefix = `mcp__plugin_${plugin.name}_${Object.keys(servers)[0]}__`;
+    const project = mkdtempSync(join(TEMPORARY, 'prefix-project-'));
+    const result = await runSession({ project, index: INDEX });
+    ok(
+      JSON.parse(result.stdout).hookSpecificOutput.additionalContext.includes(prefix),
+      `SessionStart must name ${prefix}`,
+    );
   });
 
   it('distinguishes a missing checkout from a missing project index', async () => {

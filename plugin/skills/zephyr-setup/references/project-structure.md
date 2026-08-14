@@ -1,12 +1,3 @@
----
-name: zephyr-project-setup
-description: Create and structure a Zephyr project. Use when starting a new firmware application, setting up or updating a west workspace and manifest, laying out an application repository, writing CMakeLists.txt, creating an out-of-tree module, board, or driver, or organising code for several boards and build variants. Covers workspace topologies, the T2 star manifest, application structure, out-of-tree modules, and CI.
-license: Apache-2.0
-metadata:
-  author: zephyr-ai
-  version: "0.8.0"
----
-
 # Project setup
 
 > Example status: fenced snippets are illustrative unless an immediately preceding `zephyr-ai-example` metadata comment names a verified target and build command.

@@ -1,4 +1,4 @@
-import { type Index, clampLimit, json } from '../db.ts';
+import { type Index, type Row, clampLimit, json } from '../db.ts';
 import { byField } from '../../../shared/ordering.ts';
 import { targetFileNames } from '../../../shared/build-string.ts';
 import { ToolError } from '../protocol.ts';
@@ -286,6 +286,121 @@ function flashingSection(runners: BoardRunner[], boardName: string): string | un
   ]);
 }
 
+/**
+ * What upstream itself ships for this board's targets.
+ *
+ * A suite that carries `boards/<qualified_target>.overlay` configures that exact
+ * target, and those files hold what nobody would guess: ST publishes a SPI
+ * loopback overlay for the NUCLEO-N657X0-Q with the DMA channels, the request
+ * numbers and `CONFIG_NOCACHE_MEMORY=y`. Twister metadata does not mention any
+ * of them, so a board that is named by eight suites this way looks like a board
+ * named by none.
+ */
+function upstreamConfiguration(idx: Index, board: string): { text?: string; structured: unknown[] } {
+  let rows: Row[];
+  try {
+    rows = idx.all(
+      `SELECT s.path AS suite, s.kind AS kind, f.path AS file, f.target AS target, f.kind AS role
+         FROM sample_board_file f JOIN sample s ON s.id = f.sample_id
+        WHERE f.board = ?
+        ORDER BY f.target, s.path, f.path`,
+      board,
+    );
+  } catch {
+    // An index predating the corpus adds no section.
+    return { structured: [] };
+  }
+  if (rows.length === 0) return { structured: [] };
+
+  const entries = rows.map((row) => ({
+    suite: String(row['suite']),
+    kind: String(row['kind']),
+    file: String(row['file']),
+    target: String(row['target'] ?? ''),
+    role: String(row['role']),
+  }));
+
+  const lines = entries
+    .slice(0, 12)
+    .map(
+      (entry) =>
+        `\`${entry.suite}\` ships \`${entry.file}\`` +
+        (entry.target ? ` for \`${entry.target}\`` : ' for every target of this board'),
+    );
+
+  return {
+    text:
+      section(`Upstream configures this board in ${entries.length} place(s)`, lines) +
+      (entries.length > 12 ? `\n- …and ${entries.length - 12} more` : '') +
+      '\n\nThese are the vendor\'s own settings for this exact target, including the DMA channels, ' +
+      'clock sources and cache attributes a peripheral needs here. Read one with get_sample before ' +
+      'writing your own. They are invisible to a search on Twister metadata, because a suite can ' +
+      'ship a file for a board without naming it in `platform_allow` or `integration_platforms`.',
+    structured: entries,
+  };
+}
+
+/**
+ * The memory the application gets, as against the figures Twister records.
+ *
+ * Qualifying the Twister numbers and pointing at the devicetree partitions is
+ * one step short of the answer: a developer sizing an image needs the number.
+ * Where the devicetree chain resolves unambiguously this states it, and where it
+ * does not this says nothing at all.
+ */
+function memoryBudget(idx: Index, board: string): { text?: string; structured: unknown[] } {
+  let rows: Row[];
+  try {
+    rows = idx.all(
+      'SELECT target, role, label, node, address, size, source FROM board_memory WHERE board = ? ORDER BY target, role',
+      board,
+    );
+  } catch {
+    return { structured: [] };
+  }
+  if (rows.length === 0) return { structured: [] };
+
+  const entries = rows.map((row) => ({
+    target: String(row['target'] ?? ''),
+    role: String(row['role']),
+    label: String(row['label']),
+    node: String(row['node']),
+    address: Number(row['address']),
+    size: Number(row['size']),
+    source: String(row['source']),
+  }));
+
+  const size = (bytes: number): string =>
+    bytes >= 1024 * 1024 && bytes % (1024 * 1024) === 0
+      ? `${bytes / (1024 * 1024)} MB`
+      : bytes >= 1024
+        ? `${Math.round((bytes / 1024) * 10) / 10} KB`
+        : `${bytes} bytes`;
+  const role = (entry: (typeof entries)[number]): string =>
+    entry.role === 'sram'
+      ? 'application RAM'
+      : entry.role === 'code-partition'
+        ? 'code partition'
+        : 'flash';
+
+  const lines = entries.map(
+    (entry) =>
+      `${role(entry)}${entry.target ? ` on \`${entry.target}\`` : ''}: **${size(entry.size)}** at ` +
+      `\`0x${entry.address.toString(16)}\` from \`${entry.label}\`` +
+      (entry.role === 'code-partition' ? ' (an offset within its flash, not an absolute address)' : '') +
+      ` — declared in \`${entry.source}\``,
+  );
+
+  return {
+    text:
+      section('Memory the application actually gets', lines) +
+      '\n\nRead from this board\'s `chosen` node and the `reg` of what it points at, which is what ' +
+      'the linker uses. Where a board declares nothing this index could resolve, no figure is ' +
+      'given rather than a guessed one.',
+    structured: entries,
+  };
+}
+
 export const searchBoards: ToolFactory = (index) => ({
   name: 'search_boards',
   title: 'Search boards',
@@ -419,12 +534,16 @@ export const getBoard: ToolFactory = (index) => ({
   title: 'Get a board',
   description:
     'Get what the index holds about one Zephyr board: every qualified build target with its ' +
-    'architecture, Twister flash and RAM figures and supported peripherals; the overlay and ' +
-    '.conf filenames each target picks up; the SoCs and CPU clusters it contains; hardware ' +
-    'revisions; the runners it registers and which one west flash and west debug select; and a ' +
-    'link to its documentation page. Use before starting a project for a board, and to confirm ' +
-    'which peripherals it exposes. It also lists boards this one is easy to confuse with, either ' +
-    'because they carry the same SoC or because the names are close, with the figures that differ.',
+    'architecture, Twister flash and RAM figures and supported peripherals; the memory the ' +
+    'application actually gets, read from the board\'s own chosen node rather than from test ' +
+    'metadata; the overlay and .conf filenames each target picks up; which upstream samples and ' +
+    'tests ship a configuration file for this board\'s targets, which is where the vendor\'s own ' +
+    'DMA, clock and cache settings for each peripheral are; the SoCs and CPU clusters it ' +
+    'contains; hardware revisions; the runners it registers and which one west flash and west ' +
+    'debug select; and a link to its documentation page. Use before starting a project for a ' +
+    'board, before writing a peripheral overlay for one, and to confirm which peripherals it ' +
+    'exposes. It also lists boards this one is easy to confuse with, either because they carry ' +
+    'the same SoC or because the names are close, with the figures that differ.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -501,6 +620,8 @@ export const getBoard: ToolFactory = (index) => ({
 
     const twins = nearTwins(idx, name, String(row['full_name'] ?? ''), socs, ram, flash);
     const runners = boardRunners(idx, name);
+    const upstream = upstreamConfiguration(idx, name);
+    const memory = memoryBudget(idx, name);
     const docUrl = docPath
       ? `${(idx.meta['doc_base_url'] ?? '').replace(/\/?$/, '/')}${docPath.replace(/\.rst$/, '.html')}`
       : null;
@@ -556,6 +677,7 @@ export const getBoard: ToolFactory = (index) => ({
             : '') +
           '_'
         : undefined,
+      memory.text,
       section('Build targets (use with `west build -b`)', targetLines),
       // A board overlay or `.conf` whose filename does not match the *qualified*
       // target is skipped in silence — nothing reports a file that matched
@@ -600,6 +722,7 @@ export const getBoard: ToolFactory = (index) => ({
           'the download address, and the memory figures, and each of those breaks a build. Check the ' +
           'target against the SoC rather than against a datasheet.'
         : undefined,
+      upstream.text,
       flashingSection(runners, name),
       supported.length > 0
         ? `**Supported peripherals** (${supported.length})\n${supported.map((s) => `\`${s}\``).join(' · ')}`
@@ -627,6 +750,8 @@ export const getBoard: ToolFactory = (index) => ({
       targets,
       socs: socDetail,
       runners,
+      memory: memory.structured,
+      upstreamConfiguration: upstream.structured,
       nearTwins: twins,
       revisions,
       defaultRevision: row['default_revision'] ?? null,

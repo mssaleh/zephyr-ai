@@ -27,6 +27,27 @@ function skillDocuments(directory) {
   return found.sort();
 }
 
+/**
+ * What the model is shown to decide whether a skill is relevant.
+ *
+ * Claude Code loads a listing of skill names and descriptions into context and
+ * fits it to a character budget of about 1% of the context window — 2 000
+ * characters on a 200k-context session. When the listing overflows it drops
+ * descriptions, starting with the skills invoked least, which for a freshly
+ * installed plugin is all of them. The model is then left with names and no
+ * trigger vocabulary, and the skill never fires however well it is written.
+ *
+ * This plugin's listing was 8 592 characters across 17 skills, more than four
+ * times the budget, and across four measured studies exactly one skill ever
+ * fired. The cap is the gate that keeps it from growing back. It is set above
+ * 2 000 deliberately: below about 200 characters a description loses the
+ * vocabulary that makes it match a request, so the budget is spent on fewer
+ * skills rather than on thinner ones.
+ */
+const LISTING_BUDGET = 3000;
+const DESCRIPTION_CAP = 240;
+let listingCharacters = 0;
+
 for (const entry of readdirSync(SKILLS, { withFileTypes: true })) {
   if (!entry.isDirectory()) continue;
   const directory = join(SKILLS, entry.name);
@@ -35,6 +56,21 @@ for (const entry of readdirSync(SKILLS, { withFileTypes: true })) {
   markdown.push({ path, text });
   const name = text.match(/^name:\s*(\S+)$/m)?.[1];
   if (name !== entry.name) failures.push(`${path}: frontmatter name ${name ?? '<missing>'} differs from directory`);
+
+  // A description containing ": " must be quoted or the whole frontmatter fails
+  // to parse and every field is dropped, so the quotes are stripped here rather
+  // than counted.
+  const unquote = (value) => value.trim().replace(/^"(.*)"$/s, '$1').replace(/^'(.*)'$/s, '$1');
+  const description = unquote(text.match(/^description:\s*(.*)$/m)?.[1] ?? '');
+  const whenToUse = unquote(text.match(/^when_to_use:\s*(.*)$/m)?.[1] ?? '');
+  if (description === '') failures.push(`${path}: no description, so nothing decides when it fires`);
+  if (description.length + whenToUse.length > DESCRIPTION_CAP) {
+    failures.push(
+      `${path}: description is ${description.length + whenToUse.length} characters, over the ` +
+        `${DESCRIPTION_CAP} cap; it spends budget that removes another skill's trigger words`,
+    );
+  }
+  listingCharacters += entry.name.length + description.length + whenToUse.length;
   if (text.split('\n').length > 500) failures.push(`${path}: exceeds 500 lines`);
   if (!text.includes('Example status: fenced snippets are illustrative')) {
     failures.push(`${path}: fenced examples have no explicit illustrative/verified classification`);
@@ -152,5 +188,25 @@ for (const example of manifest.examples) {
   if (!existsSync(resolve(ROOT, example.path))) failures.push(`example path is missing: ${example.path}`);
 }
 
-process.stdout.write(`${JSON.stringify({ skills: readdirSync(SKILLS).length, agents: readdirSync(AGENTS).length, failures }, null, 2)}\n`);
+if (listingCharacters > LISTING_BUDGET) {
+  failures.push(
+    `the skill listing is ${listingCharacters} characters, over the ${LISTING_BUDGET} budget. ` +
+      'Claude Code drops descriptions to fit its own budget, least-invoked first, and a skill ' +
+      'without its description does not fire. Merge skills rather than thinning descriptions.',
+  );
+}
+
+process.stdout.write(
+  `${JSON.stringify(
+    {
+      skills: readdirSync(SKILLS).length,
+      agents: readdirSync(AGENTS).length,
+      listingCharacters,
+      listingBudget: LISTING_BUDGET,
+      failures,
+    },
+    null,
+    2,
+  )}\n`,
+);
 if (failures.length) process.exitCode = 1;

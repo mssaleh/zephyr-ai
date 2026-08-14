@@ -27,13 +27,21 @@ import { firstTimeThisSession, readHookInput, resolveIndexPath } from './index-p
 
 const ADVICE = {
   devicetree: {
+    // The agent referral that used to end this paragraph is gone. Across four
+    // studies the tool advice in this sentence was taken and the referral in the
+    // same sentence was not, so the words go to the identity check instead —
+    // which is the failure this hook can prevent and nothing else here can.
     text:
       'Before writing devicetree, check every `compatible` with get_binding, which returns the ' +
       'flattened property set. A binding file lists few properties itself; most arrive through ' +
       '`include:` chains, so reading the file is not enough. get_binding also reports which SoC ' +
-      'devicetree name the compatible, which indicates whether the driver targets your part. It ' +
-      'takes a list of `compatibles`, and check_config takes the whole overlay and returns a ' +
-      'verdict per line. For more than a small edit, use the devicetree-specialist agent.',
+      'devicetree name the compatible, which indicates whether the driver targets your part. For ' +
+      'a sensor or any part with an identity register, confirm that the driver\'s identity check ' +
+      'accepts the part you actually have: get_binding lists the values it accepts, and ' +
+      'search_bindings takes an `identity_value` if you have read one off the hardware. Binding a ' +
+      'driver whose check the part fails produces a device that initialises and returns numbers ' +
+      'that are not readings. get_binding takes a list of `compatibles`, and check_config takes ' +
+      'the whole overlay and returns a verdict per line.',
   },
   kconfig: {
     text:

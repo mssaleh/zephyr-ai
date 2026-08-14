@@ -1,10 +1,10 @@
 ---
 name: zephyr-drivers-sensors
-description: Use and write Zephyr device drivers. Use when reading sensors, driving GPIO, SPI, I2C, UART, PWM, ADC, or flash from an application; when a device fails to initialise or device_is_ready returns false; or when writing a custom driver or binding for new hardware. Covers the device model, initialisation order, the sensor API including the newer read-and-decode path, and the structure of an out-of-tree driver.
+description: "Device drivers and sensors: GPIO, SPI, I2C, UART, PWM, ADC, flash, the sensor API. Use when a device fails to initialise, device_is_ready returns false, a reading looks wrong, or writing a driver or binding."
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.8.0"
+  version: "0.9.0"
 ---
 
 # Drivers and sensors
@@ -217,18 +217,42 @@ silicon.
 This is most likely in the case that looks safest: same vendor, same family, same
 peripheral name, newer part.
 
-Run two checks before using a driver on a part you have not used it on:
+Run three checks before using a driver on a part you have not used it on:
 
 1. **Where does upstream use it?** `search_bindings` and `get_binding` report the
-   SoC and board devicetree that name the compatible. If your part is not among
-   them, treat the driver as unverified on your part.
-2. **Do the registers it uses exist on your part?** Read the driver with
+   SoC and board devicetree that name the compatible, and the node name each
+   board gives it — which is usually the part number actually fitted. If your
+   part is not among them, treat the driver as unverified on your part.
+2. **What does the driver's identity check accept?** Many drivers refuse to
+   initialise unless an identity register reads one of a fixed set of values, and
+   `get_binding` reports that set. A part whose marketing name appears nowhere may
+   still be accepted: `invensense,mpu6050` accepts `0x19`, which is an MPU6880.
+   If you have already read a value off the hardware, `search_bindings` takes it
+   as `identity_value` and answers the other direction.
+3. **Do the registers it uses exist on your part?** Read the driver with
    `get_source`, list the register and macro names it depends on, and look for
    them in your SoC vendor header. `get_source` reads module trees, so the CMSIS
    or HAL header is one call away.
+
+**Never bind a driver whose identity check the part would fail.** It initialises,
+or half-initialises, and produces numbers that look like readings. A device that
+is absent is better than a device that lies.
 
 If the registers are missing, stop. No devicetree change will make that driver
 work. The options are a different compatible, a vendor-supplied driver, or
 writing one.
 
 Check the register contract, not the family name.
+
+### "There is no driver for this part" is a claim that needs the search behind it
+
+State it only with the evidence attached: the part name appears nowhere in the
+tree; here are the drivers that do exist for that class; here is the protocol
+each speaks; here is why none of them matches. That paragraph is what justifies
+writing your own driver, and it is what stops the next person re-deriving it.
+
+Look for the subsystem before writing an application-level driver. Discovering
+that a subsystem already exists for the class of device changes the shape of the
+solution even when the answer is still to write your own, because the API, the
+devicetree binding and the shell commands are then decided for you. `search_docs`
+and `get_source` on `drivers/` settle it in two calls.

@@ -1,10 +1,10 @@
 ---
 name: zephyr-development
-description: Core workflow for writing, building, and debugging Zephyr RTOS firmware. Use whenever work involves Zephyr, west, prj.conf, devicetree overlays, Kconfig symbols, a Zephyr application or driver, or firmware for STM32, ESP32, nRF, or any Zephyr-supported board. Establishes which reference tool to use before writing code, the layout of a Zephyr application, and how to avoid the version-drift errors that make firmware fail to build.
+description: Core Zephyr workflow. Use whenever work touches Zephyr, west, prj.conf, an overlay, a Kconfig symbol, a driver, or firmware for any board — it names the reference tool to call before writing code.
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.8.0"
+  version: "0.9.0"
 ---
 
 # Zephyr development
@@ -155,6 +155,6 @@ Reach for the specialised skill when the work goes deep:
 - `zephyr-debugging` — build failures and runtime faults
 - `zephyr-drivers-sensors` — the driver model and sensor API
 - `zephyr-rtos-patterns` — threads, ISRs, synchronisation, stack sizing
-- `zephyr-power`, `zephyr-bluetooth`, `zephyr-networking`, `zephyr-testing`
-- `stm32-platform`, `esp32-platform` — silicon-specific behaviour
+- `zephyr-power`, `zephyr-connectivity`, `zephyr-testing`
+- `zephyr-platforms` — silicon-specific behaviour
 - `zephyr-index` — rebuild the reference index for this project's Zephyr version
