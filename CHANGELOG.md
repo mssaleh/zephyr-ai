@@ -3,6 +3,24 @@
 All notable user-visible changes are recorded here. The format follows Keep a
 Changelog, and releases use semantic versioning.
 
+## [0.9.1] - 2026-08-15
+
+The index is unchanged; no rebuild is needed.
+
+### Fixed
+
+- **The agents ended long investigations without reporting, and the session then
+  repeated the work.** Each agent set `maxTurns` between 30 and 60. That cap cuts
+  the agent loop between a tool result and the next model call, so an
+  investigation that reached it never ran the turn that writes its report. The
+  caller is not told the cap was reached: the completion notification carries
+  `status: completed`, a tool-use count, and whatever text the agent emitted
+  last, which for a truncated run is a preamble such as "Now I'll read the
+  driver". The calling session read that as an agent that had finished without
+  reporting and redid the whole investigation itself, so the cap cost more work
+  than it stopped. Every agent now caps at 200 turns, the same figure the
+  built-in agent types use, and above what a hardware investigation reaches.
+
 ## [0.9.0] - 2026-08-14
 
 Rebuild the index with the `zephyr-index` skill after upgrading; the schema moves

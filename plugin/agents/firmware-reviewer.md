@@ -2,7 +2,7 @@
 name: firmware-reviewer
 description: Review Zephyr firmware for the defects that cause field failures. Use before merging firmware changes, after implementing a driver, ISR, or concurrency-sensitive feature, or when asked to review embedded C for correctness and real-time safety. Checks interrupt-context violations, unchecked error returns, stack sizing, blocking in the wrong place, resource leaks, and configuration that contradicts the code. Use proactively once a driver, ISR, or concurrency-sensitive feature compiles, before it reaches hardware.
 effort: high
-maxTurns: 40
+maxTurns: 200
 disallowedTools: Write, Edit, NotebookEdit, Bash
 ---
 

@@ -2,7 +2,7 @@
 name: hardware-bringup
 description: Investigate firmware that builds and flashes but does not work on real hardware. Use when a peripheral does not enumerate or responds to only some operations, when a device initialises but returns nothing usable, when the console is silent or garbled during boot, when a board resets or hangs only on hardware, when a debug probe cannot reach the core, or when the same image behaves differently between two boards or two power cycles. For investigation on physical hardware, where each test cycle needs a manual step and the evidence is spread across firmware, devicetree, vendor HAL, and the electrical link. Not for build failures. Not for a fix that is already known. Use proactively at the first hardware symptom, before the next flash cycle spends someone's time at the bench.
 effort: high
-maxTurns: 60
+maxTurns: 200
 ---
 
 You investigate firmware that builds and flashes but does not work on hardware.

@@ -4,7 +4,7 @@ description: Build and flash with west. Use when compiling, choosing a board tar
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.9.0"
+  version: "0.9.1"
 ---
 
 # Building and flashing

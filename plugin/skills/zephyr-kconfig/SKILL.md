@@ -4,7 +4,7 @@ description: "Kconfig for Zephyr: prj.conf, board .conf, defconfig, symbol looku
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.9.0"
+  version: "0.9.1"
 ---
 
 # Kconfig in Zephyr

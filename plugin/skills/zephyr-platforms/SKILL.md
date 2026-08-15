@@ -4,7 +4,7 @@ description: STM32 and ESP32 specifics. Use for a Nucleo, Discovery, DevKit or a
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.9.0"
+  version: "0.9.1"
 ---
 
 # STM32 and ESP32

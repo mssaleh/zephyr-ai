@@ -4,7 +4,7 @@ description: "Device drivers and sensors: GPIO, SPI, I2C, UART, PWM, ADC, flash,
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.9.0"
+  version: "0.9.1"
 ---
 
 # Drivers and sensors

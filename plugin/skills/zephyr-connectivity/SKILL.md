@@ -4,7 +4,7 @@ description: "Networking and Bluetooth: Wi-Fi, Ethernet, TCP/IP, sockets, MQTT, 
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.9.0"
+  version: "0.9.1"
 ---
 
 # Connectivity

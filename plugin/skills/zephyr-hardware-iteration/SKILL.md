@@ -4,7 +4,7 @@ description: "Work efficiently when every firmware test needs a manual step: a j
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.9.0"
+  version: "0.9.1"
 ---
 
 # Iterating against real hardware

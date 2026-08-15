@@ -4,7 +4,7 @@ description: "Diagnose a Zephyr build failure or runtime fault: CMake, Kconfig, 
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.9.0"
+  version: "0.9.1"
 ---
 
 # Debugging Zephyr

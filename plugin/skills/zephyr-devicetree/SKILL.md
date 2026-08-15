@@ -4,7 +4,7 @@ description: "Devicetree: .overlay, .dts, .dtsi and binding .yaml. Use when addi
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.9.0"
+  version: "0.9.1"
 ---
 
 # Devicetree in Zephyr
