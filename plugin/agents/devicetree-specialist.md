@@ -61,6 +61,14 @@ does not expand, grep
 `build/zephyr/include/generated/zephyr/devicetree_generated.h`. The usual cause
 is a node that is not `status = "okay"`.
 
+Then pass the whole merged tree to `check_devicetree`. Enabling a node adopts
+every property it inherits from the SoC `.dtsi`, including the clock source, DMA
+channels, power domains and supplies. A reference to a node the build did not
+enable is legal devicetree: it produces no error, appears in neither `.config`
+nor the linked image, and fails at init on hardware. That is the one class the
+grep above cannot show you, because the property looks correct in isolation and
+the node you wrote is present.
+
 ## Writing a new binding
 
 When hardware has no in-tree binding, write one in `dts/bindings/<class>/`:

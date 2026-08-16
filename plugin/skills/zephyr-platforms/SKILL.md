@@ -4,7 +4,7 @@ description: STM32 and ESP32 specifics. Use for a Nucleo, Discovery, DevKit or a
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.9.1"
+  version: "0.10.0"
 ---
 
 # STM32 and ESP32
@@ -13,9 +13,15 @@ metadata:
 
 Read the vendor page for the target you are working on:
 
-- **STM32** — `references/stm32.md`. The clock tree, the pinctrl naming scheme,
-  series differences that change driver availability, DMA and cache coherency,
-  ST-LINK and runner selection, boot pins, low power.
+- **STM32** — `references/stm32.md`. The clock tree, domain clocks and
+  crystal-less boards, the pinctrl naming scheme, series differences that change
+  driver availability, DMA and cache coherency, ST-LINK and runner selection,
+  low power.
+- **STM32 boot and recovery** — `references/stm32-boot-and-recovery.md`. What
+  selects the boot area, the system-memory ROM bootloader and USB DFU, option
+  bytes, the independent watchdog, and reading the CMSIS device header when the
+  Zephyr lookup does not settle it. ST's AN2606 and AN3156 ship with this plugin
+  under `reference/st/`, so a citation is checkable from an installed copy.
 - **ESP32** — `references/esp32.md`. Qualified build targets, the dual-core
   appcpu/procpu image model, sysbuild and the bootloader, partition tables,
   pinctrl through the IO matrix, Wi-Fi, Bluetooth, PSRAM.
@@ -44,3 +50,11 @@ board flashes with `esp32` and debugs with `openocd`. `get_board` names both, an
 **Check the peripheral against the board, not against the datasheet.** A package
 exposes a subset of what the die implements, and the board `.dts` is what decides
 which nodes exist. Read it with `get_source`.
+
+**Enabling a node adopts every property it inherits.** A peripheral takes clock
+sources, DMA channels, power domains and supplies from the SoC `.dtsi`, and an
+overlay that sets only `status` and `pinctrl` leaves the rest at defaults chosen
+for a reference board. A selector that resolves to a disabled node is legal
+devicetree, produces no build error, and appears in neither `.config` nor the
+linked image. After a build succeeds, pass `build/zephyr/zephyr.dts` to
+`check_devicetree`.

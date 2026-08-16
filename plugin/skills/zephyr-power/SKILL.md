@@ -4,7 +4,7 @@ description: "Cut power on battery or energy-harvesting devices: CONFIG_PM and P
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.9.1"
+  version: "0.10.0"
 ---
 
 # Power management

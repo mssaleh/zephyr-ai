@@ -4,7 +4,7 @@ import { byCodeUnits } from './ordering.ts';
 
 export const INDEX_SCHEMA_VERSION = 11;
 export const INDEX_DESCRIPTOR_VERSION = 2;
-export const INDEX_BUILDER_VERSION = '0.9.0';
+export const INDEX_BUILDER_VERSION = '0.10.0';
 
 export type SourceKind = 'pinned-upstream' | 'west-workspace' | 'explicit-tree';
 

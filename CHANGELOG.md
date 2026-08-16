@@ -3,6 +3,76 @@
 All notable user-visible changes are recorded here. The format follows Keep a
 Changelog, and releases use semantic versioning.
 
+## [0.10.0] - 2026-08-16
+
+The index is unchanged; no rebuild is needed.
+
+### Added
+
+- **`check_devicetree`, which reads the tree a build produced and reports
+  enabled nodes that point at something the build did not enable.** A phandle to
+  a disabled provider is legal devicetree. It produces no build error, no line in
+  `build/zephyr/.config` and no trace in the linked image, so the first symptom
+  is a peripheral that never comes up on hardware — and because the device's init
+  returns an errno rather than failing loudly, an application that latches the
+  error and carries on reports nothing at all. The tool makes two checks. Any
+  enabled node whose `clocks`, `dmas`, `resets`, `power-domains`, `*-gpios` or
+  `*-supply` names a disabled node. And, on STM32, a peripheral whose domain
+  clock selects a source whose clock node is disabled — which the first check
+  cannot see, because the phandle there names `rcc`, which is enabled, and the
+  disabled clock is reached through a numeric selector. The selector table is
+  read out of the indexed tree, never restated: the values are chained
+  increments upstream, so a copied table names the wrong clock the moment one is
+  inserted. Where the family header cannot be identified the finding is reported
+  as not judged rather than guessed.
+- **The STM32 reference now covers domain clocks, which are how most STM32
+  peripherals are actually clocked.** It documented the bus-clock cell of a
+  `clocks` property and stopped there. 105 SoC devicetree files across 26 STM32
+  families use `STM32_SRC_*` selectors and 173 board files override one, so this
+  was a gap in the middle of the subject rather than at its edge. The page now
+  states the two-entry form, the failure chain a wrong selector produces —
+  `clock_control_configure()` answers `-ENOTSUP`, the driver fails init, the
+  build succeeds — and that enabling a node adopts every property it inherits,
+  including a clock source chosen for a reference board.
+- **Crystal-less boards.** What changes when `clk_hse` and `clk_lse` are
+  disabled, and that USB full speed is legal only with HSI48 trimmed by the CRS,
+  because a free-running HSI48 does not meet the ±0.25 % the specification
+  requires.
+- **A boot and recovery page for STM32**, covering what selects the boot area
+  (`BOOT0`, `nBOOT_SEL`, `nBOOT0`, `BOOT_LOCK`, RDP), the system-memory ROM
+  bootloader and its USB DFU interface, why a jump from application code into
+  system memory does not work on the families implementing an empty check, the
+  option-byte write window that can leave a part unreachable, and the three IWDG
+  properties that drive design decisions. Previously the reference mentioned
+  `BOOT0` once, in a debugging aside, with no explanation of what boot mode
+  selection is.
+- **ST's AN2606 and AN3156 ship with the plugin**, under `reference/st/`, so a
+  citation to a document and section is checkable from an installed copy rather
+  than against a URL that moves. They are ST copyright, redistributed unmodified,
+  and outside the Apache-2.0 grant that covers the rest of the plugin; see
+  `reference/st/NOTICE.md`. The boot page names the sections to read for a given
+  part, because AN2606 is 13,625 lines organised one section per device family
+  and is a lookup rather than a read-through.
+
+### Fixed
+
+- **`check_environment` reported a project-local toolchain as a missing one.** It
+  reads `ZEPHYR_SDK_INSTALL_DIR`, the CMake package registry and `python3` from
+  its own process environment. This server is spawned once per session from the
+  login shell, so it never sees the `source env.sh` that activates a project
+  which pins its own SDK, interpreter and west — a layout projects adopt
+  deliberately, leaving the SDK out of the CMake registry so that other
+  workspaces on the machine keep their own. The tool called that a broken
+  machine, against a project that builds, and the only thing a user could do with
+  the report was learn to disregard it. It now detects the layout — an activation
+  script, a project `.venv`, a project `zephyr-sdk-*`, bounded by the workspace
+  or repository root — and when none of it is active in this process it reports
+  those findings as scoped to the environment it inspected, naming the activation
+  that has not run, instead of as blocking problems. `ok` is false in that case
+  rather than true: not established is not the same as clean. With no such layout
+  a missing SDK is still a blocking problem and still carries its install
+  command.
+
 ## [0.9.1] - 2026-08-15
 
 The index is unchanged; no rebuild is needed.

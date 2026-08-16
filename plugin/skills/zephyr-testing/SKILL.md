@@ -4,7 +4,7 @@ description: "Test firmware with ztest and twister: unit and integration suites,
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.9.1"
+  version: "0.10.0"
 ---
 
 # Testing

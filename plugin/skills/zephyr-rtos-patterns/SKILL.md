@@ -4,7 +4,7 @@ description: "Concurrency on Zephyr: threads, workqueues, ISRs, mutexes, semapho
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.9.1"
+  version: "0.10.0"
 ---
 
 # Real-time patterns

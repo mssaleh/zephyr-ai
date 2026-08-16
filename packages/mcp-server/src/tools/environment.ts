@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join, relative, sep } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 import { type Index, json } from '../db.ts';
@@ -137,6 +137,80 @@ function zephyrSdk(): { found: boolean; detail: string } {
   return { found: false, detail: 'no ZEPHYR_SDK_INSTALL_DIR and nothing in the CMake registry' };
 }
 
+interface ProjectToolchain {
+  root: string;
+  /** Scripts a developer sources before building, in the order they were found. */
+  activation: string[];
+  venv: string | null;
+  sdk: string | null;
+  /** Whether this process is running inside the project's own environment. */
+  venvActive: boolean;
+  sdkActive: boolean;
+}
+
+/**
+ * A toolchain that lives in the project and is activated per shell.
+ *
+ * This server is spawned once per session from the login environment, so it
+ * never sees a `source env.sh`. Reporting its own `python3` and SDK registry as
+ * the machine's toolchain is then the same error this server refuses elsewhere:
+ * stating absence of evidence as evidence of absence. A project that pins its
+ * own SDK and interpreter — deliberately unregistered, so that other workspaces
+ * on the machine keep working — reads as a broken machine, and the only way a
+ * user can act on that is to stop believing the tool.
+ *
+ * What is detectable is the layout. When the markers are here and none of them
+ * is active in this process, the findings below are scoped rather than dropped:
+ * they are true of the environment that was inspected and say nothing about the
+ * one a build will use.
+ */
+function projectToolchain(): ProjectToolchain | null {
+  const home = homedir();
+  let root = process.cwd();
+  for (let depth = 0; depth < 8; depth++) {
+    // The home directory is not a project. A `zephyr-sdk-*` sitting there is a
+    // normal SDK install, and claiming it as this project's toolchain would
+    // suppress the finding this tool exists to make.
+    if (root === home) break;
+    const activation = ['env.sh', 'zephyr-env.sh', 'setup-env.sh'].filter((name) =>
+      existsSync(join(root, name)),
+    );
+    const venv = ['.venv', 'venv'].map((name) => join(root, name)).find((path) => existsSync(path)) ?? null;
+    let sdk: string | null = null;
+    try {
+      const match = readdirSync(root).find((entry) => /^zephyr-sdk-/.test(entry));
+      sdk = match === undefined ? null : join(root, match);
+    } catch {
+      sdk = null;
+    }
+
+    if (activation.length > 0 || venv !== null || sdk !== null) {
+      const inside = (value: string | undefined): boolean => {
+        if (typeof value !== 'string' || value === '') return false;
+        const escape = relative(root, value);
+        return escape !== '..' && !escape.startsWith(`..${sep}`) && !isAbsolute(escape);
+      };
+      return {
+        root,
+        activation,
+        venv,
+        sdk,
+        venvActive: venv !== null && inside(process.env['VIRTUAL_ENV']),
+        sdkActive: sdk !== null && inside(process.env['ZEPHYR_SDK_INSTALL_DIR']),
+      };
+    }
+
+    // The project ends at its workspace or repository root. Past that boundary
+    // a `.venv` or an SDK belongs to something else, and adopting it would
+    // silence a real finding on an ordinary machine.
+    if (existsSync(join(root, '.west', 'config')) || existsSync(join(root, '.git'))) break;
+    const parent = join(root, '..');
+    if (parent === root) break;
+    root = parent;
+  }
+  return null;
+}
+
 export const checkEnvironment: ToolFactory = (index) => ({
   name: 'check_environment',
   title: 'Check the build environment',
@@ -196,43 +270,73 @@ export const checkEnvironment: ToolFactory = (index) => ({
       idx.get('SELECT 1 AS present FROM west_command WHERE name = ?', 'sdk') !== undefined;
 
     const problems: string[] = [];
+    /** Findings true of this process's environment but not of the build's. */
+    const unscoped: string[] = [];
     // Without a requirements list there is nothing to check the interpreters
     // against, and an empty `missing` would otherwise read as a clean bill of
     // health. Absence of evidence is reported as such, never as evidence.
     const canCheckPackages = requirements.length > 0;
+
+    const project = projectToolchain();
+    const activation = project?.activation[0] ?? null;
+    /**
+     * Whether a finding about Python or the SDK describes the build.
+     *
+     * It does not when the project carries its own and this process is not
+     * inside it. Downgrading rather than dropping keeps the observation, which
+     * is still the answer to "why does this server see a different toolchain".
+     */
+    const pythonScoped = project !== null && project.venv !== null && !project.venvActive;
+    const sdkScoped = project !== null && project.sdk !== null && !project.sdkActive;
+    const scopedNote = (what: string): string =>
+      `This project carries its own ${what} under \`${project!.root}\`, and this server was not ` +
+      `started inside it${activation ? `, so \`source ${activation}\` has not run here` : ''}. ` +
+      'The line above describes the environment this server inherited, not the one a build will ' +
+      'use. Confirm it with a real build, or by running the project\'s own environment check in an ' +
+      'activated shell.';
+
     if (!buildInterpreter) {
-      problems.push(
+      (pythonScoped ? unscoped : problems).push(
         'No `python3` on PATH. CMake resolves Python from PATH, so a build cannot start. ' +
-          'Install Python 3.12 or newer and make sure `python3` resolves to it.',
+          'Install Python 3.12 or newer and make sure `python3` resolves to it.' +
+          (pythonScoped ? `\n\n${scopedNote('Python environment')}` : ''),
       );
     } else if (buildInterpreter.missing.length > 0) {
-      problems.push(
+      (pythonScoped ? unscoped : problems).push(
         `The interpreter a build will use (\`${buildInterpreter.resolved ?? 'python3'}\`) is missing ` +
           `${buildInterpreter.missing.length} of the packages Zephyr ${zephyrVersion} requires: ` +
           `${buildInterpreter.missing.map((name) => `\`${name}\``).join(', ')}.\n\n` +
-          'Install them into that interpreter\'s environment:\n\n' +
-          '```bash\n' +
-          '# with uv\n' +
-          'uv pip install --python "$(command -v python3)" -r <zephyr>/scripts/requirements-base.txt\n' +
-          '# or with pip\n' +
-          'python3 -m pip install -r <zephyr>/scripts/requirements-base.txt\n' +
-          '```',
+          (pythonScoped
+            ? scopedNote('Python environment')
+            : 'Install them into that interpreter\'s environment:\n\n' +
+              '```bash\n' +
+              '# with uv\n' +
+              'uv pip install --python "$(command -v python3)" -r <zephyr>/scripts/requirements-base.txt\n' +
+              '# or with pip\n' +
+              'python3 -m pip install -r <zephyr>/scripts/requirements-base.txt\n' +
+              '```'),
       );
     }
     if (!westVersion) {
-      problems.push(
+      (pythonScoped ? unscoped : problems).push(
         'No `west` on PATH. Install it — `uv tool install west` keeps it isolated, ' +
-          '`python3 -m pip install west` puts it in the same environment as the build.',
+          '`python3 -m pip install west` puts it in the same environment as the build.' +
+          // west is normally installed into the project's venv, so the same
+          // activation that supplies Python supplies west.
+          (pythonScoped ? `\n\n${scopedNote('Python environment')}` : ''),
       );
     }
     if (!sdk.found) {
-      problems.push(
+      (sdkScoped ? unscoped : problems).push(
         `No Zephyr SDK found (${sdk.detail}). ` +
-          (shipsWestSdk
-            ? 'This Zephyr ships `west sdk`, so `west sdk install` fetches a matching toolchain ' +
-              'and registers it. Add `-t <toolchain>` to install only what your targets need.'
-            : 'This Zephyr version has no `west sdk` command; install the SDK from the ' +
-              'zephyrproject-rtos/sdk-ng releases and run its `setup.sh`.'),
+          (sdkScoped
+            ? `\n\n${scopedNote('Zephyr SDK')} A project-local SDK is often left out of the CMake ` +
+              'registry on purpose, so that other workspaces on this machine keep their own.'
+            : shipsWestSdk
+              ? 'This Zephyr ships `west sdk`, so `west sdk install` fetches a matching toolchain ' +
+                'and registers it. Add `-t <toolchain>` to install only what your targets need.'
+              : 'This Zephyr version has no `west sdk` command; install the SDK from the ' +
+                'zephyrproject-rtos/sdk-ng releases and run its `setup.sh`.'),
       );
     }
 
@@ -280,10 +384,15 @@ export const checkEnvironment: ToolFactory = (index) => ({
     const text = joinSections([
       '# Build environment',
       problems.length === 0
-        ? canCheckPackages
-          ? `Nothing blocking. A build of Zephyr ${zephyrVersion} should start on this machine.`
-          : `No blocking problem found, but the package check did not run — see the note below, ` +
-            `and treat this as unverified rather than clean.`
+        ? unscoped.length > 0
+          ? `Nothing blocking that this server can see. ${unscoped.length} finding` +
+            `${unscoped.length === 1 ? '' : 's'} below describe the environment this server ` +
+            'inherited rather than the one a build will use, because this project activates its ' +
+            'own toolchain per shell.'
+          : canCheckPackages
+            ? `Nothing blocking. A build of Zephyr ${zephyrVersion} should start on this machine.`
+            : `No blocking problem found, but the package check did not run — see the note below, ` +
+              `and treat this as unverified rather than clean.`
         : problems.length === 1
           ? `One thing will stop a build of Zephyr ${zephyrVersion}.`
           : `${problems.length} things will stop a build of Zephyr ${zephyrVersion}.`,
@@ -309,6 +418,21 @@ export const checkEnvironment: ToolFactory = (index) => ({
         `Zephyr SDK: ${sdk.found ? sdk.detail : 'not found'}`,
       ]),
       problems.length > 0 ? section('What to fix', problems) : undefined,
+      project
+        ? section('This project carries its own toolchain', [
+            `root: \`${project.root}\``,
+            ...(project.activation.length > 0
+              ? [`activation: ${project.activation.map((name) => `\`${name}\``).join(', ')}`]
+              : []),
+            ...(project.venv
+              ? [`Python: \`${project.venv}\` — ${project.venvActive ? 'active here' : 'not active in this server'}`]
+              : []),
+            ...(project.sdk
+              ? [`SDK: \`${project.sdk}\` — ${project.sdkActive ? 'active here' : 'not active in this server'}`]
+              : []),
+          ])
+        : undefined,
+      unscoped.length > 0 ? section('Not a finding about your build', unscoped) : undefined,
       boardSection,
       canCheckPackages
         ? undefined
@@ -319,7 +443,12 @@ export const checkEnvironment: ToolFactory = (index) => ({
 
     return result(text, {
       zephyrVersion,
-      ok: problems.length === 0 && canCheckPackages,
+      // Three populations, as everywhere else here: clean, blocked, or not
+      // established. A scoped finding means this server could not see the
+      // toolchain a build will use, so `ok: true` would state a check that did
+      // not happen.
+      ok: problems.length === 0 && canCheckPackages && unscoped.length === 0,
+      scoped: unscoped.length > 0,
       packagesChecked: canCheckPackages,
       interpreters,
       buildInterpreter: buildInterpreter ?? null,
@@ -329,6 +458,8 @@ export const checkEnvironment: ToolFactory = (index) => ({
       shipsWestSdk,
       requirements: requirements.length,
       problems,
+      unscoped,
+      projectToolchain: project,
       ...(board ? { board } : {}),
     });
   },

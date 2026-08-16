@@ -3,6 +3,7 @@ import { bindingVariants } from './devicetree.ts';
 import { ToolError } from '../protocol.ts';
 import {
   type ToolFactory,
+  blankComments,
   editDistance,
   joinSections,
   optionalString,
@@ -132,13 +133,6 @@ function valueProblem(type: string, value: string): string | null {
   if (type === 'hex' && !/^(?:0x)?[0-9a-fA-F]+$/.test(value)) return `is hex but is set to "${value}"`;
   if (type === 'string' && !/^"(?:[^"\\]|\\.)*"$/.test(value)) return 'is string but is not a quoted string';
   return null;
-}
-
-/** Blank out comment bodies, preserving length and line breaks. */
-function blankComments(text: string): string {
-  return text
-    .replace(/\/\*[\s\S]*?\*\//g, (match) => match.replace(/[^\n]/g, ' '))
-    .replace(/\/\/[^\n]*/g, (match) => ' '.repeat(match.length));
 }
 
 /**

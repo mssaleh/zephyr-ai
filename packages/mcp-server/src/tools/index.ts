@@ -7,6 +7,7 @@ import { checkConfig } from './check.ts';
 import { checkEnvironment } from './environment.ts';
 import type { ToolFactory } from './common.ts';
 import { getBinding, searchBindings } from './devicetree.ts';
+import { checkDevicetree } from './devicetree-build.ts';
 import { getDoc, searchDocs } from './docs.ts';
 import { getKconfig, searchKconfig } from './kconfig.ts';
 import { getSample, searchSamples } from './samples.ts';
@@ -22,6 +23,7 @@ import { getRunner } from './west.ts';
  */
 const FACTORIES: ToolFactory[] = [
   checkConfig,
+  checkDevicetree,
   checkEnvironment,
   searchKconfig,
   getKconfig,

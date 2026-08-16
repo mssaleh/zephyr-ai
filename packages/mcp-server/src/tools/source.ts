@@ -163,6 +163,47 @@ function readableTrees(idx: {
   return trees;
 }
 
+/** What a tool needs from the index to reach the files on disk. */
+export interface TreeReader {
+  all: (sql: string, ...params: unknown[]) => Record<string, unknown>[];
+  meta: Record<string, string>;
+  descriptor: { zephyrCommit: string; zephyrRoot?: string };
+}
+
+/**
+ * Read one file out of the indexed Zephyr tree, or null.
+ *
+ * `get_source` renders a file for a reader: citation, line ranges, character
+ * budget, and an explanation when the tree is absent. A tool that needs a fact
+ * out of a header wants none of that, only the content at the indexed commit
+ * with the same working-tree fallback. Splitting it here keeps the two callers
+ * reading the same bytes rather than one of them reopening the question of
+ * which revision it is looking at.
+ */
+export function readZephyrFile(idx: TreeReader, path: string): string | null {
+  const configured = idx.meta['source_path'] ?? idx.descriptor.zephyrRoot;
+  if (!configured || !existsSync(configured)) return null;
+  const root = realpathSync(configured);
+  const commit = idx.meta['zephyr_commit'] ?? idx.descriptor.zephyrCommit;
+
+  if (commit && git(root, ['cat-file', '-t', `${commit}:${path}`])?.trim() === 'blob') {
+    const text = git(root, ['cat-file', '-p', `${commit}:${path}`]);
+    if (text !== null) return text;
+  }
+
+  // Not a Git checkout, or the commit is absent from it. The file on disk is
+  // still the tree the index was built from; it just cannot be proven to match.
+  try {
+    const resolved = realpathSync(join(root, path));
+    const escaped = relative(root, resolved);
+    if (escaped === '..' || escaped.startsWith(`..${sep}`) || isAbsolute(escaped)) return null;
+    if (!statSync(resolved).isFile() || statSync(resolved).size > MAX_BYTES) return null;
+    return readFileSync(resolved, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
 /** A tree's remote never changes while the server runs, so ask git once. */
 const slugCache = new Map<string, string | null>();
 

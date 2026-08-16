@@ -56,4 +56,6 @@ Troubleshooting:
 - **A catalogue miss for module syntax:** rebuild with the applicable module root. A
   miss is never proof the name is wrong; confirm it against the build.
 
-Apache-2.0.
+Apache-2.0, except the STMicroelectronics application notes under
+`reference/st/`, which are ST copyright and redistributed unmodified. See
+`reference/st/NOTICE.md`.

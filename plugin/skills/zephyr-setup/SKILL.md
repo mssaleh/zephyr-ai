@@ -4,7 +4,7 @@ description: Prepare a machine and lay out a Zephyr project. Use before the firs
 license: Apache-2.0
 metadata:
   author: zephyr-ai
-  version: "0.9.1"
+  version: "0.10.0"
 ---
 
 # Getting a Zephyr project buildable

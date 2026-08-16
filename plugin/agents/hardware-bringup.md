@@ -67,7 +67,19 @@ reads at the manifest revision. Messages are often unconditional on a path that
 always runs, or conditional on something different from what the text says. The
 reverse also applies: a success log may mean only that a command was sent.
 
-**4. Check that the driver targets this silicon.**
+**4. Rule out a reference the build never resolved.**
+
+Before reading register maps, pass `build/zephyr/zephyr.dts` to
+`check_devicetree`. An enabled node whose clock source, DMA channel, power
+domain or supply names a node the build did not enable is legal devicetree and
+produces no build error. The device's init returns an errno, which an
+application often latches and carries on from, so the symptom is a peripheral
+that is simply absent rather than one that misbehaves — no enumeration attempt,
+no error, nothing. It costs one call and it is invisible to every other check,
+including a clean `.config` and a green bench run on an evaluation board whose
+own clock tree resolves the same property differently.
+
+**5. Check that the driver targets this silicon.**
 
 A compatible existing in the tree does not mean it fits your part. Vendors reuse
 peripheral names across incompatible register layouts, and a node using the wrong
@@ -80,7 +92,7 @@ driver compiles, links, initialises, and does nothing.
   check whether they exist in your SoC vendor header. Missing definitions are
   strong evidence the driver does not fit.
 
-**5. Rule out the tooling and the board state.**
+**6. Rule out the tooling and the board state.**
 
 Three symptoms that look like firmware faults and are not:
 
@@ -95,7 +107,7 @@ Three symptoms that look like firmware faults and are not:
   pins, the mode that runs the application and the mode that exposes the debug
   port can be different modes. That is a configuration state, not a fault.
 
-**6. Vary the shape of the operation, not only its location.**
+**7. Vary the shape of the operation, not only its location.**
 
 When an operation fails inconsistently, the address is one variable and often the
 wrong one. Hold the location fixed and vary one parameter at a time: length,
@@ -116,7 +128,7 @@ Two consequences for what you measure:
   clears bits, so a byte left at zero cannot be rewritten. Erase before retesting
   a flash fix, or the old data will look like a new fault.
 
-**7. Test the hypothesis that is cheapest to disprove.**
+**8. Test the hypothesis that is cheapest to disprove.**
 
 Rank candidates by the cost of eliminating them, not by likelihood. Reading
 source costs nothing. Changing a devicetree value costs a build. Rewiring costs a
@@ -125,7 +137,7 @@ test cycle. An oscilloscope session costs hours. Run the cheap tests first.
 Use the data you already have before collecting more. Counts, intervals, and
 ordering can be extracted from a log you have already captured.
 
-**8. Check timing and ordering for anything intermittent.**
+**9. Check timing and ordering for anything intermittent.**
 
 On hardware, intermittent usually means a timing assumption:
 
@@ -139,7 +151,7 @@ On hardware, intermittent usually means a timing assumption:
   a boot path that can exceed its timeout causes a reset loop that only a power
   cycle clears.
 
-**9. Add observability when the loop is slow.**
+**10. Add observability when the loop is slow.**
 
 Build a shell early. Move slow or failure-prone initialisation off the boot path
 so it runs with the console already up; `zephyr,deferred-init` on the node does

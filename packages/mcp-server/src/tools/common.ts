@@ -225,6 +225,18 @@ export function batchSchema(description: string): Record<string, unknown> {
   };
 }
 
+/**
+ * Blank out comment bodies, preserving length and line breaks.
+ *
+ * Length is preserved because callers report the line a finding sits on, and a
+ * comment that shortened the text would move every line after it.
+ */
+export function blankComments(text: string): string {
+  return text
+    .replace(/\/\*[\s\S]*?\*\//g, (match) => match.replace(/[^\n]/g, ' '))
+    .replace(/\/\/[^\n]*/g, (match) => ' '.repeat(match.length));
+}
+
 /** Language hint for fencing a file from the Zephyr tree. */
 export function fenceLang(path: string): string {
   if (path.endsWith('.c') || path.endsWith('.h')) return 'c';

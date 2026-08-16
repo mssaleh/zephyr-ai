@@ -5,7 +5,8 @@
 
 import { deepStrictEqual, ok, strictEqual } from 'node:assert/strict';
 import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { after, before, describe, it } from 'node:test';
@@ -51,9 +52,16 @@ class Client {
   #nextId = 1;
   readonly stderr: string[] = [];
 
-  constructor() {
+  /**
+   * `where` exists because some answers depend on where the server was started.
+   * A project that activates its own toolchain per shell is only detectable
+   * from the working directory, so that case cannot be driven from this
+   * package's own directory.
+   */
+  constructor(where?: { cwd?: string; env?: Record<string, string | undefined> }) {
     this.#child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', SERVER], {
-      env: { ...process.env, ZEPHYR_AI_INDEX: INDEX },
+      env: { ...process.env, ZEPHYR_AI_INDEX: INDEX, ...where?.env },
+      ...(where?.cwd ? { cwd: where.cwd } : {}),
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     this.#child.stdout.setEncoding('utf8');
@@ -285,13 +293,13 @@ describe('MCP server', { skip: !ready && 'run `npm run build` and build the inde
     it('lists tools with schemas', async () => {
       const res = await client.request('tools/list');
       const tools = res.result?.['tools'] as { name: string; description: string; inputSchema: unknown }[];
-      strictEqual(tools.length, 17);
+      strictEqual(tools.length, 18);
       for (const tool of tools) {
         ok(tool.description.length > 60, `${tool.name} needs a substantial description`);
         ok(tool.inputSchema, `${tool.name} needs an inputSchema`);
       }
       const names = tools.map((t) => t.name);
-      for (const expected of ['search_kconfig', 'get_binding', 'search_boards', 'get_source', 'index_status', 'check_config', 'get_runner', 'check_environment']) {
+      for (const expected of ['search_kconfig', 'get_binding', 'search_boards', 'get_source', 'index_status', 'check_config', 'check_devicetree', 'get_runner', 'check_environment']) {
         ok(names.includes(expected), `expected tool ${expected}`);
       }
     });
@@ -428,6 +436,131 @@ describe('MCP server', { skip: !ready && 'run `npm run build` and build the inde
     });
   });
 
+  describe('check_devicetree', () => {
+    /**
+     * A merged tree in the shape the failure actually took.
+     *
+     * `usb` is declared disabled by the SoC with its domain clock on HSE, and a
+     * later `&usb` fragment enables it while setting only `status` and
+     * `pinctrl` — so `clocks` stays at the SoC default. That is the whole
+     * defect, and it is invisible in `.config` and in the linked image.
+     */
+    const tree = (usbSource: string, hsi48: string) => `
+/dts-v1/;
+
+/ {
+	clocks {
+		clk_hse: clk-hse { #clock-cells = < 0x0 >; status = "disabled"; };
+		clk_hsi48: clk-hsi48 { #clock-cells = < 0x0 >; status = "${hsi48}"; };
+		clk_hsi: clk-hsi { #clock-cells = < 0x0 >; status = "okay"; };
+	};
+
+	soc {
+		compatible = "st,stm32c071", "st,stm32c0", "simple-bus";
+
+		rcc: rcc@40021000 {
+			compatible = "st,stm32-rcc";
+			clocks = < &clk_hsi >;
+			#clock-cells = < 0x2 >;
+			status = "okay";
+		};
+
+		gpiob: gpio@50000400 { compatible = "st,stm32-gpio"; status = "disabled"; };
+
+		usb: usb@40005c00 {
+			compatible = "st,stm32-usb";
+			clocks = < &rcc 0x3c 0x800000 >, < &rcc ${usbSource} 0x10c0058 >;
+			status = "disabled";
+		};
+
+		widget: widget@1 {
+			compatible = "acme,widget";
+			reset-gpios = < &gpiob 0x4 0x0 >;
+			status = "okay";
+		};
+	};
+};
+
+&usb {
+	pinctrl-0 = < &usb_dm_pa11 &usb_dp_pa12 >;
+	pinctrl-names = "default";
+	status = "okay";
+};
+`;
+
+    it('names the disabled domain clock a board inherited from its SoC', async () => {
+      // 0x6 is STM32_SRC_HSE on this family, and the board fits no crystal.
+      const res = await client.call('check_devicetree', {
+        path: 'build/zephyr/zephyr.dts',
+        text: tree('0x6', 'disabled'),
+      });
+      const problems = (res.structured['findings'] as { problem: string | null }[]).filter(
+        (finding) => finding.problem !== null,
+      );
+      ok(
+        problems.some(
+          (finding) =>
+            finding.problem!.includes('STM32_SRC_HSE') &&
+            finding.problem!.includes('clk_hse') &&
+            finding.problem!.includes('usb'),
+        ),
+        'the finding must name the node, the selector and the clock',
+      );
+      // The header is read from the indexed tree, never restated in this
+      // repository: the selector values are chained increments upstream.
+      strictEqual(
+        res.structured['domainClockHeader'],
+        'include/zephyr/dt-bindings/clock/stm32c0_clock.h',
+      );
+      ok(res.text.includes('-ENOTSUP'), 'the report must say what the driver will see');
+    });
+
+    it('is silent on the same tree once the selector names a live clock', async () => {
+      // 0x5 is STM32_SRC_HSI48. This is the fix that was applied, and a check
+      // that cannot go quiet on it would be reporting the shape, not the defect.
+      const res = await client.call('check_devicetree', {
+        path: 'build/zephyr/zephyr.dts',
+        text: tree('0x5', 'okay'),
+      });
+      const clockProblems = (res.structured['findings'] as { subject: string; problem: string | null }[])
+        .filter((finding) => finding.problem !== null && finding.subject.includes('clocks'));
+      strictEqual(clockProblems.length, 0);
+      ok(Number(res.structured['confirmedCount']) > 0, 'the clean case must still be counted');
+    });
+
+    it('reports a bus clock cell as neither a problem nor a source', async () => {
+      // 0x3c is STM32_CLOCK_BUS_APB1, inside the range the header itself
+      // declares. Judging it as a source selector would report every peripheral.
+      const res = await client.call('check_devicetree', { text: tree('0x5', 'okay') });
+      const findings = res.structured['findings'] as { subject: string; note: string }[];
+      ok(!findings.some((finding) => finding.note.includes('0x3c')));
+    });
+
+    it('finds a disabled provider through any vendor-neutral reference', async () => {
+      const res = await client.call('check_devicetree', { text: tree('0x5', 'okay') });
+      const problems = (res.structured['findings'] as { problem: string | null }[]).filter(
+        (finding) => finding.problem !== null,
+      );
+      ok(problems.some((finding) => finding.problem!.includes('reset-gpios')));
+      ok(problems.some((finding) => finding.problem!.includes('gpiob')));
+    });
+
+    it('does not judge a pinctrl reference or a node this text does not declare', async () => {
+      const res = await client.call('check_devicetree', { text: tree('0x5', 'okay') });
+      const findings = res.structured['findings'] as { subject: string }[];
+      ok(
+        !findings.some((finding) => finding.subject.includes('pinctrl')),
+        'pin configuration nodes carry no status, so they are not providers',
+      );
+    });
+
+    it('refuses text that is not a devicetree', async () => {
+      const res = await client.call('check_devicetree', { text: 'CONFIG_GPIO=y\n' });
+      strictEqual(res.isError, true);
+      ok(res.text.includes('zephyr.dts'));
+    });
+  });
+
   describe('the sysbuild Kconfig namespace', () => {
     it('answers SB_CONFIG_ from the sysbuild tree, not the application tree', async () => {
       const res = await client.call('get_kconfig', { name: 'SB_CONFIG_BOOTLOADER_MCUBOOT' });
@@ -524,6 +657,75 @@ describe('MCP server', { skip: !ready && 'run `npm run build` and build the inde
       // rather than assuming a command that older trees do not have.
       strictEqual(res.structured['shipsWestSdk'], true);
       ok((res.structured['requirements'] as number) > 0, 'the index must record a requirements list');
+    });
+
+    /** A project laid out the way a hermetic Zephyr workspace is. */
+    async function inProject(
+      env: Record<string, string | undefined>,
+    ): Promise<{ text: string; isError: boolean; structured: Record<string, unknown> }> {
+      const root = mkdtempSync(join(tmpdir(), 'zephyr-ai-project-'));
+      mkdirSync(join(root, '.venv', 'bin'), { recursive: true });
+      mkdirSync(join(root, 'zephyr-sdk-1.0.1'), { recursive: true });
+      mkdirSync(join(root, '.west'), { recursive: true });
+      writeFileSync(join(root, '.west', 'config'), '[manifest]\npath = zephyr\n');
+      writeFileSync(join(root, 'env.sh'), '# activate\n');
+      // An empty HOME, separate from the project, so the CMake package registry
+      // is empty whatever this machine has installed. Without it the assertions
+      // below pass or fail on whether the developer happens to have an SDK
+      // registered, which is a defect in the test rather than a fact about the
+      // product.
+      const home = mkdtempSync(join(tmpdir(), 'zephyr-ai-home-'));
+      const local = new Client({ cwd: root, env: { ...env, HOME: home } });
+      try {
+        await local.request('initialize', {
+          protocolVersion: LATEST_PROTOCOL_VERSION,
+          capabilities: {},
+          clientInfo: { name: 'test-client', version: '1.0.0' },
+        });
+        local.notify('notifications/initialized');
+        return await local.call('check_environment');
+      } finally {
+        local.close();
+        rmSync(root, { recursive: true, force: true });
+        rmSync(home, { recursive: true, force: true });
+      }
+    }
+
+    it('does not report a project-local toolchain it was never activated for as missing', async () => {
+      // The server is spawned once per session from the login shell, so it never
+      // sees a `source env.sh`. Calling that a broken machine is what makes a
+      // project tell its agents to ignore this tool.
+      const res = await inProject({ ZEPHYR_SDK_INSTALL_DIR: undefined, VIRTUAL_ENV: undefined });
+      const project = res.structured['projectToolchain'] as { root: string; sdkActive: boolean } | null;
+      ok(project, 'the project-local layout must be detected');
+      strictEqual(project.sdkActive, false);
+      const problems = res.structured['problems'] as string[];
+      ok(
+        !problems.some((problem) => problem.includes('No Zephyr SDK found')),
+        'an unactivated project SDK is not a blocking problem',
+      );
+      const unscoped = res.structured['unscoped'] as string[];
+      ok(unscoped.some((finding) => finding.includes('Zephyr SDK')));
+      ok(res.text.includes('This project carries its own toolchain'));
+      ok(res.text.includes('env.sh'), 'the report must name the activation it did not run');
+      // Not established is not the same as clean.
+      strictEqual(res.structured['ok'], false);
+      strictEqual(res.structured['scoped'], true);
+    });
+
+    it('still reports a missing SDK as blocking when nothing local explains it', async () => {
+      // The downgrade must not swallow the real finding, or the tool stops being
+      // worth calling on an ordinary machine.
+      const res = await client.call('check_environment');
+      const project = res.structured['projectToolchain'];
+      strictEqual(project, null, 'this package directory is not a hermetic workspace');
+      strictEqual(res.structured['scoped'], false);
+      const sdk = res.structured['sdk'] as { found: boolean };
+      const problems = res.structured['problems'] as string[];
+      if (!sdk.found) {
+        ok(problems.some((problem) => problem.includes('No Zephyr SDK found')));
+        ok(problems.some((problem) => problem.includes('west sdk')), 'the fix must still be given');
+      }
     });
 
     it('names the runners a board needs on the host without inventing binaries', async () => {
